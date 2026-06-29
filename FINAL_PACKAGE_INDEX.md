@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.18 Goldpine Contract Surfacing + Swift Scope Tightening
+# Final Package Index — v0.2.6.19 Reliability + Central Routing Safety Invariants
 
 This package is the current release-candidate base for external Codex testing.
 
@@ -14,6 +14,7 @@ src/premode/review_patch.py
 src/premode/benchmark.py
 src/premode/stress.py
 src/premode/repo_map.py
+src/premode/routing_safety.py
 src/premode/adapters.py
 src/premode/command_discovery.py
 src/premode/intake.py
@@ -24,6 +25,7 @@ src/premode/redaction.py
 src/premode/safe_reader.py
 src/premode/git_state.py
 scripts/run_with_timeout.py
+scripts/smoke_test.sh
 ```
 
 ## Primary commands
@@ -57,6 +59,7 @@ premode benchmark --profile lite
 
 ```text
 tests/test_v263_benchmark.py
+tests/test_v2619_routing_safety.py
 tests/test_v269_metadata_root.py
 tests/test_v267_codex_cli_compat.py
 tests/test_v260_review_patch.py

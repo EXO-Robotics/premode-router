@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.18
+# Implementation Report — Pre-mode Router v0.2.6.19
 
 ## Release summary
 
-`v0.2.6.18 — Goldpine Contract Surfacing + Swift Scope Tightening` surfaces semantic routing buckets at top level and narrows SwiftUI tutorial/UI-shell edit contracts to strongly matched Swift source.
+`v0.2.6.19 — Reliability + Central Routing Safety Invariants` adds a shared generated/build/state/proof/runtime and manifest safety floor before packet or review-contract output is emitted.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.19 changes
+
+- Bumped package version to `0.2.6.19`.
+- Added shared routing safety classification for generated/build/output/state/proof/runtime paths and read-only package/build manifests.
+- Removed restricted paths from `likely_edit_files`, `likely_files`, `patch_boundary.allowed_edit_files`, `review_contract.allowed_edit_files`, `related_tests`, and path-specific verification commands.
+- Added cross-ecosystem tests for Go `_output/*.pb.go`, web generated/dist/build outputs, Node package-manifest read-only behavior, and Maven/Gradle wrapper command discovery.
+- Added pytest hang/subprocess diagnostics and split `scripts/smoke_test.sh` into independently runnable timed phases.
 
 ## v0.2.6.18 changes
 

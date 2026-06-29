@@ -163,6 +163,6 @@ def test_v266_docs_are_current_and_concise():
     assert "v0.2.6.6" in readme
     assert "premode review-patch --since-compile" in readme
     assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q" in readme
-    assert "v0.2.6.18" in index
+    assert "v0.2.6.19" in index
     assert "v0.2.6.18" in report
     assert len(index.splitlines()) < 140

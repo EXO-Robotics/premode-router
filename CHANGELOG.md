@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.6.19
+
+- Added central routing safety invariants for generated/build/output/state/proof/runtime paths and read-only manifests before packet and review-contract output.
+- Filtered `_output`, generated suffixes, dist/build/cache/target/out/tmp, Bazel, Terraform, Dart, and similar output paths from edit/test/verification buckets unless explicitly authorized.
+- Tightened Node/web source prompts so `package.json` and workspace manifests stay command evidence/read-only support unless dependency, script, package, or config edits are requested.
+- Added Maven/Gradle command discovery with wrapper preference.
+- Added pytest subprocess/hang diagnostics and split smoke phases with per-step timeout controls.
+- Bumped package version to `0.2.6.19`.
+
 ## v0.2.6.18
 
 - Surfaced semantic routing buckets at top level in compile JSON so consumers can read likely edit files, support files, related tests, verification order, and diagnostics without unpacking `impact_map`.

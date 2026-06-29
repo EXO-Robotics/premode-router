@@ -12,6 +12,7 @@ from .config import premode_dir
 from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
 from .profiles import resolve_profile
+from .routing_safety import classify_path_for_routing, is_restricted_edit_bucket_path
 from .safe_reader import safe_read
 from .timeutil import timestamp_iso
 
@@ -21,6 +22,7 @@ IGNORE_BOUNDARY_SEGMENTS = {
     '_external_references',
     'node_modules',
     'vendor',
+    'staging',
     'third_party',
     '.venv',
     'venv',
@@ -32,14 +34,23 @@ IGNORE_BOUNDARY_SEGMENTS = {
     'intermediate',
     'binaries',
     '_claw_output',
+    '_output',
     '_evidence',
     '_integration_staging',
     '_run_captures',
     'generated',
+    'gen',
     'artifacts',
     'proof',
     'proofs',
     'state',
+    'target',
+    'out',
+    '.dart_tool',
+    '.terraform',
+    'tmp',
+    'cache',
+    '.cache',
 }
 NEGATIVE_BOUNDARY_TERMS = (
     'avoid external references',
@@ -132,7 +143,17 @@ def _safe_json(obj: Any) -> str:
 
 def _is_ignore_boundary_path(path: str) -> bool:
     parts = [p.lower() for p in str(path).replace('\\', '/').strip('/').split('/') if p]
-    return bool(set(parts) & IGNORE_BOUNDARY_SEGMENTS)
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    name = Path(lower).name
+    return (
+        bool(set(parts) & IGNORE_BOUNDARY_SEGMENTS)
+        or any(part.startswith('bazel-') for part in parts)
+        or name.endswith('.pb.go')
+        or name.endswith('.g.dart')
+        or '.generated.' in lower
+        or '.gen.' in lower
+        or '_generated.' in lower
+    )
 
 
 def _prompt_has_negative_boundary(raw_prompt: str) -> bool:
@@ -1031,16 +1052,32 @@ def _filter_routing_paths(
     explicit_paths: set[str],
     *,
     path_key: str = 'path',
+    prompt_forbidden_paths: set[str] | None = None,
+    include_read_only_manifests: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     strict = _prompt_has_negative_boundary(raw_prompt)
     kept: list[dict[str, Any]] = []
     filtered: list[dict[str, Any]] = []
     for item in items:
         path = str(item.get(path_key) or '')
-        if path and _is_ignore_boundary_path(path) and path not in explicit_paths:
+        safety = classify_path_for_routing(
+            path,
+            raw_prompt,
+            explicit_paths=explicit_paths,
+            prompt_forbidden_paths=prompt_forbidden_paths or set(),
+        ) if path else {"category": "editable_source_or_support", "reason": "editable_candidate", "editable": True}
+        if path and (
+            _is_ignore_boundary_path(path)
+            or (
+                safety["category"] != "editable_source_or_support"
+                and (include_read_only_manifests or safety["category"] != "read_only_manifest")
+                and not safety.get("editable")
+            )
+        ) and path not in explicit_paths:
             filtered.append({
                 'path': path,
-                'reason': 'ignored_reference_generated_boundary',
+                'reason': safety.get('reason') or 'ignored_reference_generated_boundary',
+                'safety_category': safety.get('category'),
                 'strict_negative_prompt': strict,
             })
             continue
@@ -1048,13 +1085,25 @@ def _filter_routing_paths(
     return kept, filtered
 
 
-def _filter_dependency_edges(edges: list[dict[str, str]], explicit_paths: set[str]) -> tuple[list[dict[str, str]], int]:
+def _filter_dependency_edges(edges: list[dict[str, str]], explicit_paths: set[str], raw_prompt: str = "", prompt_forbidden_paths: set[str] | None = None) -> tuple[list[dict[str, str]], int]:
     kept: list[dict[str, str]] = []
     removed = 0
     for edge in edges:
         src = str(edge.get('from') or '')
         dst = str(edge.get('to') or '')
-        if ((_is_ignore_boundary_path(src) and src not in explicit_paths) or (_is_ignore_boundary_path(dst) and dst not in explicit_paths)):
+        src_restricted = _is_ignore_boundary_path(src) or is_restricted_edit_bucket_path(
+            src,
+            raw_prompt,
+            explicit_paths=explicit_paths,
+            prompt_forbidden_paths=prompt_forbidden_paths or set(),
+        )
+        dst_restricted = _is_ignore_boundary_path(dst) or is_restricted_edit_bucket_path(
+            dst,
+            raw_prompt,
+            explicit_paths=explicit_paths,
+            prompt_forbidden_paths=prompt_forbidden_paths or set(),
+        )
+        if ((src_restricted and src not in explicit_paths) or (dst_restricted and dst not in explicit_paths)):
             removed += 1
             continue
         kept.append(edge)
@@ -1330,7 +1379,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
             seen.add(path)
     filtered_likely: list[dict[str, Any]]
     filtered_related: list[dict[str, Any]]
-    filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths)
+    filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths, prompt_forbidden_paths=forbidden_paths)
     asset_manifest_filtered_count = 0
     if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
         kept_likely: list[dict[str, Any]] = []
@@ -1361,8 +1410,13 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     for item in filtered_likely:
         path = str(item.get('path') or '')
         suffix = Path(path).suffix.lower()
+        safety = classify_path_for_routing(path, raw_prompt, explicit_paths=explicit_paths, prompt_forbidden_paths=forbidden_paths)
         if path and _path_matches_any(path, forbidden_paths):
             prompt_forbidden_files.append({**item, 'reason': 'prompt_forbidden_read_only'})
+        elif safety.get('category') == 'read_only_manifest':
+            read_only_support_files.append({**item, 'reason': safety.get('reason') or 'read_only_manifest_boundary'})
+        elif safety.get('category') != 'editable_source_or_support' and not safety.get('editable'):
+            prompt_forbidden_files.append({**item, 'reason': safety.get('reason') or 'restricted_routing_boundary'})
         elif suffix not in SOURCE_EXTENSIONS | CONFIG_EXTENSIONS:
             read_only_support_files.append({**item, 'reason': item.get('reason') or 'read_only_support_file'})
         elif (
@@ -1378,7 +1432,13 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     filtered_likely_paths = [str(item.get('path')) for item in likely_edit_files if item.get('path')]
     direct_dependencies, direct_dependents = _dependency_slices(repo_map, filtered_likely_paths)
     related_tests = _related_tests_for_paths(repo_map, filtered_likely_paths, explicit_tests=prompt_tests)
-    filtered_related, removed_related = _filter_routing_paths(raw_prompt, related_tests, explicit_paths)
+    filtered_related, removed_related = _filter_routing_paths(
+        raw_prompt,
+        related_tests,
+        explicit_paths,
+        prompt_forbidden_paths=forbidden_paths,
+        include_read_only_manifests=True,
+    )
     if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
         kept_related: list[dict[str, Any]] = []
         removed_planning_related: list[dict[str, Any]] = []
@@ -1409,12 +1469,22 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         else:
             kept_related.append(item)
     filtered_related = kept_related
-    direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths)
-    direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths)
+    direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths, raw_prompt, forbidden_paths)
+    direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths, raw_prompt, forbidden_paths)
     filtered_reasons: dict[str, int] = {}
     for item in removed_likely + removed_related:
         reason = str(item.get('reason') or 'unknown')
         filtered_reasons[reason] = filtered_reasons.get(reason, 0) + 1
+    generated_filtered_count = sum(
+        1
+        for item in removed_likely + removed_related
+        if str(item.get('safety_category') or '') == 'generated_or_build_output'
+    )
+    read_only_manifest_filtered_count = sum(
+        1
+        for item in removed_likely + removed_related
+        if str(item.get('safety_category') or '') == 'read_only_manifest'
+    )
     diagnostics = {
         'ignored_boundary_filter_active': bool(removed_likely or removed_related or removed_deps or removed_dependents or _prompt_has_negative_boundary(raw_prompt)),
         'negative_boundary_prompt': _prompt_has_negative_boundary(raw_prompt),
@@ -1424,6 +1494,8 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'filtered_reasons': filtered_reasons,
         'docs_downranked_count': docs_downranked_count,
         'asset_manifest_filtered_count': asset_manifest_filtered_count,
+        'generated_filtered_count': generated_filtered_count,
+        'read_only_manifest_filtered_count': read_only_manifest_filtered_count,
         'swiftui_scope_tightened': bool(swiftui_scope_downranked_count),
         'swiftui_scope_downranked_count': swiftui_scope_downranked_count,
         'removed_likely_count': len(removed_likely),

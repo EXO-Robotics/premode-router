@@ -29,8 +29,10 @@ CI_PATTERNS = [
 ]
 
 GENERATED_OR_STATE_PATTERNS = [
-    "dist/*", "build/*", "coverage/*", "_claw_output/*", "PROJECT/state/*",
-    "PROJECT/artifacts/generated/*", "*.generated.*", "*.pb.go", "*.g.dart",
+    "_output/*", "generated/*", "gen/*", "bazel-*", "build/*", "dist/*", "target/*", "out/*",
+    ".dart_tool/*", ".terraform/*", "tmp/*", "cache/*", ".cache/*", "coverage/*", "_claw_output/*",
+    "PROJECT/state/*", "PROJECT/artifacts/generated/*", "*.generated.*", "*.gen.*", "*_generated.*",
+    "*.pb.go", "*.g.dart",
 ]
 
 TEST_PATH_PATTERNS = [

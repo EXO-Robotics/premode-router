@@ -18,6 +18,12 @@ from .log_scanner import scan_logs
 from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps
 from .redaction import redact_text, merge_redaction_counts
+from .routing_safety import (
+    classify_path_for_routing,
+    is_generated_or_build_output_path,
+    is_read_only_manifest_path,
+    is_restricted_edit_bucket_path,
+)
 from .repo_summary import summarize_file
 from .repo_map import (
     build_repo_map,
@@ -474,7 +480,7 @@ def _metadata_path_category(path: str) -> str:
         return "external"
     if lower.startswith(("artifacts/", "_evidence/", "_run_captures/", "_integration_staging/", "backups/", ".codex/", ".openclaw_workspaces/")) or "/artifacts/" in lower:
         return "artifacts"
-    if lower.startswith(("_claw_output/", "generated/", "saved/", "intermediate/", "binaries/", "deriveddatacache/")) or any(f"/{part}/" in lower for part in ("generated", "saved", "intermediate", "binaries", "deriveddatacache")):
+    if is_generated_or_build_output_path(lower) or lower.startswith(("_claw_output/", "generated/", "saved/", "intermediate/", "binaries/", "deriveddatacache/")) or any(f"/{part}/" in lower for part in ("generated", "saved", "intermediate", "binaries", "deriveddatacache")):
         return "generated"
     if lower.startswith(("state/", "project/state/", ".openclaw/")) or "/state/" in lower:
         return "state"
@@ -960,6 +966,83 @@ def _semantic_buckets_from_impact_or_boundary(
     }
 
 
+def _enforce_central_routing_safety_impact_map(
+    impact_map: dict[str, Any] | None,
+    raw_prompt: str,
+    prompt_forbidden_paths: set[str],
+) -> None:
+    if not isinstance(impact_map, dict):
+        return
+    diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
+    if not isinstance(diagnostics, dict):
+        diagnostics = {}
+        impact_map["routing_filter_diagnostics"] = diagnostics
+
+    removed_paths: list[str] = []
+    filtered_reasons = diagnostics.setdefault("filtered_reasons", {})
+    if not isinstance(filtered_reasons, dict):
+        filtered_reasons = {}
+        diagnostics["filtered_reasons"] = filtered_reasons
+
+    read_only_support = list(impact_map.get("read_only_support_files") or [])
+    read_only_seen = {str(item.get("path") or "") for item in read_only_support if isinstance(item, dict)}
+
+    def bump(reason: str) -> None:
+        filtered_reasons[reason] = int(filtered_reasons.get(reason) or 0) + 1
+
+    def filter_items(key: str) -> None:
+        kept: list[dict[str, Any]] = []
+        for item in list(impact_map.get(key) or []):
+            if not isinstance(item, dict):
+                continue
+            path = str(item.get("path") or "")
+            if not path:
+                kept.append(item)
+                continue
+            safety = classify_path_for_routing(path, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+            restricted = safety["category"] != "editable_source_or_support" and not safety.get("editable")
+            if not restricted:
+                kept.append(item)
+                continue
+            removed_paths.append(path)
+            reason = str(safety.get("reason") or "central_routing_safety_filter")
+            bump(reason)
+            if key in {"likely_edit_files", "likely_files"} and safety["category"] in {"read_only_manifest", "generated_or_build_output"} and path not in read_only_seen:
+                read_only_support.append({**item, "reason": reason, "safety_category": safety["category"]})
+                read_only_seen.add(path)
+        impact_map[key] = kept
+
+    for bucket in ("likely_edit_files", "likely_files", "related_tests"):
+        filter_items(bucket)
+
+    if read_only_support:
+        impact_map["read_only_support_files"] = read_only_support
+
+    if removed_paths:
+        kept_verification: list[Any] = []
+        removed_lower = [p.lower() for p in removed_paths]
+        for item in impact_map.get("verification_order") or []:
+            text = str(item.get("command") if isinstance(item, dict) else item).lower()
+            if text and any(path in text for path in removed_lower):
+                bump("verification_restricted_path_removed")
+                continue
+            kept_verification.append(item)
+        impact_map["verification_order"] = kept_verification
+        diagnostics["central_routing_safety_filter_active"] = True
+        diagnostics["central_safety_filtered_count"] = len(removed_paths)
+        diagnostics["central_safety_filtered_paths"] = list(dict.fromkeys(removed_paths))[:12]
+        diagnostics["generated_filtered_count"] = int(diagnostics.get("generated_filtered_count") or 0) + sum(
+            1 for path in removed_paths if is_generated_or_build_output_path(path)
+        )
+        diagnostics["read_only_manifest_filtered_count"] = int(diagnostics.get("read_only_manifest_filtered_count") or 0) + sum(
+            1 for path in removed_paths if is_read_only_manifest_path(path)
+        )
+        diagnostics["filtered_count"] = max(
+            int(diagnostics.get("filtered_count") or 0),
+            sum(int(v) for v in filtered_reasons.values() if isinstance(v, int)),
+        )
+
+
 def ensure_index(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
     idx = load_index(repo_root)
     if idx is None:
@@ -1208,7 +1291,12 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
         kind = item.get("kind")
         if not p:
             continue
-        if _is_guidance_path(p) and not docs_intent:
+        safety = classify_path_for_routing(p, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+        if safety["category"] == "forbidden_or_prompt_blocked":
+            read_only.append(p)
+        elif safety["category"] in {"generated_or_build_output", "secret_state_proof_runtime", "read_only_manifest"} and not safety.get("editable"):
+            read_only.append(p)
+        elif _is_guidance_path(p) and not docs_intent:
             read_only.append(p)
         elif _is_same_path_or_suffix(p.lower(), prompt_forbidden_paths):
             read_only.append(p)
@@ -1222,7 +1310,12 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
         kind = item.get("kind")
         if not p:
             continue
-        if _is_guidance_path(p) and not docs_intent:
+        safety = classify_path_for_routing(p, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+        if safety["category"] == "forbidden_or_prompt_blocked":
+            read_only.append(p)
+        elif safety["category"] in {"generated_or_build_output", "secret_state_proof_runtime", "read_only_manifest"} and not safety.get("editable"):
+            read_only.append(p)
+        elif _is_guidance_path(p) and not docs_intent:
             read_only.append(p)
         elif _is_same_path_or_suffix(p.lower(), prompt_forbidden_paths):
             read_only.append(p)
@@ -1299,6 +1392,10 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
     for zone in mutation_model.get("requires_explicit_authorization", []) or []:
         if zone and zone not in forbidden:
             forbidden.append(str(zone))
+    allowed = [
+        path for path in allowed
+        if not is_restricted_edit_bucket_path(path, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+    ]
     categories = _dedupe_categories({
         "forbidden_without_user_confirmation": forbidden,
         "read_only_context_files": read_only[:30],
@@ -1538,6 +1635,21 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             "evidence_flags": sorted(flags),
             "reason": entry.get("reason") or "not directly implicated",
         }
+        safety = classify_path_for_routing(
+            str(entry.get("path") or ""),
+            raw_prompt,
+            prompt_forbidden_paths=prompt_forbidden_paths,
+        )
+        if safety["category"] in {"generated_or_build_output", "secret_state_proof_runtime", "forbidden_or_prompt_blocked"} and not safety.get("editable"):
+            excluded.append({
+                "path": entry["path"],
+                "reason": safety.get("reason") or "central routing safety excluded from selected context",
+                "safety_category": safety.get("category"),
+                "why_excluded": _why_excluded(manifest, reason=str(safety.get("reason") or "central routing safety excluded from selected context")),
+            })
+            continue
+        if safety["category"] == "read_only_manifest":
+            strong = False
         if _is_ignore_boundary_path(str(entry.get("path") or "")) and "prompt_mentioned" not in flags:
             excluded.append({
                 "path": entry["path"],
@@ -1722,6 +1834,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         asset_manifest_filtered_count=asset_manifest_filtered_count,
     )
     _tighten_swiftui_scope_impact_map(impact_map, raw_prompt)
+    _enforce_central_routing_safety_impact_map(impact_map, raw_prompt, prompt_forbidden_paths)
     if isinstance(impact_map, dict) and _is_swiftui_tutorial_scope_prompt(raw_prompt):
         diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
         if isinstance(diagnostics, dict):
@@ -2490,8 +2603,10 @@ REVIEW_SECRET_LIKE_PATTERNS = [
     "**/id_rsa", "**/id_ed25519", "**/secrets.*", "**/credentials.*", "**/token.*",
 ]
 REVIEW_GENERATED_OR_STATE_PATTERNS = [
-    "dist/*", "build/*", "coverage/*", "_claw_output/*", "PROJECT/state/*",
-    "PROJECT/artifacts/generated/*", "*.generated.*", "*.pb.go", "*.g.dart",
+    "_output/*", "generated/*", "gen/*", "bazel-*", "build/*", "dist/*", "target/*", "out/*",
+    ".dart_tool/*", ".terraform/*", "tmp/*", "cache/*", ".cache/*", "coverage/*", "_claw_output/*",
+    "PROJECT/state/*", "PROJECT/artifacts/generated/*", "*.generated.*", "*.gen.*", "*_generated.*",
+    "*.pb.go", "*.g.dart",
 ]
 REVIEW_DEPENDENCY_OR_BUILD_PATTERNS = [
     "pyproject.toml", "requirements*.txt", "package.json", "pnpm-lock.yaml", "yarn.lock",
@@ -2564,11 +2679,16 @@ def _review_contract_from_manifest(manifest: dict[str, Any], *, packet_sha256: s
                 out.append(text)
                 seen.add(key)
         return out[:100]
+    cleaned_allowed = clean(allowed)
+    cleaned_allowed = [
+        path for path in cleaned_allowed
+        if not is_restricted_edit_bucket_path(path, "", prompt_forbidden_paths=set(prompt_forbidden))
+    ]
     return {
         "schema_version": 1,
         "packet_sha256": packet_sha256 or (manifest.get("metrics") or {}).get("packet_sha256"),
         "raw_prompt_sha256": manifest.get("raw_prompt_sha256"),
-        "allowed_edit_files": clean(allowed),
+        "allowed_edit_files": cleaned_allowed,
         "allowed_if_justified": clean(allowed_if),
         "forbidden_without_user_confirmation": clean(forbidden),
         "prompt_forbidden_files": clean(prompt_forbidden),

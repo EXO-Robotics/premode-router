@@ -13,7 +13,10 @@ from premode.review_patch import review_patch
 
 
 def _git(repo: Path, *args: str) -> None:
-    subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
+    try:
+        subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True, timeout=30)
+    except subprocess.TimeoutExpired as exc:
+        raise AssertionError(f"git {' '.join(args)} timed out in {repo}") from exc
 
 
 def _prepare(repo: Path) -> None:

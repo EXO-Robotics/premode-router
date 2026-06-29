@@ -180,6 +180,28 @@ def _discover_swift(repo_root: Path) -> dict[str, Any]:
     return {"commands": commands, "sources": sources}
 
 
+def _discover_jvm(repo_root: Path) -> dict[str, Any]:
+    commands: dict[str, Any] = {}
+    sources: list[str] = []
+    if (repo_root / "mvnw").exists():
+        commands["test"] = _cmd("./mvnw test", source="mvnw", description="Maven wrapper test command", confidence=0.9)
+        sources.append("mvnw")
+    elif (repo_root / "pom.xml").exists():
+        commands["test"] = _cmd("mvn test", source="pom.xml", description="Maven test command", confidence=0.82)
+        sources.append("pom.xml")
+
+    gradle_markers = ["build.gradle", "settings.gradle", "build.gradle.kts", "settings.gradle.kts"]
+    if (repo_root / "gradlew").exists():
+        commands.setdefault("test", _cmd("./gradlew test", source="gradlew", description="Gradle wrapper test command", confidence=0.9))
+        commands["gradle_test"] = _cmd("./gradlew test", source="gradlew", description="Gradle wrapper test command", confidence=0.9)
+        sources.append("gradlew")
+    elif any((repo_root / marker).exists() for marker in gradle_markers):
+        commands.setdefault("test", _cmd("gradle test", source="Gradle build files", description="Gradle test command", confidence=0.78))
+        commands["gradle_test"] = _cmd("gradle test", source="Gradle build files", description="Gradle test command", confidence=0.78)
+        sources.extend(marker for marker in gradle_markers if (repo_root / marker).exists())
+    return {"commands": commands, "sources": sorted(set(sources))}
+
+
 def _root_path(repo_root: Path, detection: dict[str, Any]) -> Path:
     root = str((detection.get("active_project") or {}).get("root") or ".")
     return repo_root if root == "." else repo_root / root
@@ -197,6 +219,8 @@ def discover_commands(repo_root: Path, detection: dict[str, Any] | None = None) 
         found = _discover_node(project_root)
     elif kind == "ios_swift":
         found = _discover_swift(project_root)
+    elif kind == "java_kotlin":
+        found = _discover_jvm(project_root)
     elif kind == "rust" and (project_root / "Cargo.toml").exists():
         found = {"commands": {"build": _cmd("cargo check", source="Cargo.toml", description="Rust compile check", confidence=0.85), "test": _cmd("cargo test", source="Cargo.toml", description="Rust tests", confidence=0.85)}, "sources": ["Cargo.toml"]}
     elif kind == "go" and (project_root / "go.mod").exists():
