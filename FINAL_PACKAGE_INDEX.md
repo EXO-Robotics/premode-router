@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.19 Reliability + Central Routing Safety Invariants
+# Final Package Index — v0.2.6.20 Ecosystem Adapter Expansion + Untracked Boundary Review
 
 This package is the current release-candidate base for external Codex testing.
 
@@ -59,6 +59,7 @@ premode benchmark --profile lite
 
 ```text
 tests/test_v263_benchmark.py
+tests/test_v2620_ecosystem_adapters.py
 tests/test_v2619_routing_safety.py
 tests/test_v269_metadata_root.py
 tests/test_v267_codex_cli_compat.py

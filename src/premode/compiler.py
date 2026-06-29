@@ -56,7 +56,7 @@ STRONG_FULL_TEXT_FLAGS = {"prompt_mentioned", "dirty_file", "first_meaningful_er
 KNOWN_PROMPT_PATH_EXTENSIONS = {
     ".py", ".swift", ".md", ".json", ".toml", ".yaml", ".yml", ".log",
     ".trace", ".txt", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs",
-    ".java", ".kt", ".c", ".cpp", ".h", ".hpp", ".plist",
+    ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".tfvars", ".c", ".cpp", ".h", ".hpp", ".plist",
 }
 GUIDANCE_NAMES = {"readme.md", "readme", "agents.md", "codex.md", "rules.md"}
 TRUSTED_GUIDANCE_NAMES = {"agents.md", "codex.md", "rules.md"}
@@ -264,13 +264,29 @@ def _extract_path_like_mentions_unindexed(text: str) -> set[str]:
         has_known_ext = suffix in KNOWN_PROMPT_PATH_EXTENSIONS
         # Keep explicit file paths and common repo-relative directories used in
         # negative prompts. Avoid plain words like "assets" unless indexed.
-        if has_known_ext and (has_separator or Path(token).name.lower() in {"package.json", "pyproject.toml", "package.swift", "cargo.toml", "go.mod", "makefile", "sconstruct", "cmakelists.txt"}):
+        if has_known_ext and (has_separator or Path(token).name.lower() in {"package.json", "composer.json", "pyproject.toml", "package.swift", "cargo.toml", "go.mod", "pom.xml", "makefile", "sconstruct", "cmakelists.txt"}):
             out.add(token)
         elif has_separator and not token.startswith("http"):
             out.add(token.rstrip("/"))
         elif token.startswith("_") and len(token) > 2:
             out.add(token.rstrip("/"))
     return out
+
+
+def _negative_directory_patterns(clause: str) -> set[str]:
+    text = (clause or "").lower()
+    patterns: set[str] = set()
+    if re.search(r"\bnotebooks?\b", text):
+        patterns.update({"notebooks/**", "*.ipynb"})
+    if re.search(r"\bdata\b", text):
+        patterns.add("data/**")
+    if re.search(r"\bassets?\b", text):
+        patterns.update({"assets/**", "Assets.xcassets/**"})
+    if re.search(r"\b(?:model\s+)?checkpoints?\b", text):
+        patterns.update({"models/**", "checkpoints/**", "*.ckpt", "*.pt", "*.pth", "*.onnx", "*.bin"})
+    if re.search(r"\bmodels?\b", text) and re.search(r"\bcheckpoints?\b", text):
+        patterns.update({"models/**", "checkpoints/**"})
+    return patterns
 
 
 def _extract_prompt_forbidden_paths(raw_prompt: str, entries: list[dict[str, Any]]) -> set[str]:
@@ -285,6 +301,7 @@ def _extract_prompt_forbidden_paths(raw_prompt: str, entries: list[dict[str, Any
         clause = match.group(0)
         forbidden.update(_extract_path_like_mentions_unindexed(clause))
         forbidden.update(_extract_mentioned_paths(clause, entries))
+        forbidden.update(_negative_directory_patterns(clause))
     return forbidden
 
 
@@ -488,7 +505,7 @@ def _metadata_path_category(path: str) -> str:
         return "test"
     if lower.startswith("docs/") or suffix in {".md", ".rst", ".txt"}:
         return "docs"
-    if suffix in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".c", ".cc", ".cpp", ".h", ".hpp"}:
+    if suffix in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp"}:
         return "source"
     if name in {"pyproject.toml", "package.json", "cargo.toml", "go.mod", "package.swift", "sconstruct", "cmakelists.txt"} or suffix in {".json", ".toml", ".yaml", ".yml", ".plist", ".ini", ".cfg"}:
         return "config"
@@ -1266,7 +1283,7 @@ def _is_protected_metadata_path(path: str) -> bool:
 
 
 def _is_source_path_for_boundary(path: str) -> bool:
-    return Path(path).suffix.lower() in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".c", ".cc", ".cpp", ".h", ".hpp"}
+    return Path(path).suffix.lower() in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp"}
 
 
 def _is_test_path_for_boundary(path: str) -> bool:
@@ -2606,13 +2623,14 @@ REVIEW_GENERATED_OR_STATE_PATTERNS = [
     "_output/*", "generated/*", "gen/*", "bazel-*", "build/*", "dist/*", "target/*", "out/*",
     ".dart_tool/*", ".terraform/*", "tmp/*", "cache/*", ".cache/*", "coverage/*", "_claw_output/*",
     "PROJECT/state/*", "PROJECT/artifacts/generated/*", "*.generated.*", "*.gen.*", "*_generated.*",
-    "*.pb.go", "*.g.dart",
+    "*.pb.go", "*.g.dart", "*.tfstate", "*.tfstate.backup", "*.ckpt", "*.pt", "*.pth", "*.onnx",
 ]
 REVIEW_DEPENDENCY_OR_BUILD_PATTERNS = [
     "pyproject.toml", "requirements*.txt", "package.json", "pnpm-lock.yaml", "yarn.lock",
     "package-lock.json", "bun.lock", "bun.lockb", "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
     "Package.swift", "*.xcodeproj/*", "*.xcworkspace/*", "build.gradle", "settings.gradle",
-    "pom.xml", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
+    "pom.xml", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", "Rakefile",
+    ".terraform.lock.hcl", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
 ]
 REVIEW_CI_PATTERNS = [".github/workflows/*", ".gitlab-ci.yml", ".circleci/*", "azure-pipelines.yml", "Jenkinsfile"]
 

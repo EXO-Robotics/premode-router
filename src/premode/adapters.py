@@ -13,6 +13,9 @@ PRIMARY_ROOT_MARKERS: tuple[str, ...] = (
     ".git",
     "pyproject.toml",
     "package.json",
+    "mix.exs",
+    "composer.json",
+    "Gemfile",
     "Cargo.toml",
     "go.mod",
     "Package.swift",
@@ -27,6 +30,9 @@ PRIMARY_ROOT_MARKERS: tuple[str, ...] = (
     "settings.gradle",
     "build.gradle.kts",
     "settings.gradle.kts",
+    ".terraform.lock.hcl",
+    "backend.tf",
+    "providers.tf",
     ".xcodeproj",
     ".xcworkspace",
     "ProjectSettings",
@@ -37,6 +43,9 @@ ROOT_MARKER_PRIORITY: dict[str, int] = {
     ".git": 130,
     "pyproject.toml": 100,
     "package.json": 100,
+    "mix.exs": 105,
+    "composer.json": 106,
+    "gemfile": 106,
     "cargo.toml": 100,
     "go.mod": 100,
     "package.swift": 100,
@@ -51,6 +60,9 @@ ROOT_MARKER_PRIORITY: dict[str, int] = {
     "settings.gradle": 95,
     "build.gradle.kts": 95,
     "settings.gradle.kts": 95,
+    ".terraform.lock.hcl": 88,
+    "backend.tf": 96,
+    "providers.tf": 96,
     ".xcodeproj": 95,
     ".xcworkspace": 95,
     "projectsettings": 85,
@@ -141,10 +153,12 @@ def _matched_primary_marker(rel_path: str) -> tuple[str, int] | None:
     if lower_name == ".git":
         return name, ROOT_MARKER_PRIORITY[".git"]
     if lower_name in {m.lower() for m in PRIMARY_ROOT_MARKERS if not m.startswith(".")}:
+        if lower_name in {"assets", "projectsettings"} and name not in {"Assets", "ProjectSettings"}:
+            return None
         return name, ROOT_MARKER_PRIORITY.get(lower_name, 70)
-    if lower_path in {"assets", "projectsettings"}:
+    if p in {"Assets", "ProjectSettings"}:
         return name, ROOT_MARKER_PRIORITY.get(lower_path, 70)
-    if lower_path.endswith("/assets") or lower_path.endswith("/projectsettings"):
+    if p.endswith("/Assets") or p.endswith("/ProjectSettings"):
         return name, ROOT_MARKER_PRIORITY.get(lower_name, 70)
     for suffix in (".xcodeproj", ".xcworkspace"):
         if lower_name.endswith(suffix):
@@ -338,7 +352,7 @@ class Adapter:
 ADAPTERS: dict[str, Adapter] = {
     "generic": Adapter(
         "generic", "Generic repository", (".git", "README", "README.md"),
-        (".py", ".js", ".ts", ".tsx", ".jsx", ".swift", ".rs", ".go", ".java", ".kt", ".c", ".cc", ".cpp", ".h", ".hpp", ".md"),
+        (".py", ".js", ".ts", ".tsx", ".jsx", ".swift", ".rs", ".go", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp", ".md"),
         ("build", "test"), ("src", "lib", "app", "tests", "test", "docs", "logs"),
         ("AGENTS.md", "README.md", "README", "CONTRIBUTING.md", "CHANGELOG.md"),
         ("error:", "failed", "traceback", "exception", "fatal"),
@@ -402,6 +416,42 @@ ADAPTERS: dict[str, Adapter] = {
         "go", "Go", ("go.mod", "go.sum"), (".go",), ("go",), ("cmd", "pkg", "internal", "test"),
         ("go.mod", "go.sum"), ("cannot find package", "undefined:", "go test", "panic:"),
     ),
+    "elixir_phoenix": Adapter(
+        "elixir_phoenix", "Elixir / Phoenix / Mix",
+        ("mix.exs", "mix.lock", "config", "priv"),
+        (".ex", ".exs"),
+        ("mix",),
+        ("lib", "test", "config", "priv", "assets"),
+        ("mix.exs", "mix.lock", "config/config.exs", "config/runtime.exs"),
+        ("** (", "mix test", "Compilation error", "UndefinedFunctionError", "Phoenix"),
+    ),
+    "php_composer": Adapter(
+        "php_composer", "PHP / Composer",
+        ("composer.json", "composer.lock", "phpunit.xml", "phpunit.xml.dist"),
+        (".php",),
+        ("composer", "phpunit", "php"),
+        ("core", "plugins", "src", "app", "tests", "tests/PHPUnit"),
+        ("composer.json", "composer.lock", "phpunit.xml", "phpunit.xml.dist"),
+        ("PHP Fatal error", "PHPUnit", "Parse error", "composer"),
+    ),
+    "ruby_rails": Adapter(
+        "ruby_rails", "Ruby / Rails",
+        ("Gemfile", "Gemfile.lock", "Rakefile", "config/routes.rb"),
+        (".rb",),
+        ("bundle", "rails", "rake"),
+        ("app", "lib", "spec", "test", "config"),
+        ("Gemfile", "Gemfile.lock", "Rakefile", "config/routes.rb"),
+        ("RSpec", "Failure/Error", "NameError", "bundle exec", "rails test"),
+    ),
+    "terraform": Adapter(
+        "terraform", "Terraform / IaC",
+        ("backend.tf", "providers.tf", ".terraform.lock.hcl"),
+        (".tf", ".tfvars"),
+        ("terraform",),
+        ("modules", "environments", "envs"),
+        ("backend.tf", "providers.tf", ".terraform.lock.hcl"),
+        ("terraform", "Error:", "Invalid value", "Unsupported argument"),
+    ),
 
     "native_cpp": Adapter(
         "native_cpp", "Native C/C++ / SCons/CMake Engine",
@@ -461,9 +511,10 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
     markers: list[str] = []
     count = 0
     file_markers = {
-        "pyproject.toml", "package.json", "cargo.toml", "go.mod",
+        "pyproject.toml", "package.json", "mix.exs", "composer.json", "composer.lock", "gemfile", "gemfile.lock",
+        "cargo.toml", "go.mod",
         "package.swift", "pom.xml", "build.gradle", "settings.gradle",
-        "build.gradle.kts", "settings.gradle.kts",
+        "build.gradle.kts", "settings.gradle.kts", ".terraform.lock.hcl", "backend.tf", "providers.tf",
     }
     for current, dirs, files in os.walk(repo_root):
         cur = Path(current)
@@ -476,7 +527,7 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
             if lower == ".git":
                 markers.append(rel)
                 continue
-            if lower.endswith((".xcodeproj", ".xcworkspace")) or lower in {"assets", "projectsettings"}:
+            if lower.endswith((".xcodeproj", ".xcworkspace")) or d in {"Assets", "ProjectSettings"}:
                 markers.append(rel)
                 # Do not descend into package/project marker directories.
                 continue
@@ -487,7 +538,7 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
                 break
         dirs[:] = kept_dirs
         for f in files:
-            if f.lower() in file_markers or f in {"SConstruct", "SCsub", "CMakeLists.txt", "BUILD.bazel", "WORKSPACE"} or f.lower() == "meson.build":
+            if f.lower() in file_markers or f in {"SConstruct", "SCsub", "CMakeLists.txt", "BUILD.bazel", "WORKSPACE", "Gemfile", "Rakefile"} or f.lower() == "meson.build" or f.endswith((".unity", ".asmdef", ".tf")):
                 markers.append(f"{rel_cur}/{f}".strip("/"))
         if count >= max_dirs:
             break
@@ -615,6 +666,8 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
             matched_adapter_marker = False
             for marker in adapter.markers:
                 ml = marker.lower()
+                if kind == "unity" and ml == "assets" and name != "Assets":
+                    continue
                 if ml.startswith(".") and pl.endswith(ml):
                     matched_adapter_marker = True
                 elif "/" in ml and pl.endswith(ml):
@@ -632,12 +685,30 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
                 marker_roots[root] = max(marker_roots.get(root, 0), priority)
 
         if kind == "unity":
+            strong_unity = any(
+                p == "ProjectSettings/ProjectVersion.txt"
+                or p == "Packages/manifest.json"
+                or p.endswith(".unity")
+                or p.endswith(".asmdef")
+                or p == "ProjectSettings"
+                or p.startswith("ProjectSettings/")
+                for p in rel_paths
+            )
+            has_upper_assets = "Assets" in rel_set or any(p.startswith("Assets/") for p in rel_paths)
+            has_project_settings = "ProjectSettings" in rel_set or any(p.startswith("ProjectSettings/") for p in rel_paths)
             if "Assets" in rel_set or any(p.startswith("Assets/") for p in rel_paths):
                 markers.append("Assets/")
                 marker_roots["."] = max(marker_roots.get(".", 0), ROOT_MARKER_PRIORITY["assets"])
             if "ProjectSettings" in rel_set or any(p.startswith("ProjectSettings/") for p in rel_paths):
                 markers.append("ProjectSettings/")
                 marker_roots["."] = max(marker_roots.get(".", 0), ROOT_MARKER_PRIORITY["projectsettings"])
+            if not strong_unity and not (has_upper_assets and has_project_settings):
+                continue
+
+        if kind == "terraform" and ext_hits:
+            marker_roots["."] = max(marker_roots.get(".", 0), 96)
+            if not markers:
+                markers.append("terraform_files")
 
         if kind == "native_cpp":
             native_markers = {m for m in markers if Path(m).name in {"SConstruct", "SCsub", "CMakeLists.txt", "meson.build", "BUILD.bazel", "WORKSPACE"}}
@@ -687,6 +758,10 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
         ext_score = min(0.30, 0.02 * ext_hits)
         prompt_score = 0.10 if (kind.replace("_", " ") in prompt_l or kind.split("_")[0] in prompt_l) else 0
         confidence = round(min(0.99, 0.32 + marker_score + ext_score + prompt_score), 2)
+        if kind in {"elixir_phoenix", "php_composer", "ruby_rails", "terraform"} and markers:
+            confidence = round(min(0.99, confidence + 0.12), 2)
+        if kind == "node" and any(Path(p).name in {"mix.exs", "composer.json", "Gemfile"} for p in rel_paths):
+            confidence = round(max(0.10, confidence - 0.18), 2)
         confidence = round(max(0.10, confidence - min(0.35, _root_penalty(root) / 800)), 2)
         extra: dict[str, Any] = {}
         if kind == "openclaw_control_plane" and markers:

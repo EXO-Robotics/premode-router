@@ -16,7 +16,7 @@ from .routing_safety import classify_path_for_routing, is_restricted_edit_bucket
 from .safe_reader import safe_read
 from .timeutil import timestamp_iso
 
-SOURCE_EXTENSIONS = {'.py', '.swift', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.rs', '.go', '.java', '.kt', '.c', '.cpp', '.h', '.hpp'}
+SOURCE_EXTENSIONS = {'.py', '.swift', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.rs', '.go', '.java', '.kt', '.ex', '.exs', '.php', '.rb', '.tf', '.c', '.cpp', '.h', '.hpp'}
 CONFIG_EXTENSIONS = {'.json', '.toml', '.yaml', '.yml', '.plist'}
 IGNORE_BOUNDARY_SEGMENTS = {
     '_external_references',
@@ -287,6 +287,14 @@ def _language_for_path(path: str) -> str:
         return 'cpp'
     if suffix in {'.java', '.kt', '.kts'}:
         return 'jvm'
+    if suffix in {'.ex', '.exs'}:
+        return 'elixir'
+    if suffix == '.php':
+        return 'php'
+    if suffix == '.rb':
+        return 'ruby'
+    if suffix in {'.tf', '.tfvars'}:
+        return 'terraform'
     if suffix in {'.md', '.rst'} or name in {'readme', 'readme.md', 'agents.md'}:
         return 'markdown'
     if suffix == '.json':
@@ -656,6 +664,10 @@ def _is_test_file(path: str, info: dict[str, Any] | None = None) -> bool:
         or name.endswith('.spec.js')
         or '.test.' in name
         or name.endswith('tests.swift')
+        or name.endswith('_test.exs')
+        or name.endswith('test.php')
+        or name.endswith('_spec.rb')
+        or name.endswith('_test.rb')
     )
 
 
@@ -665,7 +677,8 @@ def _source_test_name_candidates(path: str) -> set[str]:
     parent = Path(p).parent.name
     c = {
         f'test_{stem}', f'{stem}_test', f'test_{parent}', f'{parent}_test',
-        f'{stem}tests', f'{parent}tests',
+        f'{stem}test', f'{parent}test', f'{stem}tests', f'{parent}tests',
+        f'{stem}_spec', f'{parent}_spec', f'{stem}spec', f'{parent}spec',
     }
     if stem.startswith('_'):
         c.add(f'test_{stem[1:]}')
@@ -780,6 +793,28 @@ def _related_tests_for(path: str, all_paths: set[str]) -> list[str]:
         candidates.add(f'{parent}/__tests__/{stem}.test.ts')
     elif suffix == '.swift':
         candidates.update({f'Tests/{stem}Tests.swift', f'{stem}Tests.swift'})
+    elif suffix == '.ex':
+        candidates.update({p.replace('/lib/', '/test/').replace('.ex', '_test.exs'), f'test/{stem}_test.exs'})
+    elif suffix == '.php':
+        candidates.update({
+            p.replace('plugins/', 'tests/PHPUnit/Plugins/').replace('.php', 'Test.php'),
+            p.replace('core/', 'tests/PHPUnit/Core/').replace('.php', 'Test.php'),
+            p.replace('src/', 'tests/').replace('.php', 'Test.php'),
+            f'tests/PHPUnit/{stem}Test.php',
+        })
+    elif suffix == '.rb':
+        candidates.update({
+            p.replace('app/', 'spec/').replace('.rb', '_spec.rb'),
+            p.replace('lib/', 'spec/lib/').replace('.rb', '_spec.rb'),
+            p.replace('app/', 'test/').replace('.rb', '_test.rb'),
+            f'spec/{stem}_spec.rb',
+            f'test/{stem}_test.rb',
+        })
+    elif suffix == '.kt':
+        candidates.update({
+            p.replace('/src/main/', '/src/test/').replace('.kt', 'Test.kt'),
+            p.replace('/src/main/', '/src/androidTest/').replace('.kt', 'Test.kt'),
+        })
     return sorted(c for c in candidates if c in all_paths)[:40]
 
 
@@ -1030,6 +1065,18 @@ def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], relat
             stem = Path(path).stem
             if path.startswith('tests/') and stem not in {'test', 'tests'}:
                 add(f'cargo test --test {stem}', 'targeted Rust integration test from repo map')
+        elif suffix == '.exs':
+            add(f'mix test {path}', 'targeted related Elixir test from repo map')
+        elif suffix == '.php':
+            add(f'vendor/bin/phpunit {path}', 'targeted related PHPUnit test from repo map')
+        elif suffix == '.rb':
+            if '/spec/' in f'/{path}' or path.startswith('spec/'):
+                add(f'bundle exec rspec {path}', 'targeted related RSpec test from repo map')
+            else:
+                add(f'bin/rails test {path}', 'targeted related Ruby/Rails test from repo map')
+        elif suffix in {'.java', '.kt'}:
+            if path.startswith('app/src/test/') or path.startswith('app/src/androidTest/'):
+                add('./gradlew :app:testDebugUnitTest', 'targeted Android/Kotlin related test from repo map')
     if 'rust' in languages:
         add('cargo check', 'Rust impacted files detected')
         add('cargo test', 'Rust impacted files detected')
@@ -1039,6 +1086,19 @@ def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], relat
         add('swift test', 'Swift impacted files detected')
     if 'go' in languages:
         add('go test ./...', 'Go impacted files detected')
+    if 'elixir' in languages:
+        add('mix test', 'Elixir impacted files detected')
+        add('mix compile', 'Elixir impacted files detected')
+    if 'php' in languages:
+        add('vendor/bin/phpunit', 'PHP impacted files detected')
+    if 'ruby' in languages:
+        add('bundle exec rspec', 'Ruby impacted files detected')
+    if 'terraform' in languages:
+        add('terraform fmt -check', 'Terraform impacted files detected')
+        add('terraform validate', 'Terraform impacted files detected')
+    if 'jvm' in languages and any(path.startswith('app/src/') for path in likely_paths):
+        add('./gradlew :app:testDebugUnitTest', 'Android/Kotlin impacted app module detected')
+        add('./gradlew :app:assembleDebug', 'Android/Kotlin impacted app module detected')
     if {'typescript', 'javascript'} & languages:
         pm = str(repo_map.get('package_manager') or 'none')
         if pm != 'none':

@@ -192,7 +192,11 @@ def _discover_jvm(repo_root: Path) -> dict[str, Any]:
 
     gradle_markers = ["build.gradle", "settings.gradle", "build.gradle.kts", "settings.gradle.kts"]
     if (repo_root / "gradlew").exists():
-        commands.setdefault("test", _cmd("./gradlew test", source="gradlew", description="Gradle wrapper test command", confidence=0.9))
+        if (repo_root / "app" / "build.gradle").exists() or (repo_root / "app" / "build.gradle.kts").exists():
+            commands["test"] = _cmd("./gradlew :app:testDebugUnitTest", source="gradlew + app module", description="Android app module unit tests", confidence=0.9)
+            commands["build"] = _cmd("./gradlew :app:assembleDebug", source="gradlew + app module", description="Android app module debug build", confidence=0.85)
+        else:
+            commands.setdefault("test", _cmd("./gradlew test", source="gradlew", description="Gradle wrapper test command", confidence=0.9))
         commands["gradle_test"] = _cmd("./gradlew test", source="gradlew", description="Gradle wrapper test command", confidence=0.9)
         sources.append("gradlew")
     elif any((repo_root / marker).exists() for marker in gradle_markers):
@@ -200,6 +204,68 @@ def _discover_jvm(repo_root: Path) -> dict[str, Any]:
         commands["gradle_test"] = _cmd("gradle test", source="Gradle build files", description="Gradle test command", confidence=0.78)
         sources.extend(marker for marker in gradle_markers if (repo_root / marker).exists())
     return {"commands": commands, "sources": sorted(set(sources))}
+
+
+def _discover_elixir(repo_root: Path) -> dict[str, Any]:
+    if not (repo_root / "mix.exs").exists():
+        return {"commands": {}, "sources": []}
+    return {
+        "commands": {
+            "test": _cmd("mix test", source="mix.exs", description="Elixir/Mix test command", confidence=0.9),
+            "build": _cmd("mix compile", source="mix.exs", description="Elixir/Mix compile command", confidence=0.85),
+        },
+        "sources": ["mix.exs"],
+    }
+
+
+def _discover_php(repo_root: Path) -> dict[str, Any]:
+    commands: dict[str, Any] = {}
+    sources: list[str] = []
+    if (repo_root / "vendor" / "bin" / "phpunit").exists():
+        commands["test"] = _cmd("vendor/bin/phpunit", source="vendor/bin/phpunit", description="Composer-installed PHPUnit", confidence=0.9)
+        sources.append("vendor/bin/phpunit")
+    composer = repo_root / "composer.json"
+    if composer.exists():
+        sources.append("composer.json")
+        try:
+            data = json.loads(_read(composer))
+        except Exception:
+            data = {}
+        scripts = data.get("scripts") if isinstance(data, dict) else {}
+        if isinstance(scripts, dict) and "test" in scripts and "test" not in commands:
+            commands["test"] = _cmd("composer test", source="composer.json scripts.test", description="Composer test script", confidence=0.82)
+    if (repo_root / "phpunit.xml").exists() or (repo_root / "phpunit.xml.dist").exists():
+        commands.setdefault("test", _cmd("phpunit", source="phpunit.xml", description="PHPUnit fallback", confidence=0.65))
+        sources.extend([p.name for p in (repo_root / "phpunit.xml", repo_root / "phpunit.xml.dist") if p.exists()])
+    return {"commands": commands, "sources": sorted(set(sources))}
+
+
+def _discover_ruby(repo_root: Path) -> dict[str, Any]:
+    commands: dict[str, Any] = {}
+    sources: list[str] = []
+    if (repo_root / "Gemfile").exists():
+        commands["test"] = _cmd("bundle exec rspec", source="Gemfile", description="RSpec test command", confidence=0.82)
+        sources.append("Gemfile")
+    if (repo_root / "bin" / "rails").exists():
+        commands["rails_test"] = _cmd("bin/rails test", source="bin/rails", description="Rails/Minitest command", confidence=0.8)
+        commands.setdefault("test", commands["rails_test"])
+        sources.append("bin/rails")
+    elif (repo_root / "config" / "routes.rb").exists():
+        commands.setdefault("rails_test", _cmd("bundle exec rails test", source="config/routes.rb", description="Rails/Minitest command", confidence=0.68))
+    return {"commands": commands, "sources": sorted(set(sources))}
+
+
+def _discover_terraform(repo_root: Path) -> dict[str, Any]:
+    has_tf = any(repo_root.glob("*.tf")) or (repo_root / "modules").exists()
+    if not has_tf:
+        return {"commands": {}, "sources": []}
+    return {
+        "commands": {
+            "fmt": _cmd("terraform fmt -check", source="Terraform files", description="Terraform formatting check", confidence=0.85),
+            "validate": _cmd("terraform validate", source="Terraform files", description="Terraform validation", confidence=0.8),
+        },
+        "sources": ["Terraform files"],
+    }
 
 
 def _root_path(repo_root: Path, detection: dict[str, Any]) -> Path:
@@ -221,6 +287,14 @@ def discover_commands(repo_root: Path, detection: dict[str, Any] | None = None) 
         found = _discover_swift(project_root)
     elif kind == "java_kotlin":
         found = _discover_jvm(project_root)
+    elif kind == "elixir_phoenix":
+        found = _discover_elixir(project_root)
+    elif kind == "php_composer":
+        found = _discover_php(project_root)
+    elif kind == "ruby_rails":
+        found = _discover_ruby(project_root)
+    elif kind == "terraform":
+        found = _discover_terraform(project_root)
     elif kind == "rust" and (project_root / "Cargo.toml").exists():
         found = {"commands": {"build": _cmd("cargo check", source="Cargo.toml", description="Rust compile check", confidence=0.85), "test": _cmd("cargo test", source="Cargo.toml", description="Rust tests", confidence=0.85)}, "sources": ["Cargo.toml"]}
     elif kind == "go" and (project_root / "go.mod").exists():

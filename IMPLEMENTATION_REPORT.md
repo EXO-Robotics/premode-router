@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.19
+# Implementation Report — Pre-mode Router v0.2.6.20
 
 ## Release summary
 
-`v0.2.6.19 — Reliability + Central Routing Safety Invariants` adds a shared generated/build/state/proof/runtime and manifest safety floor before packet or review-contract output is emitted.
+`v0.2.6.20 — Ecosystem Adapter Expansion + Untracked Boundary Review` expands supported repo families and strengthens review-patch coverage for untracked forbidden/generated/secret files.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.20 changes
+
+- Bumped package version to `0.2.6.20`.
+- Added Elixir/Phoenix, PHP/Composer, Ruby/Rails, and Terraform detection, routing, related-test mapping, and command discovery.
+- Hardened Unity detection so lowercase web `assets/` cannot outrank Mix/Phoenix markers without true Unity markers.
+- Improved Android/Kotlin Gradle wrapper commands and app-module verification suggestions.
+- Extended review-patch and saved contracts for untracked generated/proof/state/secret files and directory-level negative prompt boundaries.
 
 ## v0.2.6.19 changes
 

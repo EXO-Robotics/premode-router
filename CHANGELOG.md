@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.6.20
+
+- Added Elixir/Phoenix, PHP/Composer, Ruby/Rails, and Terraform adapter detection, source routing, related-test mapping, and command discovery.
+- Hardened Unity detection so lowercase web `assets/` no longer triggers Unity without real Unity markers.
+- Improved Android/Kotlin Gradle wrapper commands and app-module test/build suggestions.
+- Extended review-patch coverage for untracked generated/proof/state/secret files and directory-level negative prompt patterns.
+- Preserved central v0.2.6.19 routing safety invariants while extending manifest/generated classifications.
+- Bumped package version to `0.2.6.20`.
+
 ## v0.2.6.19
 
 - Added central routing safety invariants for generated/build/output/state/proof/runtime paths and read-only manifests before packet and review-contract output.

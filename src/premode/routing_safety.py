@@ -39,6 +39,11 @@ RUNTIME_STATE_SEGMENTS = {
 
 READ_ONLY_MANIFEST_NAMES = {
     "package.json",
+    "composer.json",
+    "composer.lock",
+    "gemfile",
+    "gemfile.lock",
+    "rakefile",
     "package-lock.json",
     "pnpm-lock.yaml",
     "yarn.lock",
@@ -59,6 +64,7 @@ READ_ONLY_MANIFEST_NAMES = {
     "build.gradle.kts",
     "settings.gradle",
     "settings.gradle.kts",
+    ".terraform.lock.hcl",
     "makefile",
     "sconstruct",
     "cmakelists.txt",
@@ -143,6 +149,12 @@ def is_generated_or_build_output_path(path: str) -> bool:
         or ".generated." in lower
         or ".gen." in lower
         or "_generated." in lower
+        or name.endswith(".tfstate")
+        or name.endswith(".tfstate.backup")
+        or name.endswith(".ckpt")
+        or name.endswith(".pt")
+        or name.endswith(".pth")
+        or name.endswith(".onnx")
     )
 
 

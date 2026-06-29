@@ -376,3 +376,45 @@ def test_review_patch_since_compile_uses_saved_head(repo):
     assert result["base_ref_used"] == saved_head
     assert result["diff_metadata"]["review_mode"] == "since_compile"
     assert "src/app.py" in result["changed_files"]
+
+
+def test_untracked_generated_output_after_compile_blocks_since_compile(repo):
+    _prepare(repo)
+    _compile(repo, "Fix src/app.py without touching generated outputs or _claw_output.")
+    (repo / "_claw_output" / "foo").mkdir(parents=True)
+    (repo / "_claw_output" / "foo" / "result.txt").write_text("runtime proof\n", encoding="utf-8")
+    result = review_patch(repo, since_compile=True)
+    assert result["merge_readiness"] == "blocked"
+    assert "_claw_output/foo/result.txt" in result["generated_or_state_mutation"]
+
+
+def test_untracked_secret_like_file_after_compile_blocks(repo):
+    _prepare(repo)
+    _compile(repo, "Fix src/app.py")
+    (repo / ".env.local").write_text("TOKEN=abc\n", encoding="utf-8")
+    result = review_patch(repo, since_compile=True)
+    assert result["merge_readiness"] == "blocked"
+    assert ".env.local" in result["secret_like_paths_touched"]
+
+
+def test_preexisting_untracked_file_at_compile_ignored_when_unchanged(repo):
+    _prepare(repo)
+    (repo / "notes.txt").write_text("preexisting\n", encoding="utf-8")
+    _compile(repo, "Fix src/app.py")
+    result = review_patch(repo, since_compile=True)
+    assert result["merge_readiness"] == "pass"
+    assert "notes.txt" in result["preexisting_changes"]
+    assert "notes.txt" not in result["changed_files"]
+
+
+def test_negative_directory_prompt_blocks_untracked_data_and_checkpoints(repo):
+    _prepare(repo)
+    _compile(repo, "Fix src/app.py. Do not touch notebooks, data, or model checkpoints.")
+    (repo / "data").mkdir()
+    (repo / "data" / "raw.csv").write_text("x\n", encoding="utf-8")
+    (repo / "models").mkdir()
+    (repo / "models" / "checkpoint.bin").write_text("weights\n", encoding="utf-8")
+    result = review_patch(repo, since_compile=True)
+    assert result["merge_readiness"] == "blocked"
+    assert "data/raw.csv" in result["prompt_forbidden_files_touched"]
+    assert "models/checkpoint.bin" in result["prompt_forbidden_files_touched"]

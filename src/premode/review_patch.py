@@ -21,7 +21,8 @@ DEPENDENCY_OR_BUILD_PATTERNS = [
     "pyproject.toml", "requirements*.txt", "package.json", "pnpm-lock.yaml", "yarn.lock",
     "package-lock.json", "bun.lock", "bun.lockb", "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
     "Package.swift", "*.xcodeproj/*", "*.xcworkspace/*", "build.gradle", "settings.gradle",
-    "pom.xml", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
+    "pom.xml", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", "Rakefile",
+    ".terraform.lock.hcl", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
 ]
 
 CI_PATTERNS = [
@@ -32,7 +33,7 @@ GENERATED_OR_STATE_PATTERNS = [
     "_output/*", "generated/*", "gen/*", "bazel-*", "build/*", "dist/*", "target/*", "out/*",
     ".dart_tool/*", ".terraform/*", "tmp/*", "cache/*", ".cache/*", "coverage/*", "_claw_output/*",
     "PROJECT/state/*", "PROJECT/artifacts/generated/*", "*.generated.*", "*.gen.*", "*_generated.*",
-    "*.pb.go", "*.g.dart",
+    "*.pb.go", "*.g.dart", "*.tfstate", "*.tfstate.backup", "*.ckpt", "*.pt", "*.pth", "*.onnx",
 ]
 
 TEST_PATH_PATTERNS = [
