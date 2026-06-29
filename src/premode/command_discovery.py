@@ -268,6 +268,66 @@ def _discover_terraform(repo_root: Path) -> dict[str, Any]:
     }
 
 
+def _discover_dotnet(repo_root: Path) -> dict[str, Any]:
+    commands: dict[str, Any] = {
+        "test": _cmd("dotnet test", source=".NET project files", description=".NET test command", confidence=0.85),
+        "build": _cmd("dotnet build", source=".NET project files", description=".NET build command", confidence=0.82),
+    }
+    sources: list[str] = []
+    for path in sorted(repo_root.glob("*.sln")):
+        sources.append(path.name)
+        break
+    csproj_paths = sorted(repo_root.glob("**/*.csproj"))
+    sources.extend(path.relative_to(repo_root).as_posix() for path in csproj_paths[:6])
+    test_projects = [
+        path
+        for path in csproj_paths
+        if any(part.lower() in {"test", "tests"} or part.lower().endswith(".tests") for part in path.relative_to(repo_root).parts)
+    ]
+    if test_projects:
+        rel = test_projects[0].relative_to(repo_root).as_posix()
+        commands["test_project"] = _cmd(f"dotnet test {rel}", source=rel, description="Targeted .NET test project", confidence=0.9)
+    return {"commands": commands, "sources": sorted(set(sources)) or [".NET project files"]}
+
+
+def _discover_zig(repo_root: Path) -> dict[str, Any]:
+    if not (repo_root / "build.zig").exists() and not any(repo_root.glob("src/*.zig")):
+        return {"commands": {}, "sources": []}
+    commands: dict[str, Any] = {
+        "test": _cmd("zig build test", source="build.zig", description="Zig build test command", confidence=0.88),
+    }
+    for path in sorted(list((repo_root / "test").glob("*.zig")) + list((repo_root / "tests").glob("*.zig"))):
+        rel = path.relative_to(repo_root).as_posix()
+        commands["test_file"] = _cmd(f"zig test {rel}", source=rel, description="Targeted Zig test file", confidence=0.78)
+        break
+    sources = [name for name in ("build.zig", "build.zig.zon") if (repo_root / name).exists()]
+    return {"commands": commands, "sources": sources or ["Zig files"]}
+
+
+def _discover_haskell(repo_root: Path) -> dict[str, Any]:
+    has_stack = (repo_root / "stack.yaml").exists()
+    has_cabal = (repo_root / "cabal.project").exists() or any(repo_root.glob("*.cabal"))
+    if not has_stack and not has_cabal:
+        return {"commands": {}, "sources": []}
+    if has_stack:
+        commands = {
+            "test": _cmd("stack test", source="stack.yaml", description="Stack test command", confidence=0.9),
+            "build": _cmd("stack build", source="stack.yaml", description="Stack build command", confidence=0.84),
+        }
+    else:
+        commands = {
+            "test": _cmd("cabal test", source="cabal project files", description="Cabal test command", confidence=0.84),
+            "build": _cmd("cabal build", source="cabal project files", description="Cabal build command", confidence=0.8),
+        }
+    sources = []
+    if has_stack:
+        sources.append("stack.yaml")
+    if (repo_root / "cabal.project").exists():
+        sources.append("cabal.project")
+    sources.extend(path.name for path in sorted(repo_root.glob("*.cabal"))[:3])
+    return {"commands": commands, "sources": sorted(set(sources))}
+
+
 def _root_path(repo_root: Path, detection: dict[str, Any]) -> Path:
     root = str((detection.get("active_project") or {}).get("root") or ".")
     return repo_root if root == "." else repo_root / root
@@ -295,6 +355,12 @@ def discover_commands(repo_root: Path, detection: dict[str, Any] | None = None) 
         found = _discover_ruby(project_root)
     elif kind == "terraform":
         found = _discover_terraform(project_root)
+    elif kind == "dotnet_csharp":
+        found = _discover_dotnet(project_root)
+    elif kind == "zig":
+        found = _discover_zig(project_root)
+    elif kind == "haskell_stack_cabal":
+        found = _discover_haskell(project_root)
     elif kind == "rust" and (project_root / "Cargo.toml").exists():
         found = {"commands": {"build": _cmd("cargo check", source="Cargo.toml", description="Rust compile check", confidence=0.85), "test": _cmd("cargo test", source="Cargo.toml", description="Rust tests", confidence=0.85)}, "sources": ["Cargo.toml"]}
     elif kind == "go" and (project_root / "go.mod").exists():

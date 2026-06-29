@@ -56,7 +56,7 @@ STRONG_FULL_TEXT_FLAGS = {"prompt_mentioned", "dirty_file", "first_meaningful_er
 KNOWN_PROMPT_PATH_EXTENSIONS = {
     ".py", ".swift", ".md", ".json", ".toml", ".yaml", ".yml", ".log",
     ".trace", ".txt", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs",
-    ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".tfvars", ".c", ".cpp", ".h", ".hpp", ".plist",
+    ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".tfvars", ".cs", ".zig", ".hs", ".sln", ".csproj", ".cabal", ".c", ".cpp", ".h", ".hpp", ".plist",
 }
 GUIDANCE_NAMES = {"readme.md", "readme", "agents.md", "codex.md", "rules.md"}
 TRUSTED_GUIDANCE_NAMES = {"agents.md", "codex.md", "rules.md"}
@@ -505,9 +505,9 @@ def _metadata_path_category(path: str) -> str:
         return "test"
     if lower.startswith("docs/") or suffix in {".md", ".rst", ".txt"}:
         return "docs"
-    if suffix in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp"}:
+    if suffix in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".cs", ".zig", ".hs", ".c", ".cc", ".cpp", ".h", ".hpp"}:
         return "source"
-    if name in {"pyproject.toml", "package.json", "cargo.toml", "go.mod", "package.swift", "sconstruct", "cmakelists.txt"} or suffix in {".json", ".toml", ".yaml", ".yml", ".plist", ".ini", ".cfg"}:
+    if name in {"pyproject.toml", "package.json", "cargo.toml", "go.mod", "package.swift", "sconstruct", "cmakelists.txt", "build.zig", "build.zig.zon", "stack.yaml", "cabal.project", "directory.build.props", "directory.build.targets"} or suffix in {".json", ".toml", ".yaml", ".yml", ".plist", ".ini", ".cfg", ".sln", ".csproj", ".cabal"}:
         return "config"
     return "unknown"
 
@@ -983,7 +983,7 @@ def _semantic_buckets_from_impact_or_boundary(
     }
 
 
-ADAPTER_ALLOWED_EDIT_BRIDGE_KINDS = {"elixir", "elixir_phoenix", "php_composer", "ruby_rails", "terraform"}
+ADAPTER_ALLOWED_EDIT_BRIDGE_KINDS = {"elixir", "elixir_phoenix", "php_composer", "ruby_rails", "terraform", "dotnet_csharp", "zig", "haskell_stack_cabal"}
 
 
 def _bridge_adapter_likely_edits_into_patch_boundary(
@@ -1348,7 +1348,7 @@ def _is_protected_metadata_path(path: str) -> bool:
 
 
 def _is_source_path_for_boundary(path: str) -> bool:
-    return Path(path).suffix.lower() in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp"}
+    return Path(path).suffix.lower() in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cc", ".cpp", ".h", ".hpp", ".cs", ".zig", ".hs"}
 
 
 def _is_test_path_for_boundary(path: str) -> bool:
@@ -2696,6 +2696,8 @@ REVIEW_DEPENDENCY_OR_BUILD_PATTERNS = [
     "package-lock.json", "bun.lock", "bun.lockb", "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
     "Package.swift", "*.xcodeproj/*", "*.xcworkspace/*", "build.gradle", "settings.gradle",
     "pom.xml", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", "Rakefile",
+    "*.sln", "*.csproj", "Directory.Build.props", "Directory.Build.targets", "packages.lock.json",
+    "build.zig", "build.zig.zon", "stack.yaml", "*.cabal", "cabal.project",
     ".terraform.lock.hcl", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
 ]
 REVIEW_CI_PATTERNS = [".github/workflows/*", ".gitlab-ci.yml", ".circleci/*", "azure-pipelines.yml", "Jenkinsfile"]

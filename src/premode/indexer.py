@@ -24,7 +24,7 @@ def _kind(path: Path) -> str:
     suffix = path.suffix.lower()
     if lower in {"readme", "readme.md", "agents.md"}:
         return "guidance"
-    if suffix in {".swift", ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".c", ".cpp", ".h", ".hpp"}:
+    if suffix in {".swift", ".py", ".js", ".ts", ".tsx", ".jsx", ".go", ".rs", ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".cs", ".zig", ".hs", ".c", ".cc", ".cpp", ".h", ".hpp"}:
         return "source"
     if suffix in {".log", ".trace"} or ("log" in lower and suffix in {".txt", ".out"}):
         return "log"

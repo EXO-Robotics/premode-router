@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.22
+
+- Added .NET/C#, Zig, and Haskell Stack/Cabal adapter detection, source routing, related-test mapping, command discovery, and review-contract allowed-edit bridging.
+- Kept .NET project files, Zig build metadata, and Stack/Cabal package metadata read-only unless explicitly requested as build/package/project configuration changes.
+- Added packet-bound review-patch pass coverage for a .NET allowed-source edit.
+- Preserved v0.2.6.21 adapter review-contract behavior and existing routing safety invariants.
+- Bumped package version to `0.2.6.22`.
+
 ## v0.2.6.21
 
 - Bridged safe Elixir/Phoenix, PHP/Composer, Ruby/Rails, and Terraform adapter `likely_edit_files` into `patch_boundary.allowed_edit_files` and saved `review_contract.allowed_edit_files`.

@@ -26,6 +26,15 @@ PRIMARY_ROOT_MARKERS: tuple[str, ...] = (
     "BUILD.bazel",
     "WORKSPACE",
     "pom.xml",
+    ".sln",
+    ".csproj",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "build.zig",
+    "build.zig.zon",
+    "stack.yaml",
+    ".cabal",
+    "cabal.project",
     "build.gradle",
     "settings.gradle",
     "build.gradle.kts",
@@ -56,6 +65,15 @@ ROOT_MARKER_PRIORITY: dict[str, int] = {
     "build.bazel": 105,
     "workspace": 105,
     "pom.xml": 95,
+    ".sln": 96,
+    ".csproj": 94,
+    "directory.build.props": 88,
+    "directory.build.targets": 88,
+    "build.zig": 98,
+    "build.zig.zon": 92,
+    "stack.yaml": 98,
+    ".cabal": 96,
+    "cabal.project": 96,
     "build.gradle": 95,
     "settings.gradle": 95,
     "build.gradle.kts": 95,
@@ -160,7 +178,7 @@ def _matched_primary_marker(rel_path: str) -> tuple[str, int] | None:
         return name, ROOT_MARKER_PRIORITY.get(lower_path, 70)
     if p.endswith("/Assets") or p.endswith("/ProjectSettings"):
         return name, ROOT_MARKER_PRIORITY.get(lower_name, 70)
-    for suffix in (".xcodeproj", ".xcworkspace"):
+    for suffix in (".xcodeproj", ".xcworkspace", ".sln", ".csproj", ".cabal"):
         if lower_name.endswith(suffix):
             return name, ROOT_MARKER_PRIORITY.get(suffix, 70)
     return None
@@ -452,6 +470,33 @@ ADAPTERS: dict[str, Adapter] = {
         ("backend.tf", "providers.tf", ".terraform.lock.hcl"),
         ("terraform", "Error:", "Invalid value", "Unsupported argument"),
     ),
+    "dotnet_csharp": Adapter(
+        "dotnet_csharp", ".NET / C#",
+        (".sln", ".csproj", "Directory.Build.props", "Directory.Build.targets"),
+        (".cs",),
+        ("dotnet",),
+        ("src", "app", "lib", "tests", "test"),
+        ("*.sln", "*.csproj", "Directory.Build.props", "Directory.Build.targets", "packages.lock.json"),
+        ("dotnet test", "dotnet build", "CS", "error"),
+    ),
+    "zig": Adapter(
+        "zig", "Zig",
+        ("build.zig", "build.zig.zon"),
+        (".zig",),
+        ("zig",),
+        ("src", "test", "tests"),
+        ("build.zig", "build.zig.zon"),
+        ("zig build", "zig test", "error:"),
+    ),
+    "haskell_stack_cabal": Adapter(
+        "haskell_stack_cabal", "Haskell / Stack / Cabal",
+        ("stack.yaml", ".cabal", "cabal.project"),
+        (".hs",),
+        ("stack", "cabal"),
+        ("src", "app", "test", "tests"),
+        ("stack.yaml", "*.cabal", "cabal.project"),
+        ("stack test", "cabal test", "error:"),
+    ),
 
     "native_cpp": Adapter(
         "native_cpp", "Native C/C++ / SCons/CMake Engine",
@@ -515,6 +560,7 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
         "cargo.toml", "go.mod",
         "package.swift", "pom.xml", "build.gradle", "settings.gradle",
         "build.gradle.kts", "settings.gradle.kts", ".terraform.lock.hcl", "backend.tf", "providers.tf",
+        "build.zig", "build.zig.zon", "stack.yaml", "cabal.project", "directory.build.props", "directory.build.targets",
     }
     for current, dirs, files in os.walk(repo_root):
         cur = Path(current)
@@ -538,7 +584,7 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
                 break
         dirs[:] = kept_dirs
         for f in files:
-            if f.lower() in file_markers or f in {"SConstruct", "SCsub", "CMakeLists.txt", "BUILD.bazel", "WORKSPACE", "Gemfile", "Rakefile"} or f.lower() == "meson.build" or f.endswith((".unity", ".asmdef", ".tf")):
+            if f.lower() in file_markers or f in {"SConstruct", "SCsub", "CMakeLists.txt", "BUILD.bazel", "WORKSPACE", "Gemfile", "Rakefile", "Directory.Build.props", "Directory.Build.targets"} or f.lower() == "meson.build" or f.endswith((".unity", ".asmdef", ".tf", ".sln", ".csproj", ".cabal")):
                 markers.append(f"{rel_cur}/{f}".strip("/"))
         if count >= max_dirs:
             break

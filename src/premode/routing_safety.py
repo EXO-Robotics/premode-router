@@ -58,6 +58,13 @@ READ_ONLY_MANIFEST_NAMES = {
     "go.sum",
     "package.swift",
     "pom.xml",
+    "directory.build.props",
+    "directory.build.targets",
+    "packages.lock.json",
+    "build.zig",
+    "build.zig.zon",
+    "stack.yaml",
+    "cabal.project",
     "mvnw",
     "gradlew",
     "build.gradle",
@@ -73,15 +80,16 @@ READ_ONLY_MANIFEST_NAMES = {
 
 MANIFEST_EDIT_RE = re.compile(
     r"(?i)\b("
-    r"dependenc(?:y|ies)|package(?:\.json)?|manifest|lockfile|lock file|script|scripts|"
+    r"dependenc(?:y|ies)|package(?:\.json)?|package metadata|project files?|project metadata|manifest|lockfile|lock file|script|scripts|"
     r"maven|gradle|pom\.xml|mvnw|gradlew|go\.mod|go\.sum|cargo\.toml|pyproject\.toml|"
-    r"requirements(?:[-.]txt)?|build config|build script|config file|configuration file"
+    r"requirements(?:[-.]txt)?|\.csproj|\.sln|cabal|stack\.yaml|build\.zig(?:\.zon)?|"
+    r"build config|build script|config file|configuration file"
     r")\b"
 )
 
 NEGATIVE_MANIFEST_RE = re.compile(
     r"(?i)\b(?:do not|don't|dont|must not|never|avoid|without|leave)\b[^\n;]*"
-    r"(?:package(?:\.json)?|manifest|dependenc(?:y|ies)|scripts?|lockfile|lock file|"
+    r"(?:package(?:\.json)?|package metadata|project files?|project metadata|manifest|dependenc(?:y|ies)|scripts?|lockfile|lock file|"
     r"pom\.xml|mvnw|gradlew|go\.mod|go\.sum|cargo\.toml|pyproject\.toml|requirements)"
 )
 
@@ -130,7 +138,11 @@ def prompt_allows_manifest_edits(raw_prompt: str) -> bool:
 def is_read_only_manifest_path(path: str) -> bool:
     lower = normalize_path(path).lower()
     name = Path(lower).name
-    return name in READ_ONLY_MANIFEST_NAMES or lower == ".premode/commands.json"
+    return (
+        name in READ_ONLY_MANIFEST_NAMES
+        or lower == ".premode/commands.json"
+        or name.endswith((".sln", ".csproj", ".cabal"))
+    )
 
 
 def is_generated_or_build_output_path(path: str) -> bool:

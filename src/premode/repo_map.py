@@ -16,7 +16,7 @@ from .routing_safety import classify_path_for_routing, is_restricted_edit_bucket
 from .safe_reader import safe_read
 from .timeutil import timestamp_iso
 
-SOURCE_EXTENSIONS = {'.py', '.swift', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.rs', '.go', '.java', '.kt', '.ex', '.exs', '.php', '.rb', '.tf', '.c', '.cpp', '.h', '.hpp'}
+SOURCE_EXTENSIONS = {'.py', '.swift', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.rs', '.go', '.java', '.kt', '.ex', '.exs', '.php', '.rb', '.tf', '.c', '.cpp', '.h', '.hpp', '.cs', '.zig', '.hs'}
 CONFIG_EXTENSIONS = {'.json', '.toml', '.yaml', '.yml', '.plist'}
 IGNORE_BOUNDARY_SEGMENTS = {
     '_external_references',
@@ -287,6 +287,12 @@ def _language_for_path(path: str) -> str:
         return 'cpp'
     if suffix in {'.java', '.kt', '.kts'}:
         return 'jvm'
+    if suffix == '.cs':
+        return 'dotnet'
+    if suffix == '.zig':
+        return 'zig'
+    if suffix == '.hs':
+        return 'haskell'
     if suffix in {'.ex', '.exs'}:
         return 'elixir'
     if suffix == '.php':
@@ -668,6 +674,12 @@ def _is_test_file(path: str, info: dict[str, Any] | None = None) -> bool:
         or name.endswith('test.php')
         or name.endswith('_spec.rb')
         or name.endswith('_test.rb')
+        or name.endswith('tests.cs')
+        or name.endswith('test.cs')
+        or name.endswith('_test.zig')
+        or name.endswith('test.zig')
+        or name.endswith('spec.hs')
+        or name.endswith('test.hs')
     )
 
 
@@ -814,6 +826,34 @@ def _related_tests_for(path: str, all_paths: set[str]) -> list[str]:
         candidates.update({
             p.replace('/src/main/', '/src/test/').replace('.kt', 'Test.kt'),
             p.replace('/src/main/', '/src/androidTest/').replace('.kt', 'Test.kt'),
+        })
+    elif suffix == '.cs':
+        candidates.update({
+            p.replace('/src/', '/tests/').replace('.cs', 'Tests.cs'),
+            p.replace('/src/', '/test/').replace('.cs', 'Tests.cs'),
+            f'tests/{stem}Tests.cs',
+            f'test/{stem}Tests.cs',
+        })
+        parts = p.split('/')
+        if len(parts) >= 3 and parts[0] in {'src', 'app', 'lib'}:
+            project = parts[1]
+            rel_tail = '/'.join(parts[2:])
+            candidates.add(f'tests/{project}.Tests/{rel_tail}'.replace('.cs', 'Tests.cs'))
+            candidates.add(f'test/{project}.Tests/{rel_tail}'.replace('.cs', 'Tests.cs'))
+    elif suffix == '.zig':
+        candidates.update({
+            p.replace('/src/', '/test/').replace('.zig', '_test.zig'),
+            p.replace('/src/', '/tests/').replace('.zig', '_test.zig'),
+            f'test/{stem}_test.zig',
+            f'tests/{stem}_test.zig',
+        })
+    elif suffix == '.hs':
+        candidates.update({
+            p.replace('src/', 'test/').replace('.hs', 'Spec.hs'),
+            p.replace('src/', 'test/').replace('.hs', 'Test.hs'),
+            p.replace('app/', 'test/').replace('.hs', 'Spec.hs'),
+            f'test/{stem}Spec.hs',
+            f'test/{stem}Test.hs',
         })
     return sorted(c for c in candidates if c in all_paths)[:40]
 
@@ -1035,6 +1075,30 @@ def _dependency_slices(repo_map: dict[str, Any], paths: list[str], *, limit: int
     return deps[:limit], dependents[:limit]
 
 
+def _nearest_project_file(repo_map: dict[str, Any], path: str, suffix: str, *, root_dir: str | None = None) -> str | None:
+    files = repo_map.get('files') or {}
+    normalized = path.replace('\\', '/').strip('/')
+    path_parts = normalized.split('/')
+    candidates = [
+        candidate
+        for candidate in files
+        if candidate.lower().endswith(suffix.lower())
+        and (root_dir is None or candidate == root_dir or candidate.startswith(root_dir.rstrip('/') + '/'))
+    ]
+    best: tuple[int, str] | None = None
+    for candidate in candidates:
+        candidate_parts = candidate.replace('\\', '/').strip('/').split('/')
+        common = 0
+        for left, right in zip(path_parts, candidate_parts):
+            if left.lower() != right.lower():
+                break
+            common += 1
+        score = common * 100 - abs(len(candidate_parts) - len(path_parts))
+        if best is None or score > best[0]:
+            best = (score, candidate)
+    return best[1] if best else None
+
+
 def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], related_tests: list[dict[str, Any]]) -> list[dict[str, str]]:
     files = repo_map.get('files') or {}
     languages = {str((files.get(path) or {}).get('language') or '') for path in likely_paths}
@@ -1077,6 +1141,16 @@ def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], relat
         elif suffix in {'.java', '.kt'}:
             if path.startswith('app/src/test/') or path.startswith('app/src/androidTest/'):
                 add('./gradlew :app:testDebugUnitTest', 'targeted Android/Kotlin related test from repo map')
+        elif suffix == '.cs':
+            project = _nearest_project_file(repo_map, path, '.csproj', root_dir='tests') or _nearest_project_file(repo_map, path, '.csproj', root_dir='test')
+            add(f'dotnet test {project}' if project else 'dotnet test', 'targeted related .NET/C# test from repo map')
+        elif suffix == '.zig':
+            add(f'zig test {path}', 'targeted related Zig test from repo map')
+        elif suffix == '.hs':
+            if 'stack.yaml' in files:
+                add('stack test', 'targeted related Haskell test from repo map')
+            else:
+                add('cabal test', 'targeted related Haskell test from repo map')
     if 'rust' in languages:
         add('cargo check', 'Rust impacted files detected')
         add('cargo test', 'Rust impacted files detected')
@@ -1096,6 +1170,18 @@ def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], relat
     if 'terraform' in languages:
         add('terraform fmt -check', 'Terraform impacted files detected')
         add('terraform validate', 'Terraform impacted files detected')
+    if 'dotnet' in languages:
+        add('dotnet test', '.NET/C# impacted files detected')
+        add('dotnet build', '.NET/C# impacted files detected')
+    if 'zig' in languages:
+        add('zig build test', 'Zig impacted files detected')
+    if 'haskell' in languages:
+        if 'stack.yaml' in files:
+            add('stack test', 'Haskell impacted files detected')
+            add('stack build', 'Haskell impacted files detected')
+        else:
+            add('cabal test', 'Haskell impacted files detected')
+            add('cabal build', 'Haskell impacted files detected')
     if 'jvm' in languages and any(path.startswith('app/src/') for path in likely_paths):
         add('./gradlew :app:testDebugUnitTest', 'Android/Kotlin impacted app module detected')
         add('./gradlew :app:assembleDebug', 'Android/Kotlin impacted app module detected')

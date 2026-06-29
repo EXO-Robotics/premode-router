@@ -22,6 +22,8 @@ DEPENDENCY_OR_BUILD_PATTERNS = [
     "package-lock.json", "bun.lock", "bun.lockb", "Cargo.toml", "Cargo.lock", "go.mod", "go.sum",
     "Package.swift", "*.xcodeproj/*", "*.xcworkspace/*", "build.gradle", "settings.gradle",
     "pom.xml", "composer.json", "composer.lock", "Gemfile", "Gemfile.lock", "Rakefile",
+    "*.sln", "*.csproj", "Directory.Build.props", "Directory.Build.targets", "packages.lock.json",
+    "build.zig", "build.zig.zon", "stack.yaml", "*.cabal", "cabal.project",
     ".terraform.lock.hcl", "Makefile", "SConstruct", "CMakeLists.txt", "justfile", ".premode/commands.json",
 ]
 
