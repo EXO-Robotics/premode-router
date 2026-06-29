@@ -19,7 +19,7 @@ from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps
 from .redaction import redact_text, merge_redaction_counts
 from .repo_summary import summarize_file
-from .repo_map import build_repo_map, compact_repo_map_summary, task_impact_hints
+from .repo_map import build_repo_map, compact_repo_map_summary, task_impact_hints, _is_ignore_boundary_path, _prompt_has_negative_boundary
 from .intake import intake_policy_from_detection, intake_score_delta
 from .router import (
     acceptance_checks_for_intents,
@@ -1204,6 +1204,14 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             "evidence_flags": sorted(flags),
             "reason": entry.get("reason") or "not directly implicated",
         }
+        if _is_ignore_boundary_path(str(entry.get("path") or "")) and "prompt_mentioned" not in flags:
+            excluded.append({
+                "path": entry["path"],
+                "reason": "ignored/reference/generated boundary excluded from selected context",
+                "negative_boundary_prompt": _prompt_has_negative_boundary(raw_prompt),
+                "why_excluded": _why_excluded(manifest, reason="ignored/reference/generated boundary excluded from selected context"),
+            })
+            continue
         protected_metadata = _is_protected_metadata_path(str(entry.get("path") or ""))
         if protected_metadata:
             strong = False

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.13
+
+- Enforced ignored/reference/generated path boundaries in repo-map impact routing.
+- Filtered `_external_references`, dependency folders, generated/proof/state/runtime outputs, build outputs, binaries, and caches from `likely_files`, `related_tests`, and `verification_order` unless explicitly prompt-mentioned.
+- Added compact routing diagnostics when boundary filtering removes candidate paths.
+- Mirrored the boundary in selected-context routing so ignored/reference paths are excluded from packet context unless explicitly named.
+- Bumped package version to `0.2.6.13`.
+
 ## v0.2.6.12
 
 - Added a child-repo context boundary when detection selects a child `task_root` from a messy parent.

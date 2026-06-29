@@ -17,6 +17,42 @@ from .timeutil import timestamp_iso
 
 SOURCE_EXTENSIONS = {'.py', '.swift', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.rs', '.go', '.java', '.kt', '.c', '.cpp', '.h', '.hpp'}
 CONFIG_EXTENSIONS = {'.json', '.toml', '.yaml', '.yml', '.plist'}
+IGNORE_BOUNDARY_SEGMENTS = {
+    '_external_references',
+    'node_modules',
+    'vendor',
+    'third_party',
+    '.venv',
+    'venv',
+    'env',
+    'build',
+    'dist',
+    'deriveddatacache',
+    'saved',
+    'intermediate',
+    'binaries',
+    '_claw_output',
+    '_evidence',
+    '_integration_staging',
+    '_run_captures',
+    'generated',
+    'artifacts',
+    'proof',
+    'proofs',
+    'state',
+}
+NEGATIVE_BOUNDARY_TERMS = (
+    'avoid external references',
+    'external references',
+    'avoid node_modules',
+    'node_modules',
+    'avoid generated',
+    'generated files',
+    'avoid build outputs',
+    'build outputs',
+    'avoid caches',
+    'avoid binaries',
+)
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -29,6 +65,16 @@ def _sha256_text(text: str) -> str:
 
 def _safe_json(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(',', ':'))
+
+
+def _is_ignore_boundary_path(path: str) -> bool:
+    parts = [p.lower() for p in str(path).replace('\\', '/').strip('/').split('/') if p]
+    return bool(set(parts) & IGNORE_BOUNDARY_SEGMENTS)
+
+
+def _prompt_has_negative_boundary(raw_prompt: str) -> bool:
+    prompt = raw_prompt.lower()
+    return any(term in prompt for term in NEGATIVE_BOUNDARY_TERMS)
 
 
 def _file_sha256(path: Path) -> str:
@@ -487,6 +533,32 @@ def _prompt_mentioned_repo_paths(raw_prompt: str, files: dict[str, dict[str, Any
     return sources, tests
 
 
+def _prompt_mentioned_existing_paths(raw_prompt: str, repo_root: Path | None, files: dict[str, dict[str, Any]]) -> list[str]:
+    if repo_root is None:
+        return []
+    indexed = {p.lower() for p in files}
+    out: list[str] = []
+    seen: set[str] = set()
+    try:
+        resolved_root = repo_root.resolve()
+    except OSError:
+        return []
+    for raw in re.findall(r'[A-Za-z0-9_./\\:-]+', raw_prompt):
+        token = _normalize_prompt_path_token(raw)
+        if not token or token.lower() in indexed or '/' not in token:
+            continue
+        candidate = repo_root / token
+        try:
+            resolved = candidate.resolve()
+            rel = resolved.relative_to(resolved_root).as_posix()
+        except (OSError, ValueError):
+            continue
+        if resolved.is_file() and rel not in seen:
+            out.append(rel)
+            seen.add(rel)
+    return out
+
+
 def _related_tests_for(path: str, all_paths: set[str]) -> list[str]:
     p = path.replace('\\', '/').strip('/')
     stem = Path(p).stem
@@ -780,6 +852,42 @@ def _verification_order(repo_map: dict[str, Any], likely_paths: list[str], relat
     return commands[:12]
 
 
+def _filter_routing_paths(
+    raw_prompt: str,
+    items: list[dict[str, Any]],
+    explicit_paths: set[str],
+    *,
+    path_key: str = 'path',
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    strict = _prompt_has_negative_boundary(raw_prompt)
+    kept: list[dict[str, Any]] = []
+    filtered: list[dict[str, Any]] = []
+    for item in items:
+        path = str(item.get(path_key) or '')
+        if path and _is_ignore_boundary_path(path) and path not in explicit_paths:
+            filtered.append({
+                'path': path,
+                'reason': 'ignored_reference_generated_boundary',
+                'strict_negative_prompt': strict,
+            })
+            continue
+        kept.append(item)
+    return kept, filtered
+
+
+def _filter_dependency_edges(edges: list[dict[str, str]], explicit_paths: set[str]) -> tuple[list[dict[str, str]], int]:
+    kept: list[dict[str, str]] = []
+    removed = 0
+    for edge in edges:
+        src = str(edge.get('from') or '')
+        dst = str(edge.get('to') or '')
+        if ((_is_ignore_boundary_path(src) and src not in explicit_paths) or (_is_ignore_boundary_path(dst) and dst not in explicit_paths)):
+            removed += 1
+            continue
+        kept.append(edge)
+    return kept, removed
+
+
 def _resolve_console_script_implementation(ep: dict[str, Any], repo_map: dict[str, Any], *, max_depth: int = 2) -> list[dict[str, Any]]:
     files = repo_map.get('files') or {}
     start = str(ep.get('path') or '')
@@ -905,6 +1013,11 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
     files = repo_map.get('files') or {}
     likely: list[dict[str, Any]] = []
     prompt_sources, prompt_tests = _prompt_mentioned_repo_paths(raw_prompt, files)
+    repo_root_value = repo_map.get('repo_root')
+    repo_root = Path(str(repo_root_value)) if repo_root_value else None
+    prompt_existing_paths = _prompt_mentioned_existing_paths(raw_prompt, repo_root, files)
+    explicit_paths = set(prompt_sources) | set(prompt_tests)
+    explicit_paths.update(prompt_existing_paths)
 
     for path in prompt_sources:
         info = files.get(path) or {}
@@ -914,6 +1027,14 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
             'kind': 'prompt_mentioned_source_file' if suffix in SOURCE_EXTENSIONS else 'prompt_mentioned_file',
             'source': 'prompt',
             'reason': 'prompt_mentioned_source_file' if suffix in SOURCE_EXTENSIONS else 'prompt_mentioned_file',
+        })
+    for path in prompt_existing_paths:
+        suffix = Path(path).suffix.lower()
+        likely.append({
+            'path': path,
+            'kind': 'prompt_mentioned_source_file' if suffix in SOURCE_EXTENSIONS else 'prompt_mentioned_file',
+            'source': 'prompt',
+            'reason': 'prompt_mentioned_existing_file',
         })
 
     prompt_is_cli = any(term in prompt for term in ['cli', 'argument', 'arguments', 'arg ', 'args', 'flag', 'flags', 'command-line', 'command line', 'subcommand', 'option', 'options'])
@@ -954,7 +1075,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
     out: list[dict[str, Any]] = []
     for item in likely:
         path = item.get('path')
-        if path and path in files and path not in seen:
+        if path and (path in files or path in explicit_paths) and path not in seen:
             info = files.get(path) or {}
             out.append({
                 **item,
@@ -964,21 +1085,38 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
                 'direct_dependent_count': len(info.get('referenced_by') or []),
             })
             seen.add(path)
-    likely_paths = [str(item.get('path')) for item in out if item.get('path')]
-    direct_dependencies, direct_dependents = _dependency_slices(repo_map, likely_paths)
-    related_tests = _related_tests_for_paths(repo_map, likely_paths, explicit_tests=prompt_tests)
+    filtered_likely: list[dict[str, Any]]
+    filtered_related: list[dict[str, Any]]
+    filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths)
+    filtered_likely_paths = [str(item.get('path')) for item in filtered_likely if item.get('path')]
+    direct_dependencies, direct_dependents = _dependency_slices(repo_map, filtered_likely_paths)
+    related_tests = _related_tests_for_paths(repo_map, filtered_likely_paths, explicit_tests=prompt_tests)
+    filtered_related, removed_related = _filter_routing_paths(raw_prompt, related_tests, explicit_paths)
+    direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths)
+    direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths)
+    diagnostics = {
+        'ignored_boundary_filter_active': bool(removed_likely or removed_related or removed_deps or removed_dependents or _prompt_has_negative_boundary(raw_prompt)),
+        'negative_boundary_prompt': _prompt_has_negative_boundary(raw_prompt),
+        'removed_likely_count': len(removed_likely),
+        'removed_related_test_count': len(removed_related),
+        'removed_dependency_edge_count': removed_deps,
+        'removed_dependent_edge_count': removed_dependents,
+        'removed_sample': (removed_likely + removed_related)[:5],
+        'policy': 'Ignored/reference/generated paths are excluded from routing unless explicitly prompt-mentioned.',
+    }
     return {
-        'likely_files': out[:24],
+        'likely_files': filtered_likely[:24],
         'direct_dependencies': direct_dependencies,
         'direct_dependents': direct_dependents,
-        'related_tests': related_tests,
-        'verification_order': _verification_order(repo_map, likely_paths, related_tests),
+        'related_tests': filtered_related,
+        'verification_order': _verification_order(repo_map, filtered_likely_paths, filtered_related),
         'entrypoint_count': len(entrypoints),
         'mapped_file_count': repo_map.get('file_count'),
         'edge_count': repo_map.get('edge_count'),
         'hint_source': 'deterministic_repo_map',
         'full_text_guardrail': 'repo-map relevance alone does not promote files to full text',
-        'omitted_impact_detail_count': max(0, len(likely) - len(out[:24])),
+        'omitted_impact_detail_count': max(0, len(likely) - len(filtered_likely[:24])),
+        'routing_filter_diagnostics': diagnostics,
     }
 
 
@@ -1086,6 +1224,7 @@ def build_repo_map(repo_root: Path, entries: list[dict[str, Any]] | None = None,
     result = {
         'schema_version': 1,
         'root': '.',
+        'repo_root': str(repo_root.resolve()),
         'generated_at': timestamp_iso(),
         'repo_map_sha256': repo_map_sha256,
         'file_count': len(files),
@@ -1222,4 +1361,3 @@ def limit_repo_map_files(repo_map: dict[str, Any], max_files: int | None) -> dic
 
 def estimate_repo_map_json_bytes(repo_map: dict[str, Any]) -> int:
     return len(json.dumps(repo_map, sort_keys=True, ensure_ascii=False).encode('utf-8', errors='replace'))
-

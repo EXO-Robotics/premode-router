@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.12
+# Implementation Report — Pre-mode Router v0.2.6.13
 
 ## Release summary
 
-`v0.2.6.12 — Child Repo Context Boundary` keeps messy-parent guidance from dominating packets after a child repo task root is selected.
+`v0.2.6.13 — Ignore-Boundary Routing Enforcement` keeps ignored/reference/generated paths out of likely-file, test, verification, and selected-context routing unless the prompt explicitly names them.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.13 changes
+
+- Bumped package version to `0.2.6.13`.
+- Added repo-map routing filters for `_external_references`, dependency folders, generated/proof/state/runtime outputs, build outputs, binaries, and caches.
+- Applied the filter to `likely_files`, `related_tests`, dependency/dependent slices, and verification-order generation.
+- Added compact routing diagnostics when boundary filtering removes candidate paths or the prompt explicitly says to avoid external/generated/build/cache paths.
+- Mirrored the same boundary in selected-context routing while preserving explicit prompt-mentioned paths.
 
 ## v0.2.6.12 changes
 
@@ -97,6 +105,7 @@ v2.6.9 — Metadata Budget Compaction + Nested Root Selection
 v2.6.10 — Direct Child Git Root Discovery
 v2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget
 v2.6.12 — Child Repo Context Boundary
+v2.6.13 — Ignore-Boundary Routing Enforcement
 ```
 
 ## Standard validation

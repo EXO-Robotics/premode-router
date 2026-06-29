@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.12 Child Repo Context Boundary
+# Final Package Index — v0.2.6.13 Ignore-Boundary Routing Enforcement
 
 This package is the current release-candidate base for external Codex testing.
 
