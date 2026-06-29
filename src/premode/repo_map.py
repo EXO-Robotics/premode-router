@@ -54,6 +54,46 @@ NEGATIVE_BOUNDARY_TERMS = (
     'avoid binaries',
 )
 
+SWIFT_SOURCE_PROMPT_RE = re.compile(r"(?i)\b(swiftui|swift|ios|xcode|tutorial|overlay|state|ui shell|view model|viewmodel|views?|source)\b")
+SWIFT_SOURCE_PATH_HINTS = (
+    '/views/',
+    '/viewmodels/',
+    '/models/',
+    '/systems/',
+    '/features/',
+    '/screens/',
+)
+IN_REPO_PLANNING_ART_SEGMENTS = {
+    'planning_bundles',
+    'artsource',
+    'animal',
+    'animals',
+    'npc_models',
+    'system_bibles',
+    'finalplanning',
+}
+IN_REPO_PLANNING_ART_NAMES = {
+    'patch_notes.md',
+    'patch_notes.txt',
+}
+IN_REPO_PLANNING_ART_TERMS = (
+    'patch_notes',
+    'app_reality_alignment',
+    'app reality alignment',
+)
+IN_REPO_PLANNING_ART_PROMPT_TERMS = (
+    'avoid docs',
+    'avoid planning_bundles',
+    'planning_bundles',
+    'avoid artsource',
+    'artsource',
+    'art source',
+    'art-source',
+    'animal folders',
+    'avoid assets',
+    'assets.xcassets',
+)
+
 NEGATIVE_INTENT_RE = re.compile(r"(?i)\b(?:do not|don't|dont|must not|never|avoid|without|leave)\b[^\n;]*(?:touch|edit|modify|mutate|change|alter|write|touching)[^\n;]*")
 
 
@@ -77,6 +117,48 @@ def _is_ignore_boundary_path(path: str) -> bool:
 def _prompt_has_negative_boundary(raw_prompt: str) -> bool:
     prompt = raw_prompt.lower()
     return any(term in prompt for term in NEGATIVE_BOUNDARY_TERMS)
+
+
+def _prompt_is_swift_source_task(raw_prompt: str) -> bool:
+    return bool(SWIFT_SOURCE_PROMPT_RE.search(raw_prompt or ''))
+
+
+def _prompt_excludes_in_repo_planning_art(raw_prompt: str) -> bool:
+    prompt = (raw_prompt or '').lower()
+    return any(term in prompt for term in IN_REPO_PLANNING_ART_PROMPT_TERMS)
+
+
+def _is_in_repo_planning_art_path(path: str) -> bool:
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    parts = [p for p in lower.split('/') if p]
+    name = Path(lower).name
+    return (
+        bool(set(parts) & IN_REPO_PLANNING_ART_SEGMENTS)
+        or name in IN_REPO_PLANNING_ART_NAMES
+        or any(term in lower for term in IN_REPO_PLANNING_ART_TERMS)
+        or lower.startswith('docs/planning_bundles/')
+        or lower.startswith('artsource/')
+    )
+
+
+def _is_swift_source_recovery_candidate(path: str, info: dict[str, Any]) -> bool:
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    if not lower.endswith('.swift'):
+        return False
+    if _is_ignore_boundary_path(lower) or _is_in_repo_planning_art_path(lower):
+        return False
+    if any(part in lower for part in (
+        '.xcassets/',
+        '.xcodeproj/',
+        '.xcworkspace/',
+        'deriveddata/',
+        '/ci/',
+        '/.github/',
+        'package.resolved',
+    )):
+        return False
+    language = str(info.get('language') or '')
+    return language in {'', 'swift'}
 
 
 def _path_matches_any(path: str, candidates: set[str]) -> bool:
@@ -1029,6 +1111,65 @@ def _domain_keyword_hints(raw_prompt: str, files: dict[str, dict[str, Any]], lik
                 if path in files:
                     likely.append({'path': path, 'kind': 'domain_keyword_hint', 'source': 'domain_keyword_hints', 'reason': f'prompt mentions `{phrase}`'})
 
+
+def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not _prompt_is_swift_source_task(raw_prompt):
+        return [], {
+            'source_recovery_attempted': False,
+            'safe_candidate_count': 0,
+            'selected_count': 0,
+            'why_no_source_candidates': None,
+        }
+    prompt = raw_prompt.lower()
+    prompt_terms = {w.lower() for w in re.findall(r'[A-Za-z][A-Za-z0-9_]{2,}', raw_prompt or '')}
+    candidates: list[tuple[int, str, dict[str, Any]]] = []
+    safe_candidate_count = 0
+    for path, info in files.items():
+        if not _is_swift_source_recovery_candidate(path, info):
+            continue
+        safe_candidate_count += 1
+        lower = path.lower()
+        score = 100
+        if any(hint in f'/{lower}' for hint in SWIFT_SOURCE_PATH_HINTS):
+            score += 220
+        if any(term in lower for term in ('tutorial', 'overlay', 'state', 'shell', 'navigation', 'session')):
+            score += 220
+        if lower.endswith('view.swift') or lower.endswith('viewmodel.swift') or 'viewmodel' in lower:
+            score += 140
+        basename = Path(lower).stem
+        normalized_path = _normalize_task_token(path)
+        if any(_normalize_task_token(term) in normalized_path for term in prompt_terms):
+            score += 120
+        if 'ui' in prompt and any(term in lower for term in ('view', 'style', 'shell', 'menu', 'bar')):
+            score += 120
+        if 'tutorial' in prompt and any(term in lower for term in ('tutorial', 'overlay', 'guidance', 'onboarding')):
+            score += 200
+        if basename.endswith('tests'):
+            score -= 80
+        candidates.append((score, path, info))
+    candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    selected: list[dict[str, Any]] = []
+    for score, path, info in candidates[:8]:
+        selected.append({
+            'path': path,
+            'kind': 'swift_source_recovery',
+            'source': 'swift_source_recovery',
+            'reason': 'Swift/iOS source prompt matched safe Swift source path',
+            'source_recovery_score': score,
+            'language': info.get('language'),
+        })
+    diagnostic = {
+        'source_recovery_attempted': True,
+        'safe_candidate_count': safe_candidate_count,
+        'selected_count': len(selected),
+        'why_no_source_candidates': None if selected else (
+            'no safe Swift source files survived planning/art/assets/build/dependency filters'
+            if safe_candidate_count == 0
+            else 'safe Swift source candidates were present but below selection threshold'
+        ),
+    }
+    return selected, diagnostic
+
 def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbidden_paths: set[str] | None = None) -> dict[str, Any]:
     prompt = raw_prompt.lower()
     entrypoints = repo_map.get('entrypoints') or []
@@ -1073,6 +1214,8 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         _go_command_folder_hints(raw_prompt, files, likely)
 
     _domain_keyword_hints(raw_prompt, files, likely)
+    source_recovery_hints, source_recovery_diagnostics = _swift_source_recovery_hints(raw_prompt, files)
+    likely.extend(source_recovery_hints)
 
     # Universal native-engine fallback: SCons/CMake repos often have sparse
     # import graphs, so route platform/option prompts to the engine platform
@@ -1112,6 +1255,21 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     filtered_likely: list[dict[str, Any]]
     filtered_related: list[dict[str, Any]]
     filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths)
+    if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
+        kept_likely: list[dict[str, Any]] = []
+        removed_planning_art: list[dict[str, Any]] = []
+        for item in filtered_likely:
+            path = str(item.get('path') or '')
+            if path and _is_in_repo_planning_art_path(path) and path not in explicit_paths:
+                removed_planning_art.append({
+                    'path': path,
+                    'reason': 'in_repo_planning_art_boundary',
+                    'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
+                })
+            else:
+                kept_likely.append(item)
+        filtered_likely = kept_likely
+        removed_likely.extend(removed_planning_art)
     prompt_forbidden_files: list[dict[str, Any]] = []
     read_only_support_files: list[dict[str, Any]] = []
     likely_edit_files: list[dict[str, Any]] = []
@@ -1128,6 +1286,21 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     direct_dependencies, direct_dependents = _dependency_slices(repo_map, filtered_likely_paths)
     related_tests = _related_tests_for_paths(repo_map, filtered_likely_paths, explicit_tests=prompt_tests)
     filtered_related, removed_related = _filter_routing_paths(raw_prompt, related_tests, explicit_paths)
+    if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
+        kept_related: list[dict[str, Any]] = []
+        removed_planning_related: list[dict[str, Any]] = []
+        for item in filtered_related:
+            path = str(item.get('path') or '')
+            if path and _is_in_repo_planning_art_path(path) and path not in explicit_paths:
+                removed_planning_related.append({
+                    'path': path,
+                    'reason': 'in_repo_planning_art_boundary',
+                    'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
+                })
+            else:
+                kept_related.append(item)
+        filtered_related = kept_related
+        removed_related.extend(removed_planning_related)
     kept_related: list[dict[str, Any]] = []
     seen_forbidden = {str(item.get('path') or '') for item in prompt_forbidden_files}
     for item in filtered_related:
@@ -1141,11 +1314,17 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     filtered_related = kept_related
     direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths)
     direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths)
+    filtered_reasons: dict[str, int] = {}
+    for item in removed_likely + removed_related:
+        reason = str(item.get('reason') or 'unknown')
+        filtered_reasons[reason] = filtered_reasons.get(reason, 0) + 1
     diagnostics = {
         'ignored_boundary_filter_active': bool(removed_likely or removed_related or removed_deps or removed_dependents or _prompt_has_negative_boundary(raw_prompt)),
         'negative_boundary_prompt': _prompt_has_negative_boundary(raw_prompt),
         'prompt_forbidden_count': len(prompt_forbidden_files),
         'read_only_support_count': len(read_only_support_files),
+        'filtered_count': len(removed_likely) + len(removed_related) + removed_deps + removed_dependents,
+        'filtered_reasons': filtered_reasons,
         'removed_likely_count': len(removed_likely),
         'removed_related_test_count': len(removed_related),
         'removed_dependency_edge_count': removed_deps,
@@ -1153,6 +1332,9 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'removed_sample': (removed_likely + removed_related)[:5],
         'policy': 'Ignored/reference/generated paths are excluded from routing unless explicitly prompt-mentioned.',
     }
+    diagnostics.update(source_recovery_diagnostics)
+    if source_recovery_diagnostics.get('source_recovery_attempted') and not likely_edit_files:
+        diagnostics['why_no_source_candidates'] = diagnostics.get('why_no_source_candidates') or 'no editable source candidates remained after filtering'
     return {
         'likely_edit_files': likely_edit_files[:24],
         'read_only_support_files': read_only_support_files[:24],

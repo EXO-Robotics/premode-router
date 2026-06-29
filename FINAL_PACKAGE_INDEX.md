@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.14 Validation Reliability + Semantic Impact Buckets
+# Final Package Index — v0.2.6.15 In-Repo Dirty Planning/Art Downrank + Source Recovery
 
 This package is the current release-candidate base for external Codex testing.
 

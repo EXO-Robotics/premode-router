@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.14
+# Implementation Report — Pre-mode Router v0.2.6.15
 
 ## Release summary
 
-`v0.2.6.14 — Validation Reliability + Semantic Impact Buckets` improves CLI automation output, smoke diagnostics, impact bucket semantics, and OpenClaw explicit-file edit boundaries.
+`v0.2.6.15 — In-Repo Dirty Planning/Art Downrank + Source Recovery` keeps dirty planning/art-source files from dominating lite Swift/iOS source packets and recovers safe Swift source candidates for UI/tutorial prompts.
 
 ## Product loop
 
@@ -28,6 +28,13 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.15 changes
+
+- Bumped package version to `0.2.6.15`.
+- Downranked dirty files under in-repo planning/art-source areas such as `Docs/Planning_Bundles`, `ArtSource`, `NPC_Models`, `System_Bibles`, `PATCH_NOTES*`, and app-reality alignment docs for Swift/iOS source prompts.
+- Added Swift/iOS source recovery hints for safe Swift files under Views, ViewModels, Models, Systems, Features, and Screens.
+- Added routing diagnostics for source recovery attempts, safe candidate counts, filtered counts, and filtered reasons.
 
 ## v0.2.6.14 changes
 
@@ -115,6 +122,7 @@ v2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget
 v2.6.12 — Child Repo Context Boundary
 v2.6.13 — Ignore-Boundary Routing Enforcement
 v2.6.14 — Validation Reliability + Semantic Impact Buckets
+v2.6.15 — In-Repo Dirty Planning/Art Downrank + Source Recovery
 ```
 
 ## Standard validation

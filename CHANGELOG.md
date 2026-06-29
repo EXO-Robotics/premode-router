@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6.15
+
+- Downranked dirty in-repo planning/art-source files for Swift/iOS source prompts, especially when the prompt excludes Docs, Planning_Bundles, ArtSource, assets, or related folders.
+- Added Swift/iOS source recovery hints so safe Swift UI/view/model/source files can be surfaced when dirty planning context would otherwise dominate routing.
+- Added routing diagnostics for source recovery attempts, safe candidate counts, and filtered planning/art boundaries.
+- Bumped package version to `0.2.6.15`.
+
 ## v0.2.6.14
 
 - Changed `premode compile --out ... --json-out ...` to print a compact receipt by default instead of the full packet; `--show-raw` still prints the packet.

@@ -19,7 +19,16 @@ from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps
 from .redaction import redact_text, merge_redaction_counts
 from .repo_summary import summarize_file
-from .repo_map import build_repo_map, compact_repo_map_summary, task_impact_hints, _is_ignore_boundary_path, _prompt_has_negative_boundary
+from .repo_map import (
+    build_repo_map,
+    compact_repo_map_summary,
+    task_impact_hints,
+    _is_ignore_boundary_path,
+    _is_in_repo_planning_art_path,
+    _prompt_excludes_in_repo_planning_art,
+    _prompt_has_negative_boundary,
+    _prompt_is_swift_source_task,
+)
 from .intake import intake_policy_from_detection, intake_score_delta
 from .router import (
     acceptance_checks_for_intents,
@@ -35,7 +44,7 @@ PACKET_V3_MARKER = "PREMODE_COMPILED_PACKET_V3"
 PACKET_MARKER = PACKET_V2_MARKER
 LEGACY_PACKET_MARKER = "PREMODE_COMPILED_PACKET_V1"
 WORD_RE = re.compile(r"[A-Za-z0-9_./\\:-]+")
-STRONG_FULL_TEXT_FLAGS = {"prompt_mentioned", "dirty_file", "first_meaningful_error_file", "guidance_file", "adjacent_test"}
+STRONG_FULL_TEXT_FLAGS = {"prompt_mentioned", "dirty_file", "first_meaningful_error_file", "guidance_file", "adjacent_test", "source_recovery"}
 KNOWN_PROMPT_PATH_EXTENSIONS = {
     ".py", ".swift", ".md", ".json", ".toml", ".yaml", ".yml", ".log",
     ".trace", ".txt", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs",
@@ -1135,7 +1144,13 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     primary_intent = classification["primary_intent"]
     repo_map = build_repo_map(repo_root, entries=entries, profile_name=caps.name) if use_repo_map else None
     impact_map = task_impact_hints(raw_prompt, repo_map, prompt_forbidden_paths=prompt_forbidden_paths) if repo_map else None
-    repo_map_paths = {str(item.get("path", "")).lower() for item in ((impact_map or {}).get("likely_files") or []) if item.get("path")}
+    impact_items = list((impact_map or {}).get("likely_files") or [])
+    repo_map_paths = {str(item.get("path", "")).lower() for item in impact_items if item.get("path")}
+    source_recovery_paths = {
+        str(item.get("path", "")).lower()
+        for item in impact_items
+        if item.get("path") and str(item.get("source") or item.get("kind") or "") == "swift_source_recovery"
+    }
     source_gameplay_prompt = _is_source_gameplay_prompt(sanitized)
     compact_authority_for_lite = caps.name == "lite" and source_gameplay_prompt and _is_control_plane_detection(project_detection)
     enforce_child_context_boundary = bool(selected_child_root)
@@ -1173,10 +1188,23 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             score += 900
             flags = sorted(set(flags + ["repo_map_entrypoint"]))
             reason = (reason + ", repo_map_entrypoint").strip(", ")
+            if lower_entry_path in source_recovery_paths:
+                score += 500
+                flags = sorted(set(flags + ["source_recovery"]))
+                reason = (reason + ", swift_source_recovery").strip(", ")
         if compact_authority_for_lite and _is_source_or_config_context(entry):
             score += 180
             flags = sorted(set(flags + ["source_gameplay_budget_priority"]))
             reason = (reason + ", source_gameplay_budget_priority").strip(", ")
+        if (
+            caps.name == "lite"
+            and _is_in_repo_planning_art_path(lower_entry_path)
+            and "prompt_mentioned" not in flags
+            and (_prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt))
+        ):
+            score = min(score, 360)
+            flags = sorted((set(flags) - {"dirty_file"}) | {"planning_art_dirty_compacted"})
+            reason = (reason + ", planning_art_dirty_compacted").strip(", ")
         if enforce_child_context_boundary and not _is_inside_selected_root(lower_entry_path, selected_child_root) and "prompt_mentioned" not in flags:
             if _is_parent_authority_guidance_path(lower_entry_path):
                 inherited_score = 650 if Path(lower_entry_path).name == "agents.md" else 620
@@ -1221,6 +1249,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         strong = bool(flags & STRONG_FULL_TEXT_FLAGS)
         if packet_mode == "tiny" and flags and flags.issubset({"guidance_file", "keyword_path_match"}):
             # In tiny low-risk repos, guidance files are summarized unless directly named/dirty/error-linked.
+            strong = False
+        if "planning_art_dirty_compacted" in flags and "prompt_mentioned" not in flags:
             strong = False
         manifest = {
             "path": entry["path"],
