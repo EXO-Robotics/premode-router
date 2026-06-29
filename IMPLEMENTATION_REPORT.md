@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.11
+# Implementation Report — Pre-mode Router v0.2.6.12
 
 ## Release summary
 
-`v0.2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget` chooses among direct child Git repos using prompt affinity and keeps dirty authority/runbook docs compact under lite source/gameplay prompts.
+`v0.2.6.12 — Child Repo Context Boundary` keeps messy-parent guidance from dominating packets after a child repo task root is selected.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.12 changes
+
+- Bumped package version to `0.2.6.12`.
+- Added a child-repo context boundary for selected child `task_root` values.
+- Downgraded dirty parent authority/persona/guidance files to inherited summaries or manifest-only entries unless explicitly prompt-mentioned.
+- Added packet evidence for inherited parent authority count, sample, and selected child root.
+- Added a focused messy-parent OpenClaw fixture covering dirty parent guidance, sibling iOS repo, and external package noise.
 
 ## v0.2.6.11 changes
 
@@ -88,6 +96,7 @@ v2.6.7 — Codex CLI Adapter Compatibility
 v2.6.9 — Metadata Budget Compaction + Nested Root Selection
 v2.6.10 — Direct Child Git Root Discovery
 v2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget
+v2.6.12 — Child Repo Context Boundary
 ```
 
 ## Standard validation

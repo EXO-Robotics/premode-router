@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.12
+
+- Added a child-repo context boundary when detection selects a child `task_root` from a messy parent.
+- Downgraded dirty parent guidance/persona files outside the selected child root to compact inherited-authority context unless explicitly prompt-mentioned.
+- Prefer child-root context and nearest child `AGENTS.md` over parent workspace guidance for lite source/gameplay prompts.
+- Added compile evidence for inherited parent authority counts and samples.
+- Bumped package version to `0.2.6.12`.
+
 ## v0.2.6.11
 
 - Added prompt-affinity scoring for direct child Git roots so OpenClaw/Unreal prompts select `openclaw_repo` and Goldpine/iOS/Swift prompts select the matching iOS repo.

@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.11 Prompt-Aware Repo Selection + Authority Surface Budget
+# Final Package Index — v0.2.6.12 Child Repo Context Boundary
 
 This package is the current release-candidate base for external Codex testing.
 

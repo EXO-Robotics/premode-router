@@ -625,6 +625,68 @@ def _is_authority_guidance_candidate(path: str, flags: set[str]) -> bool:
     )
 
 
+PARENT_AUTHORITY_NAMES = {
+    "agents.md",
+    "codex.md",
+    "rules.md",
+    "heartbeat.md",
+    "identity.md",
+    "user.md",
+    "tools.md",
+    "bootstrap.md",
+    "soul.md",
+    "workflow.md",
+}
+
+
+def _selected_child_root(repo_root: Path, project_detection: dict[str, Any]) -> str | None:
+    root = str(project_detection.get("task_root") or (project_detection.get("active_project") or {}).get("root") or ".").strip("/")
+    if not root or root == "." or "/" in root:
+        return None
+    return root if (repo_root / root / ".git").exists() else None
+
+
+def _is_inside_selected_root(path: str, child_root: str | None) -> bool:
+    if not child_root:
+        return True
+    lower = path.lower().strip("/")
+    root = child_root.lower().strip("/")
+    return lower == root or lower.startswith(root + "/")
+
+
+def _is_parent_authority_guidance_path(path: str) -> bool:
+    lower = path.lower().strip("/")
+    name = Path(lower).name
+    return (
+        name in PARENT_AUTHORITY_NAMES
+        or lower.startswith(("docs/runbooks/", "memory/", "superpowers/"))
+        or "handoff" in name
+        or "identity" in name
+        or "heartbeat" in name
+        or "bootstrap" in name
+        or "persona" in name
+    )
+
+
+def _child_context_boundary_summary(entries: list[dict[str, Any]], child_root: str | None) -> dict[str, Any] | None:
+    if not child_root:
+        return None
+    parent_authority = [
+        str(e.get("path"))
+        for e in entries
+        if e.get("path") and not _is_inside_selected_root(str(e.get("path")), child_root) and _is_parent_authority_guidance_path(str(e.get("path")))
+    ]
+    child_entries = [str(e.get("path")) for e in entries if e.get("path") and _is_inside_selected_root(str(e.get("path")), child_root)]
+    return {
+        "mode": "child_repo_context_boundary",
+        "selected_root": child_root,
+        "child_entry_count": len(child_entries),
+        "inherited_parent_authority_count": len(parent_authority),
+        "inherited_parent_authority_sample": sorted(parent_authority)[:3],
+        "policy": "Parent authority/guidance outside the selected child root is summarized unless explicitly prompt-mentioned.",
+    }
+
+
 def _compact_list_with_count(items: list[Any] | None, limit: int) -> dict[str, Any]:
     values = list(items or [])
     return {"count": len(values), "items": values[:limit], "omitted_count": max(0, len(values) - limit)}
@@ -1028,6 +1090,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     raw_entries = list(idx.get("entries", []))
     entries, secret_path_summary = _filter_secret_entries(raw_entries)
     project_detection = detect_projects(repo_root, entries=entries, cwd=Path.cwd(), prompt=sanitized)
+    selected_child_root = _selected_child_root(repo_root, project_detection)
     eligible_readable_bytes = sum(int(e.get("bytes", 0) or 0) for e in entries)
     eligible_readable_tokens = max(1, eligible_readable_bytes // 4)
     traits = set(project_detection.get("traits") or []) | set((project_detection.get("active_project") or {}).get("intake_traits") or [])
@@ -1048,6 +1111,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     repo_map_paths = {str(item.get("path", "")).lower() for item in ((impact_map or {}).get("likely_files") or []) if item.get("path")}
     source_gameplay_prompt = _is_source_gameplay_prompt(sanitized)
     compact_authority_for_lite = caps.name == "lite" and source_gameplay_prompt and _is_control_plane_detection(project_detection)
+    enforce_child_context_boundary = bool(selected_child_root)
 
     dirty_paths = _dirty_paths_from_git(git_state)
     # Resolve prompt path mentions from the raw prompt before high-entropy
@@ -1086,6 +1150,16 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             score += 180
             flags = sorted(set(flags + ["source_gameplay_budget_priority"]))
             reason = (reason + ", source_gameplay_budget_priority").strip(", ")
+        if enforce_child_context_boundary and not _is_inside_selected_root(lower_entry_path, selected_child_root) and "prompt_mentioned" not in flags:
+            if _is_parent_authority_guidance_path(lower_entry_path):
+                inherited_score = 650 if Path(lower_entry_path).name == "agents.md" else 620
+                score = min(score, inherited_score)
+                flags = sorted((set(flags) - {"dirty_file"}) | {"inherited_parent_authority"})
+                reason = (reason + ", inherited_parent_authority_summary").strip(", ")
+            else:
+                score = min(score, 420)
+                flags = sorted((set(flags) - {"dirty_file"}) | {"outside_selected_project_root"})
+                reason = (reason + ", outside_selected_project_root").strip(", ")
         ranked.append({**entry, "score": score, "evidence_flags": flags, "reason": reason})
     ranked.sort(key=lambda e: (int(e.get("score", 0)), -int(e.get("bytes", 0))), reverse=True)
 
@@ -1098,6 +1172,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     redaction_counts: list[dict[str, int]] = [redact_text(raw_prompt).counts]
     authority_full_text_count = 0
     authority_full_text_limit = 2 if compact_authority_for_lite else caps.hard_full_text_file_count
+    inherited_parent_authority_summary_count = 0
+    inherited_parent_authority_summary_limit = 1 if caps.name == "lite" and enforce_child_context_boundary else caps.hard_summary_count
 
     hard_budget = int(caps.hard_packet_token_budget)
     effective_budget = int(hard_budget * 0.95)
@@ -1132,6 +1208,9 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         if protected_metadata:
             strong = False
         authority_guidance = _is_authority_guidance_candidate(str(entry.get("path") or ""), flags)
+        inherited_parent_authority = "inherited_parent_authority" in flags and "prompt_mentioned" not in flags
+        if inherited_parent_authority:
+            strong = False
         compactable_authority = (
             compact_authority_for_lite
             and authority_guidance
@@ -1207,7 +1286,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             full_tokens += content_tokens
             continue
 
-        if score >= 500 and not protected_metadata and len(summarized_files) < caps.hard_summary_count:
+        can_summarize_inherited_parent = not inherited_parent_authority or inherited_parent_authority_summary_count < inherited_parent_authority_summary_limit
+        if score >= 500 and not protected_metadata and can_summarize_inherited_parent and len(summarized_files) < caps.hard_summary_count:
             try:
                 summary = summarize_file(repo_root, entry, caps, ignore)
             except Exception as exc:
@@ -1216,6 +1296,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             estimated = estimate_tokens(_safe_json_dump(record))
             if full_tokens + summary_tokens + manifest_tokens + estimated <= available_context_tokens:
                 summarized_files.append(record)
+                if inherited_parent_authority:
+                    inherited_parent_authority_summary_count += 1
                 summary_tokens += estimated
                 continue
 
@@ -1278,6 +1360,9 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         ranked_records=ranked,
         budget_stats=budget_stats,
     )
+    child_boundary = _child_context_boundary_summary(entries, selected_child_root)
+    if child_boundary:
+        evidence_summary["child_context_boundary"] = child_boundary
     root_cause_hypotheses = _root_cause_hypotheses(classification, evidence_summary)
     patch_boundary = _patch_boundary(full_text_files, summarized_files, classification, project_detection, raw_prompt, prompt_forbidden_paths)
     proof_policy = openclaw_policy_from_detection(project_detection)

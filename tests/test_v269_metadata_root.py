@@ -266,3 +266,70 @@ def test_v2611_lite_compacts_dirty_authority_runbooks_for_gameplay_prompt(tmp_pa
     summarized_or_manifest = result["context_tiers"]["summarized_files"] + result["context_tiers"]["manifest_only_files"]
     assert any("authority_surface_compacted" in item.get("evidence_flags", []) for item in summarized_or_manifest)
     assert "SECRET=do-not-leak" not in result["packet"]
+
+
+def test_v2612_child_repo_boundary_compacts_dirty_parent_guidance(tmp_path: Path) -> None:
+    parent = tmp_path
+    parent_docs = [
+        "AGENTS.md",
+        "HEARTBEAT.md",
+        "IDENTITY.md",
+        "USER.md",
+        "TOOLS.md",
+        "BOOTSTRAP.md",
+        "SOUL.md",
+        "MINIGAME_UI_UPDATE_FROM_REFERENCE_PNGS.md",
+    ]
+    large_parent_guidance = "# Parent guidance\n" + ("Parent workspace persona/history only.\n" * 180)
+    for rel in parent_docs:
+        (parent / rel).write_text(large_parent_guidance, encoding="utf-8")
+
+    openclaw = parent / "openclaw_repo"
+    openclaw.mkdir()
+    (openclaw / ".git").mkdir()
+    (openclaw / "AGENTS.md").write_text("# OpenClaw agents\nUse child repo rules.\n", encoding="utf-8")
+    (openclaw / "OpenClaw.uproject").write_text('{"FileVersion":3}\n', encoding="utf-8")
+    (openclaw / "Source" / "Game").mkdir(parents=True)
+    (openclaw / "Source" / "Game" / "Foo.cpp").write_text("int foo() { return 1; }\n", encoding="utf-8")
+    (openclaw / "Config").mkdir()
+    (openclaw / "Config" / "DefaultGame.ini").write_text("[/Script/OpenClaw]\n", encoding="utf-8")
+
+    goldpine = parent / "GoldpineValley-iOS"
+    goldpine.mkdir()
+    (goldpine / ".git").mkdir()
+    (goldpine / "GoldpineValley.xcodeproj").mkdir()
+
+    external = parent / "_external_references" / "articraft" / "upstream_repo" / "viewer" / "web"
+    external.mkdir(parents=True)
+    (external / "package.json").write_text('{"scripts":{"test":"vitest"}}\n', encoding="utf-8")
+
+    _git(parent, "init")
+    _git(parent, "config", "user.email", "test@example.com")
+    _git(parent, "config", "user.name", "Test User")
+    _git(parent, "add", *parent_docs)
+    _git(parent, "commit", "-m", "parent guidance baseline")
+    for rel in parent_docs:
+        (parent / rel).write_text(large_parent_guidance + "dirty parent update\n", encoding="utf-8")
+
+    init_project(parent)
+    index_project(parent, "lite")
+    prompt = "Find likely files for a small Unreal/OpenClaw gameplay bug."
+    result = compile_prompt(parent, prompt, "lite", use_repo_map=True, cache_optimized=True)
+
+    assert result["project_detection"]["task_root"] == "openclaw_repo"
+    assert result["commands"]["project_root"] == "openclaw_repo"
+    assert result["metrics"]["packet_total_tokens"] <= result["caps"]["hard_packet_token_budget"]
+    full_paths = [item["path"] for item in result["context_tiers"]["full_text_files"]]
+    forbidden_parent_full = set(parent_docs) - {"AGENTS.md"}
+    assert not any(path in forbidden_parent_full for path in full_paths)
+    assert "AGENTS.md" not in full_paths
+    assert any(path.startswith("openclaw_repo/") for path in full_paths)
+    assert any(path in {"openclaw_repo/Source/Game/Foo.cpp", "openclaw_repo/Config/DefaultGame.ini", "openclaw_repo/AGENTS.md"} for path in full_paths)
+    summarized = result["context_tiers"]["summarized_files"]
+    assert any(item["path"] == "AGENTS.md" and "inherited_parent_authority" in item.get("evidence_flags", []) for item in summarized)
+    boundary = result["evidence_summary"]["child_context_boundary"]
+    assert boundary["selected_root"] == "openclaw_repo"
+    assert boundary["inherited_parent_authority_count"] >= len(parent_docs) - 1
+    candidates = result["project_detection"]["active_root_candidates"]
+    assert candidates[0]["root"] == "openclaw_repo"
+    assert result["project_detection"]["task_root"] != "_external_references/articraft/upstream_repo/viewer/web"
