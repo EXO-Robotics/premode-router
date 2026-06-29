@@ -11,8 +11,8 @@ from premode.indexer import index_project
 PROMPT = (
     "Find likely files for a small SwiftUI tutorial guidance issue. Focus only on "
     "tutorial overlay/state code and current UI shell Swift files. Do not edit files. "
-    "Avoid Docs, Planning_Bundles, ArtSource, Assets.xcassets, generated files, "
-    "DerivedData, .premode, .agents, signing settings, dependency files, and CI."
+    "Avoid Docs, Planning_Bundles, ArtSource, animal folders, Assets.xcassets, generated files, "
+    "build outputs, DerivedData, .premode, .agents, signing settings, dependency files, and CI."
 )
 
 
@@ -39,6 +39,7 @@ def _make_goldpine_like_repo(repo: Path) -> None:
     _write(repo / "Docs" / "Planning_Bundles" / "Week_04" / "System_Bibles" / "06_UI_State_Contract_v1.md", noisy)
     _write(repo / "ArtSource" / "NPC_Models" / "README.md", noisy)
     _write(repo / "Docs" / "app_reality_alignment.md", noisy)
+    _write(repo / "Docs" / "GoldpineValley_Campaign_Bible_Weeks2-8_v1.md", noisy)
 
 
 def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_path: Path) -> None:
@@ -57,6 +58,7 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
         "Docs/Planning_Bundles/Week_04/System_Bibles/06_UI_State_Contract_v1.md",
         "ArtSource/NPC_Models/README.md",
         "Docs/app_reality_alignment.md",
+        "Docs/GoldpineValley_Campaign_Bible_Weeks2-8_v1.md",
     ):
         path = repo / rel
         path.write_text(path.read_text(encoding="utf-8") + noisy_update, encoding="utf-8")
@@ -68,13 +70,14 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     assert result["metrics"]["packet_total_tokens"] <= result["caps"]["hard_packet_token_budget"]
     impact = result["impact_map"]
     likely_edit = {item["path"] for item in impact["likely_edit_files"]}
-    assert likely_edit & {
+    expected_swift = {
         "GoldpineValley/Views/MainMenuView.swift",
         "GoldpineValley/Views/BottomBarView.swift",
         "GoldpineValley/Views/SharedViewStyles.swift",
         "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
         "GoldpineValley/Models/TutorialState.swift",
     }
+    assert likely_edit & expected_swift
     forbidden_fragments = (
         "Docs/Planning_Bundles",
         "ArtSource",
@@ -89,14 +92,25 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     assert any(path.startswith("GoldpineValley/") and path.endswith(".swift") for path in full_paths)
     assert not any(path.startswith("Docs/Planning_Bundles/") for path in full_paths)
     assert not any(path.startswith("ArtSource/") for path in full_paths)
+    assert "Docs/GoldpineValley_Campaign_Bible_Weeks2-8_v1.md" not in full_paths
 
     summarized_or_manifest = result["context_tiers"]["summarized_files"] + result["context_tiers"]["manifest_only_files"]
-    compacted = [
+    planning_compacted = [
         item["path"]
         for item in summarized_or_manifest
         if "planning_art_dirty_compacted" in item.get("evidence_flags", [])
     ]
-    assert compacted
+    docs_compacted = [
+        item["path"]
+        for item in summarized_or_manifest
+        if "docs_dirty_compacted" in item.get("evidence_flags", [])
+    ]
+    assert planning_compacted
+    assert "Docs/GoldpineValley_Campaign_Bible_Weeks2-8_v1.md" in docs_compacted
     diagnostics = impact["routing_filter_diagnostics"]
     assert diagnostics["source_recovery_attempted"] is True
     assert diagnostics["safe_candidate_count"] >= 4
+    assert set(diagnostics["recovered_source_candidates"]) & expected_swift
+    assert diagnostics["filtered_count"] >= 0
+    assert "filtered_reasons" in diagnostics
+    assert diagnostics["docs_downranked_count"] >= 0

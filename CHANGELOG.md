@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6.16
+
+- Reconciled Swift/iOS source recovery with semantic edit buckets so recovered safe Swift full-text files also appear in `likely_edit_files`.
+- Downranked prompt-excluded `Docs/*.md` files, including campaign-bible docs, for SwiftUI/source prompts that explicitly avoid Docs.
+- Added recovered source candidates and docs downrank counts to routing diagnostics.
+- Bumped package version to `0.2.6.16`.
+
 ## v0.2.6.15
 
 - Downranked dirty in-repo planning/art-source files for Swift/iOS source prompts, especially when the prompt excludes Docs, Planning_Bundles, ArtSource, assets, or related folders.

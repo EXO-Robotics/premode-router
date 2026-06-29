@@ -25,6 +25,7 @@ from .repo_map import (
     task_impact_hints,
     _is_ignore_boundary_path,
     _is_in_repo_planning_art_path,
+    _is_prompt_excluded_docs_path,
     _prompt_excludes_in_repo_planning_art,
     _prompt_has_negative_boundary,
     _prompt_is_swift_source_task,
@@ -727,6 +728,58 @@ def _compact_patch_boundary_for_packet(boundary: dict[str, Any] | None, profile_
     return compact
 
 
+def _reconcile_source_recovery_impact_map(impact_map: dict[str, Any] | None, context_tiers: dict[str, Any], raw_prompt: str, prompt_forbidden_paths: set[str]) -> None:
+    if not isinstance(impact_map, dict) or not _prompt_is_swift_source_task(raw_prompt):
+        return
+    diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
+    if isinstance(diagnostics, dict):
+        diagnostics["source_recovery_attempted"] = True
+    recovered: list[str] = []
+    for item in context_tiers.get("full_text_files") or []:
+        path = str(item.get("path") or "")
+        flags = set(item.get("evidence_flags") or [])
+        if not path or "source_recovery" not in flags or Path(path).suffix.lower() != ".swift":
+            continue
+        if _is_same_path_or_suffix(path.lower(), prompt_forbidden_paths):
+            continue
+        if _is_ignore_boundary_path(path) or _is_in_repo_planning_art_path(path) or _is_prompt_excluded_docs_path(path, raw_prompt):
+            continue
+        recovered.append(path)
+    recovered = list(dict.fromkeys(recovered))
+    if recovered:
+        existing = {str(item.get("path") or "") for item in impact_map.get("likely_edit_files") or []}
+        additions = [
+            {
+                "path": path,
+                "kind": "swift_source_recovery",
+                "source": "selected_context_source_recovery",
+                "reason": "Recovered safe Swift source selected for full-text context",
+                "language": "swift",
+            }
+            for path in recovered
+            if path not in existing
+        ]
+        if additions:
+            impact_map["likely_edit_files"] = list(impact_map.get("likely_edit_files") or []) + additions
+            impact_map["likely_files"] = list(impact_map.get("likely_files") or []) + additions
+        if isinstance(diagnostics, dict):
+            current = list(diagnostics.get("recovered_source_candidates") or [])
+            diagnostics["recovered_source_candidates"] = list(dict.fromkeys(current + recovered))
+            diagnostics["safe_candidate_count"] = max(int(diagnostics.get("safe_candidate_count") or 0), len(diagnostics["recovered_source_candidates"]))
+    docs_downranked = 0
+    filtered_reasons = diagnostics.setdefault("filtered_reasons", {}) if isinstance(diagnostics, dict) else {}
+    for tier_name in ("summarized_files", "manifest_only_files"):
+        for item in context_tiers.get(tier_name) or []:
+            flags = set(item.get("evidence_flags") or [])
+            if "docs_dirty_compacted" in flags:
+                docs_downranked += 1
+    if isinstance(diagnostics, dict):
+        diagnostics["docs_downranked_count"] = max(int(diagnostics.get("docs_downranked_count") or 0), docs_downranked)
+        if docs_downranked and isinstance(filtered_reasons, dict):
+            filtered_reasons["prompt_excluded_docs_boundary"] = max(int(filtered_reasons.get("prompt_excluded_docs_boundary") or 0), docs_downranked)
+        diagnostics["filtered_count"] = max(int(diagnostics.get("filtered_count") or 0), sum(int(v) for v in (filtered_reasons or {}).values() if isinstance(v, int)))
+
+
 def ensure_index(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
     idx = load_index(repo_root)
     if idx is None:
@@ -1198,13 +1251,14 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             reason = (reason + ", source_gameplay_budget_priority").strip(", ")
         if (
             caps.name == "lite"
-            and _is_in_repo_planning_art_path(lower_entry_path)
+            and (_is_in_repo_planning_art_path(lower_entry_path) or _is_prompt_excluded_docs_path(lower_entry_path, raw_prompt))
             and "prompt_mentioned" not in flags
             and (_prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt))
         ):
             score = min(score, 360)
-            flags = sorted((set(flags) - {"dirty_file"}) | {"planning_art_dirty_compacted"})
-            reason = (reason + ", planning_art_dirty_compacted").strip(", ")
+            compact_flag = "docs_dirty_compacted" if _is_prompt_excluded_docs_path(lower_entry_path, raw_prompt) else "planning_art_dirty_compacted"
+            flags = sorted((set(flags) - {"dirty_file"}) | {compact_flag})
+            reason = (reason + f", {compact_flag}").strip(", ")
         if enforce_child_context_boundary and not _is_inside_selected_root(lower_entry_path, selected_child_root) and "prompt_mentioned" not in flags:
             if _is_parent_authority_guidance_path(lower_entry_path):
                 inherited_score = 650 if Path(lower_entry_path).name == "agents.md" else 620
@@ -1250,7 +1304,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         if packet_mode == "tiny" and flags and flags.issubset({"guidance_file", "keyword_path_match"}):
             # In tiny low-risk repos, guidance files are summarized unless directly named/dirty/error-linked.
             strong = False
-        if "planning_art_dirty_compacted" in flags and "prompt_mentioned" not in flags:
+        if ({"planning_art_dirty_compacted", "docs_dirty_compacted"} & flags) and "prompt_mentioned" not in flags:
             strong = False
         manifest = {
             "path": entry["path"],
@@ -1438,6 +1492,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         "summarized_files": summarized_files,
         "manifest_only_files": manifest_only_files,
     }
+    _reconcile_source_recovery_impact_map(impact_map, context_tiers, raw_prompt, prompt_forbidden_paths)
     selected_manifest = context_tiers["full_text_files"] + [
         {k: v for k, v in item.items() if k != "summary"} for item in summarized_files
     ]

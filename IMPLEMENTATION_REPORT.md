@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.15
+# Implementation Report — Pre-mode Router v0.2.6.16
 
 ## Release summary
 
-`v0.2.6.15 — In-Repo Dirty Planning/Art Downrank + Source Recovery` keeps dirty planning/art-source files from dominating lite Swift/iOS source packets and recovers safe Swift source candidates for UI/tutorial prompts.
+`v0.2.6.16 — Swift Edit Bucket Recovery + Remaining Docs Downrank` closes the remaining Goldpine SwiftUI routing gap by putting recovered Swift context into edit buckets and compacting prompt-excluded Docs campaign files.
 
 ## Product loop
 
@@ -28,6 +28,13 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.16 changes
+
+- Bumped package version to `0.2.6.16`.
+- Reconciled source-recovered Swift full-text files back into `likely_edit_files` and backward-compatible `likely_files`.
+- Downranked prompt-excluded `Docs/*.md` files for Swift/iOS source prompts, including campaign-bible docs outside Planning_Bundles.
+- Added routing diagnostics for recovered Swift candidates and docs downrank counts.
 
 ## v0.2.6.15 changes
 
@@ -123,6 +130,7 @@ v2.6.12 — Child Repo Context Boundary
 v2.6.13 — Ignore-Boundary Routing Enforcement
 v2.6.14 — Validation Reliability + Semantic Impact Buckets
 v2.6.15 — In-Repo Dirty Planning/Art Downrank + Source Recovery
+v2.6.16 — Swift Edit Bucket Recovery + Remaining Docs Downrank
 ```
 
 ## Standard validation

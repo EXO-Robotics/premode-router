@@ -83,6 +83,8 @@ IN_REPO_PLANNING_ART_TERMS = (
 )
 IN_REPO_PLANNING_ART_PROMPT_TERMS = (
     'avoid docs',
+    'avoid doc',
+    'docs',
     'avoid planning_bundles',
     'planning_bundles',
     'avoid artsource',
@@ -139,6 +141,11 @@ def _is_in_repo_planning_art_path(path: str) -> bool:
         or lower.startswith('docs/planning_bundles/')
         or lower.startswith('artsource/')
     )
+
+
+def _is_prompt_excluded_docs_path(path: str, raw_prompt: str) -> bool:
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    return lower.startswith('docs/') and _prompt_excludes_in_repo_planning_art(raw_prompt)
 
 
 def _is_swift_source_recovery_candidate(path: str, info: dict[str, Any]) -> bool:
@@ -1161,6 +1168,7 @@ def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any
     diagnostic = {
         'source_recovery_attempted': True,
         'safe_candidate_count': safe_candidate_count,
+        'recovered_source_candidates': [item['path'] for item in selected],
         'selected_count': len(selected),
         'why_no_source_candidates': None if selected else (
             'no safe Swift source files survived planning/art/assets/build/dependency filters'
@@ -1258,18 +1266,23 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
         kept_likely: list[dict[str, Any]] = []
         removed_planning_art: list[dict[str, Any]] = []
+        docs_downranked_count = 0
         for item in filtered_likely:
             path = str(item.get('path') or '')
-            if path and _is_in_repo_planning_art_path(path) and path not in explicit_paths:
+            if path and (_is_in_repo_planning_art_path(path) or _is_prompt_excluded_docs_path(path, raw_prompt)) and path not in explicit_paths:
+                if _is_prompt_excluded_docs_path(path, raw_prompt):
+                    docs_downranked_count += 1
                 removed_planning_art.append({
                     'path': path,
-                    'reason': 'in_repo_planning_art_boundary',
+                    'reason': 'prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary',
                     'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
                 })
             else:
                 kept_likely.append(item)
         filtered_likely = kept_likely
         removed_likely.extend(removed_planning_art)
+    else:
+        docs_downranked_count = 0
     prompt_forbidden_files: list[dict[str, Any]] = []
     read_only_support_files: list[dict[str, Any]] = []
     likely_edit_files: list[dict[str, Any]] = []
@@ -1291,10 +1304,12 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         removed_planning_related: list[dict[str, Any]] = []
         for item in filtered_related:
             path = str(item.get('path') or '')
-            if path and _is_in_repo_planning_art_path(path) and path not in explicit_paths:
+            if path and (_is_in_repo_planning_art_path(path) or _is_prompt_excluded_docs_path(path, raw_prompt)) and path not in explicit_paths:
+                if _is_prompt_excluded_docs_path(path, raw_prompt):
+                    docs_downranked_count += 1
                 removed_planning_related.append({
                     'path': path,
-                    'reason': 'in_repo_planning_art_boundary',
+                    'reason': 'prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary',
                     'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
                 })
             else:
@@ -1325,6 +1340,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'read_only_support_count': len(read_only_support_files),
         'filtered_count': len(removed_likely) + len(removed_related) + removed_deps + removed_dependents,
         'filtered_reasons': filtered_reasons,
+        'docs_downranked_count': docs_downranked_count,
         'removed_likely_count': len(removed_likely),
         'removed_related_test_count': len(removed_related),
         'removed_dependency_edge_count': removed_deps,

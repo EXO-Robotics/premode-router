@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.15 In-Repo Dirty Planning/Art Downrank + Source Recovery
+# Final Package Index — v0.2.6.16 Swift Edit Bucket Recovery + Remaining Docs Downrank
 
 This package is the current release-candidate base for external Codex testing.
 
