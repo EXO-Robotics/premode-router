@@ -81,6 +81,24 @@ IN_REPO_PLANNING_ART_TERMS = (
     'app_reality_alignment',
     'app reality alignment',
 )
+ART_SOURCE_MANIFEST_TERMS = (
+    'animal',
+    'sprite',
+    'pose',
+    'crop',
+    'art',
+    'artsource',
+    'art_source',
+    'art-source',
+    'npc_model',
+    'npc_models',
+    'asset',
+    'assets',
+    'source',
+    'source_art',
+    'source-art',
+    'generated',
+)
 IN_REPO_PLANNING_ART_PROMPT_TERMS = (
     'avoid docs',
     'avoid doc',
@@ -137,10 +155,19 @@ def _is_in_repo_planning_art_path(path: str) -> bool:
     return (
         bool(set(parts) & IN_REPO_PLANNING_ART_SEGMENTS)
         or name in IN_REPO_PLANNING_ART_NAMES
+        or _is_art_source_manifest_path(lower)
         or any(term in lower for term in IN_REPO_PLANNING_ART_TERMS)
         or lower.startswith('docs/planning_bundles/')
         or lower.startswith('artsource/')
     )
+
+
+def _is_art_source_manifest_path(path: str) -> bool:
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    name = Path(lower).name
+    if Path(lower).suffix != '.json' or 'manifest' not in name:
+        return False
+    return any(term in lower for term in ART_SOURCE_MANIFEST_TERMS)
 
 
 def _is_prompt_excluded_docs_path(path: str, raw_prompt: str) -> bool:
@@ -1263,6 +1290,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     filtered_likely: list[dict[str, Any]]
     filtered_related: list[dict[str, Any]]
     filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths)
+    asset_manifest_filtered_count = 0
     if _prompt_excludes_in_repo_planning_art(raw_prompt) or _prompt_is_swift_source_task(raw_prompt):
         kept_likely: list[dict[str, Any]] = []
         removed_planning_art: list[dict[str, Any]] = []
@@ -1270,11 +1298,13 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         for item in filtered_likely:
             path = str(item.get('path') or '')
             if path and (_is_in_repo_planning_art_path(path) or _is_prompt_excluded_docs_path(path, raw_prompt)) and path not in explicit_paths:
+                if _is_art_source_manifest_path(path):
+                    asset_manifest_filtered_count += 1
                 if _is_prompt_excluded_docs_path(path, raw_prompt):
                     docs_downranked_count += 1
                 removed_planning_art.append({
                     'path': path,
-                    'reason': 'prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary',
+                    'reason': 'asset_manifest_boundary' if _is_art_source_manifest_path(path) else ('prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary'),
                     'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
                 })
             else:
@@ -1305,11 +1335,13 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         for item in filtered_related:
             path = str(item.get('path') or '')
             if path and (_is_in_repo_planning_art_path(path) or _is_prompt_excluded_docs_path(path, raw_prompt)) and path not in explicit_paths:
+                if _is_art_source_manifest_path(path):
+                    asset_manifest_filtered_count += 1
                 if _is_prompt_excluded_docs_path(path, raw_prompt):
                     docs_downranked_count += 1
                 removed_planning_related.append({
                     'path': path,
-                    'reason': 'prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary',
+                    'reason': 'asset_manifest_boundary' if _is_art_source_manifest_path(path) else ('prompt_excluded_docs_boundary' if _is_prompt_excluded_docs_path(path, raw_prompt) else 'in_repo_planning_art_boundary'),
                     'strict_negative_prompt': _prompt_excludes_in_repo_planning_art(raw_prompt),
                 })
             else:
@@ -1341,6 +1373,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'filtered_count': len(removed_likely) + len(removed_related) + removed_deps + removed_dependents,
         'filtered_reasons': filtered_reasons,
         'docs_downranked_count': docs_downranked_count,
+        'asset_manifest_filtered_count': asset_manifest_filtered_count,
         'removed_likely_count': len(removed_likely),
         'removed_related_test_count': len(removed_related),
         'removed_dependency_edge_count': removed_deps,

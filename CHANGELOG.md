@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6.17
+
+- Reconciled safe Swift full-text source recovery back into `likely_edit_files` and `likely_files` even when the final selected context is the recovery proof.
+- Suppressed animal/art/source manifest JSON files from SwiftUI/source full-text context unless explicitly prompt-mentioned.
+- Populated routing diagnostics for source recovery attempts, recovered Swift candidates, docs downranking, filtered reasons, and asset manifest filtering.
+- Bumped package version to `0.2.6.17`.
+
 ## v0.2.6.16
 
 - Reconciled Swift/iOS source recovery with semantic edit buckets so recovered safe Swift full-text files also appear in `likely_edit_files`.

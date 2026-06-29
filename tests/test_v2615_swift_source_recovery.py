@@ -33,6 +33,12 @@ def _make_goldpine_like_repo(repo: Path) -> None:
     _write(repo / "GoldpineValley" / "ViewModels" / "GameSessionViewModel+HomesteadNavigation.swift", "final class GameSessionViewModel { var tutorialState = 0 }\n")
     _write(repo / "GoldpineValley" / "Models" / "TutorialState.swift", "struct TutorialState { var step: Int }\n")
     _write(repo / "GoldpineValley" / "Assets.xcassets" / "AppIcon.appiconset" / "Contents.json", "{}\n")
+    animal_manifest = "[\n" + ",\n".join(
+        f'  {{"animal": "fox", "sprite": "pose_{i}", "source": "ArtSource/NPC_Models/fox_{i}.png", "crop": [{i}, {i + 1}, 64, 64]}}'
+        for i in range(160)
+    ) + "\n]\n"
+    _write(repo / "animal_sprite_pose_screenshot_manifest.json", animal_manifest)
+    _write(repo / "animal_sprite_crop_manifest.json", animal_manifest)
     noisy = "# Planning note\n" + ("Historical planning/art guidance only.\n" * 260)
     _write(repo / "Docs" / "Planning_Bundles" / "Week_04" / "AGENTS.md", noisy)
     _write(repo / "Docs" / "Planning_Bundles" / "Week_04" / "PATCH_NOTES.md", noisy)
@@ -59,6 +65,8 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
         "ArtSource/NPC_Models/README.md",
         "Docs/app_reality_alignment.md",
         "Docs/GoldpineValley_Campaign_Bible_Weeks2-8_v1.md",
+        "animal_sprite_pose_screenshot_manifest.json",
+        "animal_sprite_crop_manifest.json",
     ):
         path = repo / rel
         path.write_text(path.read_text(encoding="utf-8") + noisy_update, encoding="utf-8")
@@ -70,6 +78,12 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     assert result["metrics"]["packet_total_tokens"] <= result["caps"]["hard_packet_token_budget"]
     impact = result["impact_map"]
     likely_edit = {item["path"] for item in impact["likely_edit_files"]}
+    likely_files = {item["path"] for item in impact["likely_files"]}
+    required_swift = {
+        "GoldpineValley/Views/MainMenuView.swift",
+        "GoldpineValley/Views/BottomBarView.swift",
+        "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
+    }
     expected_swift = {
         "GoldpineValley/Views/MainMenuView.swift",
         "GoldpineValley/Views/BottomBarView.swift",
@@ -77,6 +91,8 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
         "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
         "GoldpineValley/Models/TutorialState.swift",
     }
+    assert required_swift <= likely_edit
+    assert required_swift <= likely_files
     assert likely_edit & expected_swift
     forbidden_fragments = (
         "Docs/Planning_Bundles",
@@ -85,14 +101,18 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
         "DerivedData",
         ".premode",
         ".agents",
+        "animal_sprite",
     )
     assert not any(any(fragment in path for fragment in forbidden_fragments) for path in likely_edit)
 
     full_paths = [item["path"] for item in result["context_tiers"]["full_text_files"]]
     assert any(path.startswith("GoldpineValley/") and path.endswith(".swift") for path in full_paths)
+    assert required_swift & set(full_paths)
     assert not any(path.startswith("Docs/Planning_Bundles/") for path in full_paths)
     assert not any(path.startswith("ArtSource/") for path in full_paths)
     assert "Docs/GoldpineValley_Campaign_Bible_Weeks2-8_v1.md" not in full_paths
+    assert "animal_sprite_pose_screenshot_manifest.json" not in full_paths
+    assert "animal_sprite_crop_manifest.json" not in full_paths
 
     summarized_or_manifest = result["context_tiers"]["summarized_files"] + result["context_tiers"]["manifest_only_files"]
     planning_compacted = [
@@ -114,3 +134,5 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     assert diagnostics["filtered_count"] >= 0
     assert "filtered_reasons" in diagnostics
     assert diagnostics["docs_downranked_count"] >= 0
+    assert diagnostics["asset_manifest_filtered_count"] >= 2
+    assert diagnostics["filtered_reasons"]["asset_manifest_boundary"] >= 2

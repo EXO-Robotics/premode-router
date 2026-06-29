@@ -23,6 +23,7 @@ from .repo_map import (
     build_repo_map,
     compact_repo_map_summary,
     task_impact_hints,
+    _is_art_source_manifest_path,
     _is_ignore_boundary_path,
     _is_in_repo_planning_art_path,
     _is_prompt_excluded_docs_path,
@@ -728,17 +729,42 @@ def _compact_patch_boundary_for_packet(boundary: dict[str, Any] | None, profile_
     return compact
 
 
-def _reconcile_source_recovery_impact_map(impact_map: dict[str, Any] | None, context_tiers: dict[str, Any], raw_prompt: str, prompt_forbidden_paths: set[str]) -> None:
+def _reconcile_source_recovery_impact_map(
+    impact_map: dict[str, Any] | None,
+    context_tiers: dict[str, Any],
+    raw_prompt: str,
+    prompt_forbidden_paths: set[str],
+    *,
+    asset_manifest_filtered_count: int = 0,
+) -> None:
     if not isinstance(impact_map, dict) or not _prompt_is_swift_source_task(raw_prompt):
         return
     diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
     if isinstance(diagnostics, dict):
         diagnostics["source_recovery_attempted"] = True
+        diagnostics.setdefault("safe_candidate_count", 0)
+        diagnostics.setdefault("recovered_source_candidates", [])
+        diagnostics.setdefault("filtered_count", 0)
+        diagnostics.setdefault("filtered_reasons", {})
+        diagnostics.setdefault("docs_downranked_count", 0)
+        diagnostics["asset_manifest_filtered_count"] = max(
+            int(diagnostics.get("asset_manifest_filtered_count") or 0),
+            asset_manifest_filtered_count,
+        )
+        if asset_manifest_filtered_count:
+            filtered_reasons = diagnostics.setdefault("filtered_reasons", {})
+            if isinstance(filtered_reasons, dict):
+                filtered_reasons["asset_manifest_boundary"] = max(
+                    int(filtered_reasons.get("asset_manifest_boundary") or 0),
+                    asset_manifest_filtered_count,
+                )
     recovered: list[str] = []
     for item in context_tiers.get("full_text_files") or []:
         path = str(item.get("path") or "")
         flags = set(item.get("evidence_flags") or [])
-        if not path or "source_recovery" not in flags or Path(path).suffix.lower() != ".swift":
+        if not path or Path(path).suffix.lower() != ".swift":
+            continue
+        if "source_recovery" not in flags and not _is_swift_source_path_safe_for_recovery(path, raw_prompt):
             continue
         if _is_same_path_or_suffix(path.lower(), prompt_forbidden_paths):
             continue
@@ -778,6 +804,25 @@ def _reconcile_source_recovery_impact_map(impact_map: dict[str, Any] | None, con
         if docs_downranked and isinstance(filtered_reasons, dict):
             filtered_reasons["prompt_excluded_docs_boundary"] = max(int(filtered_reasons.get("prompt_excluded_docs_boundary") or 0), docs_downranked)
         diagnostics["filtered_count"] = max(int(diagnostics.get("filtered_count") or 0), sum(int(v) for v in (filtered_reasons or {}).values() if isinstance(v, int)))
+        if not diagnostics.get("recovered_source_candidates") and int(diagnostics.get("safe_candidate_count") or 0) == 0:
+            diagnostics["why_no_source_candidates"] = diagnostics.get("why_no_source_candidates") or "no safe Swift source candidates selected for full-text context"
+
+
+def _is_swift_source_path_safe_for_recovery(path: str, raw_prompt: str) -> bool:
+    lower = str(path).replace("\\", "/").lower().strip("/")
+    if not lower.endswith(".swift"):
+        return False
+    if _is_ignore_boundary_path(lower) or _is_in_repo_planning_art_path(lower) or _is_prompt_excluded_docs_path(lower, raw_prompt):
+        return False
+    return not any(part in lower for part in (
+        ".xcassets/",
+        ".xcodeproj/",
+        ".xcworkspace/",
+        "deriveddata/",
+        "/ci/",
+        "/.github/",
+        "package.resolved",
+    ))
 
 
 def ensure_index(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
@@ -1259,6 +1304,14 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             compact_flag = "docs_dirty_compacted" if _is_prompt_excluded_docs_path(lower_entry_path, raw_prompt) else "planning_art_dirty_compacted"
             flags = sorted((set(flags) - {"dirty_file"}) | {compact_flag})
             reason = (reason + f", {compact_flag}").strip(", ")
+        if (
+            _prompt_is_swift_source_task(raw_prompt)
+            and _is_art_source_manifest_path(lower_entry_path)
+            and "prompt_mentioned" not in flags
+        ):
+            score = min(score, 320)
+            flags = sorted((set(flags) - {"dirty_file"}) | {"asset_manifest_compacted"})
+            reason = (reason + ", asset_manifest_compacted").strip(", ")
         if enforce_child_context_boundary and not _is_inside_selected_root(lower_entry_path, selected_child_root) and "prompt_mentioned" not in flags:
             if _is_parent_authority_guidance_path(lower_entry_path):
                 inherited_score = 650 if Path(lower_entry_path).name == "agents.md" else 620
@@ -1271,6 +1324,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
                 reason = (reason + ", outside_selected_project_root").strip(", ")
         ranked.append({**entry, "score": score, "evidence_flags": flags, "reason": reason})
     ranked.sort(key=lambda e: (int(e.get("score", 0)), -int(e.get("bytes", 0))), reverse=True)
+    asset_manifest_filtered_count = sum(1 for entry in ranked if "asset_manifest_compacted" in set(entry.get("evidence_flags") or []))
 
     ignore = IgnoreMatcher.from_repo(repo_root)
     trust_boundary_warnings = _scan_untrusted_context_warnings(repo_root, entries, caps, ignore)
@@ -1492,7 +1546,13 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         "summarized_files": summarized_files,
         "manifest_only_files": manifest_only_files,
     }
-    _reconcile_source_recovery_impact_map(impact_map, context_tiers, raw_prompt, prompt_forbidden_paths)
+    _reconcile_source_recovery_impact_map(
+        impact_map,
+        context_tiers,
+        raw_prompt,
+        prompt_forbidden_paths,
+        asset_manifest_filtered_count=asset_manifest_filtered_count,
+    )
     selected_manifest = context_tiers["full_text_files"] + [
         {k: v for k, v in item.items() if k != "summary"} for item in summarized_files
     ]

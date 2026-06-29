@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.16
+# Implementation Report — Pre-mode Router v0.2.6.17
 
 ## Release summary
 
-`v0.2.6.16 — Swift Edit Bucket Recovery + Remaining Docs Downrank` closes the remaining Goldpine SwiftUI routing gap by putting recovered Swift context into edit buckets and compacting prompt-excluded Docs campaign files.
+`v0.2.6.17 — Final Swift Bucket Reconciliation + Asset Manifest Suppression` closes the remaining Goldpine SwiftUI routing gap by keeping recovered Swift source in edit buckets, suppressing animal/art manifest JSON from full text, and filling routing diagnostics.
 
 ## Product loop
 
@@ -28,6 +28,13 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.17 changes
+
+- Bumped package version to `0.2.6.17`.
+- Reconciled safe Swift full-text files selected by source recovery into both `likely_edit_files` and `likely_files`.
+- Treated root-level animal sprite/art/source manifest JSON files as art/generated-adjacent metadata for SwiftUI/source prompts unless explicitly named.
+- Added routing diagnostics for source recovery attempts, recovered candidates, filtered reasons, docs downranking, and asset manifest filtering.
 
 ## v0.2.6.16 changes
 
