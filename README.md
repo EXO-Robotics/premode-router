@@ -1,8 +1,8 @@
 # Pre-mode Router
 
-**Pre-mode Router is a local control layer for AI coding agents.**
+**Pre-mode Router is a local context compiler and routing formatter for AI coding agents.**
 
-It runs before the agent to compile a smaller, safer, repo-aware work packet, then runs after the agent to review whether the patch stayed inside the saved boundary.
+It runs before the agent to compile a smaller, safer, repo-aware work packet, then runs after the agent to review whether the patch stayed inside the saved context contract.
 
 ```text
 Before the agent:
@@ -17,23 +17,25 @@ After the agent:
   compare the git patch against the saved contract
   flag scope drift and risky files
   verify test evidence binding
-  report merge readiness
+  report working-tree readiness
 ```
+
+Pre-mode may classify files and suggest verification. It must not decide implementation strategy, infer complex product intent, overrule the coding agent's reasoning, or present candidate files as the only correct files.
 
 Codex CLI is the first supported runtime through `pcodex`, but the packet/review core is designed to be agent-agnostic.
 
 ## Current version
 
-`v0.2.6.6 — Local Validation + macOS Portability Cleanup`
+`v0.2.6.23 — Context Compiler Boundary`
 
-This build keeps the v2.6 product loop stable and cleans the local validation surface for external testing:
+This build tightens the product boundary:
 
 - `premode compile` / `pcodex` produce saved Packet V3 artifacts.
-- `premode review-patch --since-compile` checks the agent patch against the saved contract.
-- `premode benchmark` reports token savings, cache split, budget diagnostics, routing hints, and optional review readiness.
-- Public docs now include installed and no-install validation paths.
-- `scripts/smoke_test.sh` uses a portable Python timeout helper instead of GNU `timeout`.
-- v2.7 planning is isolated in `CODEX_ONE_SHOT_PROMPT_v2.7.0.md`; `premode lint-agents` is not implemented in this release.
+- `premode compile --context-only` compiles candidate context and safety boundaries without strong allowed-edit narrowing.
+- `premode review-patch --since-compile` checks whether the patch stayed inside the saved context contract.
+- User-facing buckets prefer `candidate_edit_files`, `read_only_support_files`, `prompt_forbidden_files`, `safety_blocked_files`, `suggested_tests`, and `suggested_commands`.
+- Legacy `likely_edit_files` and `allowed_edit_files` remain as compatibility aliases. `allowed_edit_files` means saved context contract boundary, not implementation correctness.
+- Adapter expansion is frozen for MVP: new ecosystem support should prefer `.premode/profile.yml` or generic structural profiles unless a major safety false-positive requires core support.
 
 ## Python requirement
 
@@ -48,6 +50,7 @@ From the extracted package root, module execution works without installing conso
 ```bash
 PYTHONPATH=src python -m premode.cli detect --json
 PYTHONPATH=src python -m premode.cli compile "Fix the failing test" --profile lite --cache-optimized --json
+PYTHONPATH=src python -m premode.cli compile "Fix the failing test" --profile lite --cache-optimized --context-only --json
 PYTHONPATH=src python -m premode.cli benchmark --profile lite --json
 ```
 
@@ -95,6 +98,7 @@ premode compile "Fix the failing test without expanding scope" \
   --profile lite \
   --use-repo-map \
   --cache-optimized \
+  --context-only \
   --save \
   --json
 
@@ -125,7 +129,7 @@ Benchmark reports:
 - estimated savings percentage
 - cacheable prefix tokens and percent
 - dynamic suffix tokens and percent
-- likely files and related tests
+- candidate files and related tests
 - budget-exceeded prompts with reason fields
 - optional review readiness with `--include-review --since-compile`
 
@@ -157,16 +161,19 @@ premode review-patch --since-compile --json
 ```bash
 premode setup
 premode detect --json
-premode index --profile lite
-premode map --summary-json
-premode compile "Fix the build" --profile lite --use-repo-map --cache-optimized --save --json
+premode compile "Fix the build" --profile lite --use-repo-map --cache-optimized --context-only --save --json
 pcodex "Fix the build"
 premode review-patch --since-compile
 premode review-patch --against main --json
 premode benchmark --profile lite --json
 premode stress --profile lite --json
-premode stats --savings
 ```
+
+Primary MVP command surface: `premode setup`, `premode detect`, `premode compile`, `pcodex`, `premode review-patch`, `premode benchmark`, and `premode stress`.
+
+Experimental/deferred command surfaces: `premode plugin`, `premode hook`, `premode mcp-server`, and `premode lab`. They remain available for local experiments but are not part of the MVP workflow.
+
+`premode index`, `premode map`, `premode inspect`, `premode doctor`, and `premode stats` are support/diagnostic commands.
 
 ## Packet V3
 
@@ -177,7 +184,7 @@ stable prefix:
   schema, agent contract, output contract, safety rules, repo profile, command matrix
 
 dynamic suffix:
-  task, dirty files, diff/logs, likely files/tests, context receipt, hashes, selected context
+  task, dirty files, diff/logs, candidate files/tests, context receipt, hashes, selected context
 ```
 
 V2 fallback remains available:
@@ -189,12 +196,14 @@ premode compile "Fix the bug" --packet-version v2
 ## Review-patch readiness levels
 
 ```text
-pass     only allowed changes, no unresolved evidence issue
-warning  unexpected/config/CI change, missing or unbound evidence, or justification required
-blocked  forbidden/prompt-forbidden/secret/generated-state mutation or failed bound tests
+pass     patch stayed inside saved context contract, no unresolved evidence issue
+warning  unlisted/config/CI change, missing or unbound evidence, or justification required
+blocked  safety-blocked/prompt-forbidden/secret/generated-state mutation or failed bound tests
 ```
 
 `review-patch` is a human review governor, not an automatic merge approval.
+
+It does not prove the patch is correct and does not claim the candidate files were the only valid files.
 
 ## Important docs
 

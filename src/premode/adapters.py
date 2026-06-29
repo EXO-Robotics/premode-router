@@ -275,11 +275,8 @@ def _prompt_affinity_bonus(root: str, markers: list[str], prompt: str | None) ->
         if has_unreal_marker or "openclaw" in root_l:
             bonus += 320
             reasons.append("prompt has Unreal/gameplay affinity")
-    if "goldpine" in prompt_l and "goldpine" in root_l:
-        bonus += 650
-        reasons.append("prompt mentions Goldpine and root name matches")
     if any(term in prompt_l for term in ["ios", "swift", "xcode"]):
-        if has_ios_marker or "ios" in root_l or "goldpine" in root_l:
+        if has_ios_marker or "ios" in root_l:
             bonus += 320
             reasons.append("prompt has iOS/Swift/Xcode affinity")
     if any(term in prompt_l for term in ["node", "web", "frontend", "react", "vite", "npm"]):
@@ -681,7 +678,7 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
     else:
         # Indexed entries are readable files only. Merge filesystem-level root
         # markers so compile-time detection does not lose directory markers such
-        # as `GoldpineValley.xcodeproj` and then fall back to source frequency.
+        # as `.xcodeproj` and then fall back to source frequency.
         rel_paths = [str(e.get("path", "")) for e in entries]
         rel_paths.extend(_iter_filesystem_root_markers(repo_root))
         rel_paths = sorted({p for p in rel_paths if p})

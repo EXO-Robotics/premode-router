@@ -160,7 +160,7 @@ def test_v266_docs_are_current_and_concise():
     readme = Path("README.md").read_text(encoding="utf-8")
     index = Path("FINAL_PACKAGE_INDEX.md").read_text(encoding="utf-8")
     report = Path("IMPLEMENTATION_REPORT.md").read_text(encoding="utf-8")
-    assert "v0.2.6.6" in readme
+    assert "v0.2.6.23" in readme
     assert "premode review-patch --since-compile" in readme
     assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q" in readme
     assert "v0.2.6.20" in index

@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.6.23
+
+- Tightened the product boundary: Pre-mode is documented as a context compiler/routing formatter, not a local reasoning engine or implementation planner.
+- Added `premode compile --context-only` to compile candidate context, suggested tests/commands, cache metrics, and safety boundaries without strong allowed-edit narrowing.
+- Added user-facing `candidate_edit_files`, `read_only_support_files`, `prompt_forbidden_files`, `safety_blocked_files`, `suggested_tests`, and `suggested_commands` aliases while preserving legacy `likely_edit_files` and `allowed_edit_files`.
+- Cleaned review-patch wording so reports say patches stayed inside or touched files outside the saved context contract, including prompt-forbidden and safety-blocked buckets.
+- Documented the adapter expansion freeze: prefer `.premode/profile.yml` or generic structural profiles unless a major safety false-positive requires core support.
+- Marked `premode plugin`, `premode hook`, `premode mcp-server`, and `premode lab` as experimental/deferred surfaces outside the primary MVP workflow.
+- Added release manifest exclusions for git, virtualenv, pycache, pytest cache, `.DS_Store`, and generated `.premode` runtime outputs.
+- Removed Goldpine-specific root-affinity logic from universal adapter detection while preserving generalized Swift/iOS routing and profile-scoped OpenClaw/control-plane behavior.
+- Bumped package version to `0.2.6.23`.
+
 ## v0.2.6.22
 
 - Added .NET/C#, Zig, and Haskell Stack/Cabal adapter detection, source routing, related-test mapping, command discovery, and review-contract allowed-edit bridging.

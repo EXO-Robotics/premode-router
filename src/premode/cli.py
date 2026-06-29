@@ -34,6 +34,7 @@ def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -
         "status": "compiled",
         "packet_version": result.get("packet_version"),
         "resource_profile": result.get("resource_profile"),
+        "context_boundary_mode": result.get("context_boundary_mode"),
         "packet_sha256": result.get("compiled_packet_sha256"),
         "cacheable_prefix_sha256": result.get("cacheable_prefix_sha256"),
         "dynamic_suffix_sha256": result.get("dynamic_suffix_sha256"),
@@ -78,6 +79,7 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
     comp.add_argument("--packet-version", choices=["v2", "v3"], default=None, help="Compiled packet renderer version. v3 is cache-aware.")
     comp.add_argument("--cache-optimized", action="store_true", help="Select cache-aware Packet V3 unless --packet-version v2 is explicitly set.")
+    comp.add_argument("--context-only", action="store_true", help="Compile candidate context and safety boundaries without strong allowed-edit narrowing.")
     comp.add_argument("--save", action="store_true", help="Save last_packet artifacts under .premode/out/.")
 
     mp = sub.add_parser("map")
@@ -146,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     stress.add_argument("--out", default=None)
     stress.add_argument("--keep", action="store_true", help="Keep generated fixture repos and include their base path in output.")
 
-    plug = sub.add_parser("plugin")
+    plug = sub.add_parser("plugin", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     plug_sub = plug.add_subparsers(dest="plugin_command", required=True)
     install = plug_sub.add_parser("install-local")
     install.add_argument("--scope", choices=["repo"], default="repo")
@@ -156,19 +158,19 @@ def build_parser() -> argparse.ArgumentParser:
     stats.add_argument("--last", action="store_true")
     stats.add_argument("--json", action="store_true", help="Accepted for compatibility; stats output is JSON by default.")
 
-    lab = sub.add_parser("lab")
+    lab = sub.add_parser("lab", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     lab_sub = lab.add_subparsers(dest="lab_command", required=True)
     compare = lab_sub.add_parser("compare")
     compare.add_argument("prompt")
     compare.add_argument("--provider", default="mock")
     compare.add_argument("--model", default=None)
 
-    hook = sub.add_parser("hook")
+    hook = sub.add_parser("hook", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
     ups = hook_sub.add_parser("user-prompt-submit")
     ups.add_argument("--mode", choices=["strict", "augment"], default="augment")
 
-    sub.add_parser("mcp-server")
+    sub.add_parser("mcp-server", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     return p
 
 
@@ -212,6 +214,7 @@ def main(argv: list[str] | None = None) -> int:
             use_repo_map=args.use_repo_map,
             packet_version=args.packet_version,
             cache_optimized=args.cache_optimized,
+            context_only=args.context_only,
             save=args.save,
         )
         if args.json:

@@ -191,7 +191,7 @@ def test_failed_test_log_blocks_or_warns(repo):
     result = review_patch(repo)
     assert result["merge_readiness"] == "blocked"
     assert result["verification"]["verification_status"] == "failed_evidence_found"
-    assert result["recommended_next_step"] == "Fix failing tests or revert the patch before merge review."
+    assert result["recommended_next_step"] == "Fix failing tests or revert the patch before review."
 
 
 def test_premode_index_runtime_metadata_is_ignored(repo):

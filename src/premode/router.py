@@ -62,9 +62,9 @@ def tool_plan_for_intents(classification: dict[str, Any], project_detection: dic
         plan.append({"tool": "project adapter", "purpose": f"Use detected adapter `{active.get('project_kind', 'generic')}` for build/log/acceptance hints."})
     if "compile_repair" in names or "test_failure" in names:
         plan.extend([
-            {"tool": "git status/diff", "purpose": "Understand uncommitted work before editing."},
-            {"tool": "configured build/test command", "purpose": "Use .premode/commands.json command hints when verifying."},
-            {"tool": "targeted file edit", "purpose": "Apply the smallest compile-safe repair."},
+            {"tool": "git status/diff", "purpose": "Surface uncommitted work before the coding agent edits."},
+            {"tool": "configured build/test command", "purpose": "Suggest .premode/commands.json verification commands when available."},
+            {"tool": "candidate context", "purpose": "Surface files with deterministic task signals; the coding agent chooses the implementation."},
         ])
     if "log_triage" in names:
         plan.append({"tool": "log scanner", "purpose": "Use first meaningful errors and adapter log patterns before guessing."})
@@ -77,7 +77,7 @@ def tool_plan_for_intents(classification: dict[str, Any], project_detection: dic
     if "documentation" in names:
         plan.append({"tool": "docs/rules reader", "purpose": "Update documentation without touching unrelated source."})
     if not plan:
-        plan.append({"tool": "repo inspection", "purpose": "Read selected context and make the smallest useful change."})
+        plan.append({"tool": "repo inspection", "purpose": "Read selected context before choosing an implementation."})
     return plan
 
 
@@ -119,5 +119,5 @@ def scope_guardrails_for_intents(classification: dict[str, Any], project_detecti
     if "controlled_patch" in names:
         guardrails.append("Treat the task as a bounded patch; avoid opportunistic refactors.")
     if "compile_repair" in names:
-        guardrails.append("Fix the build failure first; defer feature expansion until the build/test gate passes.")
+        guardrails.append("Use build/test failure signals as context; do not expand feature scope from them.")
     return guardrails

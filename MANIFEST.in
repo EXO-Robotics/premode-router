@@ -1,0 +1,18 @@
+include README.md
+include CHANGELOG.md
+include pyproject.toml
+recursive-include src *.py
+recursive-include tests *.py
+recursive-include docs *.md *.json
+recursive-include examples *
+recursive-include scripts *
+recursive-exclude .git *
+recursive-exclude .venv *
+recursive-exclude **/__pycache__ *
+recursive-exclude .pytest_cache *
+recursive-exclude .premode/out *
+recursive-exclude .premode/audit *
+recursive-exclude .premode/metrics *
+global-exclude .DS_Store
+global-exclude *.pyc
+global-exclude *.pyo

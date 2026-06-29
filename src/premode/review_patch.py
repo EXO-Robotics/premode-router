@@ -224,12 +224,20 @@ def _extract_review_contract(packet: dict[str, Any]) -> dict[str, Any]:
     boundary = packet.get("patch_boundary") if isinstance(packet.get("patch_boundary"), dict) else {}
     control = boundary.get("control_plane_boundary") if isinstance(boundary.get("control_plane_boundary"), dict) else {}
     metrics = packet.get("metrics") if isinstance(packet.get("metrics"), dict) else {}
+    candidate_files = packet.get("candidate_edit_files") or boundary.get("candidate_edit_files") or boundary.get("allowed_edit_files") or control.get("allowed_source_edits") or []
+    safety_blocked = (
+        packet.get("safety_blocked_files")
+        or boundary.get("safety_blocked_files")
+        or (boundary.get("forbidden_without_user_confirmation") or []) + (control.get("forbidden_runtime_mutation") or []) + (control.get("authority_read_only") or [])
+    )
     return {
         "packet_sha256": packet.get("packet_sha256") or packet.get("compiled_packet_sha256") or metrics.get("packet_sha256"),
         "raw_prompt_sha256": packet.get("raw_prompt_sha256"),
-        "allowed_edit_files": boundary.get("allowed_edit_files") or control.get("allowed_source_edits") or [],
+        "candidate_edit_files": candidate_files,
+        "allowed_edit_files": candidate_files,
         "allowed_if_justified": (boundary.get("allowed_if_justified") or []) + (control.get("allowed_config_if_justified") or []),
-        "forbidden_without_user_confirmation": (boundary.get("forbidden_without_user_confirmation") or []) + (control.get("forbidden_runtime_mutation") or []) + (control.get("authority_read_only") or []),
+        "safety_blocked_files": safety_blocked,
+        "forbidden_without_user_confirmation": safety_blocked,
         "prompt_forbidden_files": packet.get("prompt_forbidden_paths") or (packet.get("evidence_summary") or {}).get("prompt_forbidden_files") or [],
         "secret_like_patterns": SECRET_LIKE_PATTERNS,
         "generated_or_state_patterns": GENERATED_OR_STATE_PATTERNS + (control.get("state_mutation_requires_explicit_authorization") or []) + (control.get("evidence_only_generated_outputs") or []),
@@ -527,7 +535,16 @@ def classify_changed_files(changed_paths: list[str], contract: dict[str, Any]) -
         elif not any(path in out[key] for key in ["forbidden_files_touched", "prompt_forbidden_files_touched", "secret_like_paths_touched", "generated_or_state_mutation"]):
             out["unexpected_files_changed"].append(path)
 
-    return {k: _dedupe(v) for k, v in out.items()}
+    classified = {k: _dedupe(v) for k, v in out.items()}
+    classified["changed_candidate_files"] = list(classified.get("allowed_files_changed") or [])
+    classified["changed_unlisted_files"] = list(classified.get("unexpected_files_changed") or [])
+    classified["changed_safety_blocked_files"] = _dedupe(
+        list(classified.get("forbidden_files_touched") or [])
+        + list(classified.get("secret_like_paths_touched") or [])
+        + list(classified.get("generated_or_state_mutation") or [])
+    )
+    classified["changed_prompt_forbidden_files"] = list(classified.get("prompt_forbidden_files_touched") or [])
+    return classified
 
 
 def _split_findings(classified: dict[str, list[str]], verification: dict[str, Any], preexisting_paths: list[str] | None = None) -> dict[str, list[str]]:
@@ -535,19 +552,19 @@ def _split_findings(classified: dict[str, list[str]], verification: dict[str, An
     warning: list[str] = []
     info: list[str] = []
     for path in classified.get("prompt_forbidden_files_touched", []):
-        blocking.append(f"{path} was changed but the saved packet marked it as prompt-forbidden.")
+        blocking.append(f"{path} was changed but the saved context contract marked it as prompt-forbidden.")
     for path in classified.get("forbidden_files_touched", []):
-        blocking.append(f"{path} was changed but the saved packet marked it as forbidden without confirmation.")
+        blocking.append(f"{path} was changed but the saved context contract marked it as safety-blocked without confirmation.")
     for path in classified.get("secret_like_paths_touched", []):
         blocking.append(f"{path} appears secret-like and must not be changed by an agent patch.")
     for path in classified.get("generated_or_state_mutation", []):
-        blocking.append(f"{path} looks like generated/state/proof output and requires explicit authorization.")
+        blocking.append(f"{path} touched safety-blocked generated/state/proof output and requires explicit authorization.")
     for path in classified.get("dependency_or_build_files_changed", []):
         warning.append(f"{path} changed; dependency/build changes require review.")
     for path in classified.get("ci_files_changed", []):
         warning.append(f"{path} changed; CI workflow changes require review.")
     for path in classified.get("unexpected_files_changed", []):
-        warning.append(f"{path} changed outside the saved allowed edit boundary.")
+        warning.append(f"{path} changed outside the saved context contract.")
     status = verification.get("verification_status")
     if status == "claimed_without_evidence":
         warning.append("Tests were claimed but no supporting evidence was found.")
@@ -558,7 +575,7 @@ def _split_findings(classified: dict[str, list[str]], verification: dict[str, An
     elif status == "failed_evidence_found":
         blocking.append("Failed test evidence was found.")
     for path in preexisting_paths or []:
-        info.append(f"{path} was already dirty or untracked at compile time and is ignored for merge readiness because it is unchanged.")
+        info.append(f"{path} was already dirty or untracked at compile time and is ignored for working-tree readiness because it is unchanged.")
     return {
         "blocking_findings": _dedupe(blocking),
         "warning_findings": _dedupe(warning),
@@ -599,18 +616,18 @@ def _recommended_next_step(readiness: str, classified: dict[str, list[str]], ver
     if classified.get("secret_like_paths_touched"):
         return "Revert secret-like file changes before review."
     if classified.get("forbidden_files_touched"):
-        return "Revert forbidden files or get explicit user confirmation before merge."
+        return "Revert safety-blocked files or get explicit user confirmation before review."
     if classified.get("generated_or_state_mutation"):
         return "Revert generated/state/proof mutations unless the user explicitly authorized them."
     if verification.get("verification_status") == "failed_evidence_found":
-        return "Fix failing tests or revert the patch before merge review."
+        return "Fix failing tests or revert the patch before review."
     if verification.get("verification_status") == "evidence_present_but_unbound":
-        return "Attach test evidence bound to the current packet_sha256/run identity before merge."
+        return "Attach test evidence bound to the current packet_sha256/run identity before review."
     if verification.get("verification_status") in {"missing_evidence", "claimed_without_evidence"}:
-        return "Verify tests and attach evidence before merge."
+        return "Verify tests and attach evidence before review."
     if readiness == "warning":
-        return "Review unexpected or build/CI/dependency changes before merge."
-    return "Patch appears inside the saved Pre-mode contract; proceed with normal code review."
+        return "Review changes outside the saved context contract or build/CI/dependency changes."
+    return "Patch stayed inside the saved context contract; continue normal code review."
 
 
 def _is_ignored_runtime_metadata(item: ChangedFile) -> bool:
@@ -717,6 +734,9 @@ def review_patch(
         "info_findings": finding_groups["info_findings"],
         "risk_findings": findings,
         "merge_readiness": readiness,
+        "working_tree_readiness": readiness,
+        "staged_patch_readiness": "not_evaluated",
+        "staged_patch_readiness_note": "Staged-only review is deferred; this report evaluates the working tree diff.",
         "recommended_next_step": _recommended_next_step(readiness, classified, verification, agent_paths),
         "diff_metadata": diff_meta,
     }
@@ -737,12 +757,14 @@ def format_review_report(report: dict[str, Any]) -> str:
     readiness = str(report.get("merge_readiness") or "warning").upper()
     lines = [
         f"Patch review: {readiness}",
+        f"Working tree readiness: {str(report.get('working_tree_readiness') or report.get('merge_readiness') or 'warning')}",
+        f"Staged patch readiness: {str(report.get('staged_patch_readiness') or 'not_evaluated')}",
         f"Changed files: {len(report.get('changed_files') or [])}",
         f"Preexisting ignored: {len(report.get('preexisting_changes') or [])}",
-        f"Allowed: {len(report.get('allowed_files_changed') or [])}",
-        f"Unexpected: {len(report.get('unexpected_files_changed') or [])}",
-        f"Forbidden: {len(report.get('forbidden_files_touched') or [])}",
-        f"Prompt-forbidden: {len(report.get('prompt_forbidden_files_touched') or [])}",
+        f"Changed candidate files: {len(report.get('changed_candidate_files') or [])}",
+        f"Changed unlisted files: {len(report.get('changed_unlisted_files') or [])}",
+        f"Changed safety-blocked files: {len(report.get('changed_safety_blocked_files') or [])}",
+        f"Changed prompt-forbidden files: {len(report.get('changed_prompt_forbidden_files') or [])}",
         f"Secret-like: {len(report.get('secret_like_paths_touched') or [])}",
         f"Generated/state/proof: {len(report.get('generated_or_state_mutation') or [])}",
     ]
