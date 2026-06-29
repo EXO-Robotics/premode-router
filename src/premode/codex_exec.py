@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import threading
@@ -38,43 +39,160 @@ class CodexOptions:
     save: bool = True
 
 
+@dataclass(frozen=True)
+class CodexInvocation:
+    args: list[str]
+    cwd: Path | None
+    capabilities: dict[str, Any]
+    warnings: list[str]
+
+
 def default_schema_path(repo_root: Path) -> str:
     return str(premode_dir(repo_root) / "schemas" / "codex_final_report.schema.json")
 
 
-def build_codex_args(repo_root: Path, options: CodexOptions) -> list[str]:
-    args = [
-        "codex",
-        "exec",
-        "-C",
-        str(repo_root.resolve()),
-        "--sandbox",
-        options.sandbox,
-        "--ask-for-approval",
-        options.approval,
-    ]
+def _has_short_flag(help_text: str, flag: str) -> bool:
+    escaped = re.escape(flag)
+    return bool(re.search(rf"(^|[\s,\[]){escaped}($|[\s,=<\]])", help_text))
+
+
+def codex_capabilities_from_help(help_text: str, help_available: bool = True, help_error: str | None = None) -> dict[str, Any]:
+    supports = {
+        "approval_mode": "--approval-mode" in help_text,
+        "ask_for_approval": "--ask-for-approval" in help_text,
+        "cd_short": _has_short_flag(help_text, "-C"),
+        "cd_long": "--cd" in help_text,
+        "sandbox": "--sandbox" in help_text,
+        "ephemeral": "--ephemeral" in help_text,
+        "json": "--json" in help_text,
+        "output_last_message": "--output-last-message" in help_text,
+        "output_schema": "--output-schema" in help_text,
+        "profile": "--profile" in help_text,
+        "add_dir": "--add-dir" in help_text,
+        "skip_git_repo_check": "--skip-git-repo-check" in help_text,
+        "model": "--model" in help_text or _has_short_flag(help_text, "-m"),
+        "oss": "--oss" in help_text,
+    }
+    return {"help_available": help_available, "supports": supports, "help_error": help_error}
+
+
+def detect_codex_capabilities() -> dict[str, Any]:
+    try:
+        completed = subprocess.run(
+            ["codex", "exec", "--help"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return codex_capabilities_from_help("", help_available=False, help_error=str(exc))
+    help_text = "\n".join(part for part in [completed.stdout, completed.stderr] if part)
+    if completed.returncode != 0 and not help_text:
+        return codex_capabilities_from_help("", help_available=False, help_error=f"codex exec --help exited {completed.returncode}")
+    return codex_capabilities_from_help(help_text, help_available=True)
+
+
+def _warn_unsupported(warnings: list[str], flag: str) -> None:
+    warnings.append(f"Codex CLI help does not advertise {flag}; omitting that option.")
+
+
+def build_codex_invocation(
+    repo_root: Path,
+    options: CodexOptions,
+    capabilities: dict[str, Any] | None = None,
+) -> CodexInvocation:
+    detected = capabilities if capabilities is not None else detect_codex_capabilities()
+    supports = detected.get("supports", {})
+    warnings: list[str] = []
+    if not detected.get("help_available", False):
+        detail = detected.get("help_error") or "unknown error"
+        warnings.append(f"Could not inspect `codex exec --help` ({detail}); only stdin sentinel and subprocess cwd are assumed.")
+
+    args = ["codex", "exec"]
+    cwd: Path | None = None
+    resolved_root = repo_root.resolve()
+    cd_strategy = "subprocess_cwd"
+    if supports.get("cd_short"):
+        args.extend(["-C", str(resolved_root)])
+        cd_strategy = "-C"
+    elif supports.get("cd_long"):
+        args.extend(["--cd", str(resolved_root)])
+        cd_strategy = "--cd"
+    else:
+        cwd = resolved_root
+        warnings.append("Codex CLI help does not advertise -C or --cd; running subprocess with cwd=repo_root.")
+
+    approval_strategy = "omitted"
+    if options.sandbox:
+        if supports.get("sandbox"):
+            args.extend(["--sandbox", options.sandbox])
+        else:
+            _warn_unsupported(warnings, "--sandbox")
+    if options.approval:
+        if supports.get("approval_mode"):
+            args.extend(["--approval-mode", options.approval])
+            approval_strategy = "--approval-mode"
+        elif supports.get("ask_for_approval"):
+            args.extend(["--ask-for-approval", options.approval])
+            approval_strategy = "--ask-for-approval"
+        else:
+            warnings.append("Codex CLI help does not advertise --approval-mode or --ask-for-approval; approval mode omitted.")
     if options.ephemeral:
-        args.append("--ephemeral")
+        if supports.get("ephemeral"):
+            args.append("--ephemeral")
+        else:
+            _warn_unsupported(warnings, "--ephemeral")
     if options.json:
-        args.append("--json")
+        if supports.get("json"):
+            args.append("--json")
+        else:
+            _warn_unsupported(warnings, "--json")
     if options.output_last_message:
-        args.extend(["--output-last-message", options.output_last_message])
+        if supports.get("output_last_message"):
+            args.extend(["--output-last-message", options.output_last_message])
+        else:
+            _warn_unsupported(warnings, "--output-last-message")
     schema = options.output_schema
     if options.structured_final_report and not schema:
         schema = default_schema_path(repo_root)
     if schema:
-        args.extend(["--output-schema", schema])
+        if supports.get("output_schema"):
+            args.extend(["--output-schema", schema])
+        else:
+            _warn_unsupported(warnings, "--output-schema")
     if options.codex_profile:
-        args.extend(["--profile", options.codex_profile])
+        if supports.get("profile"):
+            args.extend(["--profile", options.codex_profile])
+        else:
+            _warn_unsupported(warnings, "--profile")
     for p in options.add_dir:
-        args.extend(["--add-dir", p])
+        if supports.get("add_dir"):
+            args.extend(["--add-dir", p])
+        else:
+            _warn_unsupported(warnings, "--add-dir")
     if options.skip_git_repo_check:
-        args.append("--skip-git-repo-check")
+        if supports.get("skip_git_repo_check"):
+            args.append("--skip-git-repo-check")
+        else:
+            _warn_unsupported(warnings, "--skip-git-repo-check")
     if options.model:
-        args.extend(["--model", options.model])
+        if supports.get("model"):
+            args.extend(["--model", options.model])
+        else:
+            _warn_unsupported(warnings, "--model")
     if options.oss:
-        args.append("--oss")
+        if supports.get("oss"):
+            args.append("--oss")
+        else:
+            _warn_unsupported(warnings, "--oss")
     args.append("-")
+    capability_record = {**detected, "cd_strategy": cd_strategy, "approval_strategy": approval_strategy}
+    return CodexInvocation(args=args, cwd=cwd, capabilities=capability_record, warnings=warnings)
+
+
+def build_codex_args(repo_root: Path, options: CodexOptions, capabilities: dict[str, Any] | None = None) -> list[str]:
+    args = build_codex_invocation(repo_root, options, capabilities).args
     return args
 
 
@@ -86,7 +204,7 @@ def validate_codex_args(args: list[str], raw_prompt: str) -> None:
     # For codex exec, the only non-flag positional after the subcommand must be '-'.
     # Values for known flags are skipped.
     value_flags = {
-        "-C", "--cd", "--sandbox", "-s", "--ask-for-approval", "-a", "--output-last-message", "-o",
+        "-C", "--cd", "--sandbox", "-s", "--approval-mode", "--ask-for-approval", "-a", "--output-last-message", "-o",
         "--output-schema", "--profile", "-p", "--add-dir", "--model", "-m", "--color", "-c", "--config",
     }
     positionals: list[str] = []
@@ -125,15 +243,26 @@ def run_codex(
     packet = compiled["packet"]
     if packet == raw_prompt:
         raise AssertionError("Compiled packet must not equal raw prompt.")
-    args = build_codex_args(repo_root, options)
+    invocation = build_codex_invocation(repo_root, options)
+    args = invocation.args
     validate_codex_args(args, raw_prompt)
-    command_record = {"args": args, "stdin_sha256": sha256_text(packet), "dry_run": options.dry_run}
+    command_record = {
+        "args": args,
+        "cwd": str(invocation.cwd) if invocation.cwd else None,
+        "stdin_sha256": sha256_text(packet),
+        "dry_run": options.dry_run,
+        "codex_capabilities": invocation.capabilities,
+        "codex_warnings": invocation.warnings,
+    }
     if options.dry_run:
         output = {
             "command": args,
+            "command_cwd": str(invocation.cwd) if invocation.cwd else None,
             "stdin": "<compiled-packet-on-stdin>",
             "compiled_packet_sha256": sha256_text(packet),
             "raw_prompt_sha256": sha256_text(raw_prompt),
+            "codex_capabilities": invocation.capabilities,
+            "codex_warnings": invocation.warnings,
             "compile_settings": {
                 "profile": effective_profile,
                 "use_repo_map": options.use_repo_map,
@@ -150,7 +279,7 @@ def run_codex(
         return output
 
     if options.watch:
-        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1)
+        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, cwd=invocation.cwd)
         assert proc.stdin is not None
         proc.stdin.write(packet)
         proc.stdin.close()
@@ -177,7 +306,7 @@ def run_codex(
         stdout = "".join(stdout_parts)
         stderr = "".join(stderr_parts)
     else:
-        completed = subprocess.run(args, input=packet, text=True, capture_output=True, check=False)
+        completed = subprocess.run(args, input=packet, text=True, capture_output=True, check=False, cwd=invocation.cwd)
         returncode = completed.returncode
         stdout = completed.stdout
         stderr = completed.stderr
@@ -197,7 +326,16 @@ def run_codex(
         "actual_usage": actual_usage,
         "returncode": returncode,
     })
-    return {"args": args, "returncode": returncode, "stdout": stdout, "stderr": stderr, "actual_usage": actual_usage}
+    return {
+        "args": args,
+        "cwd": str(invocation.cwd) if invocation.cwd else None,
+        "returncode": returncode,
+        "stdout": stdout,
+        "stderr": stderr,
+        "actual_usage": actual_usage,
+        "codex_capabilities": invocation.capabilities,
+        "codex_warnings": invocation.warnings,
+    }
 
 
 def _extract_usage_from_jsonl(text: str) -> dict[str, Any] | None:

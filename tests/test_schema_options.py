@@ -1,5 +1,20 @@
 from premode.config import init_project
-from premode.codex_exec import CodexOptions, build_codex_args
+from premode.codex_exec import CodexOptions, build_codex_args, codex_capabilities_from_help
+
+
+CODEX_HELP = """
+Usage: codex exec [OPTIONS] -
+  -C <DIR>
+  --sandbox <MODE>
+  --approval-mode <MODE>
+  --ephemeral
+  --output-schema <FILE>
+  --profile <PROFILE>
+  --add-dir <DIR>
+  --skip-git-repo-check
+  --model <MODEL>
+  --oss
+"""
 
 
 def test_schema_created_by_init(repo):
@@ -9,7 +24,7 @@ def test_schema_created_by_init(repo):
 
 def test_structured_final_report_uses_default_schema(repo):
     init_project(repo)
-    args = build_codex_args(repo, CodexOptions(structured_final_report=True))
+    args = build_codex_args(repo, CodexOptions(structured_final_report=True), codex_capabilities_from_help(CODEX_HELP))
     assert "--output-schema" in args
     i = args.index("--output-schema")
     assert args[i + 1].endswith(".premode/schemas/codex_final_report.schema.json")
@@ -17,14 +32,14 @@ def test_structured_final_report_uses_default_schema(repo):
 
 def test_explicit_output_schema_overrides_default(repo):
     init_project(repo)
-    args = build_codex_args(repo, CodexOptions(structured_final_report=True, output_schema="custom.schema.json"))
+    args = build_codex_args(repo, CodexOptions(structured_final_report=True, output_schema="custom.schema.json"), codex_capabilities_from_help(CODEX_HELP))
     i = args.index("--output-schema")
     assert args[i + 1] == "custom.schema.json"
 
 
 def test_codex_passthrough_options(repo):
     init_project(repo)
-    args = build_codex_args(repo, CodexOptions(codex_profile="fast", add_dir=["../SharedPackage"], skip_git_repo_check=True, model="qwen3.6", oss=True))
+    args = build_codex_args(repo, CodexOptions(codex_profile="fast", add_dir=["../SharedPackage"], skip_git_repo_check=True, model="qwen3.6", oss=True), codex_capabilities_from_help(CODEX_HELP))
     assert "--profile" in args and "fast" in args
     assert args.count("--add-dir") == 1
     assert "--skip-git-repo-check" in args

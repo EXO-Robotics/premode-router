@@ -3,15 +3,25 @@ from pathlib import Path
 
 from premode.config import init_project
 from premode.indexer import index_project
-from premode.codex_exec import CodexOptions, build_codex_args, run_codex
+from premode.codex_exec import CodexOptions, build_codex_args, codex_capabilities_from_help, run_codex
 from premode.compiler import compile_prompt
 
 SENTINEL_PROMPT = "Fix the build. SECRET_SENTINEL_RAW_PROMPT_12345"
+CODEX_HELP = """
+Usage: codex exec [OPTIONS] -
+  -C <DIR>
+  --sandbox <MODE>
+  --approval-mode <MODE>
+  --ephemeral
+  --json
+  --output-last-message <FILE>
+"""
 
 
 def test_codex_command_shape_and_no_raw_prompt(repo):
     init_project(repo)
-    args = build_codex_args(repo, CodexOptions(json=True, output_last_message=".premode/out/final.md"))
+    caps = codex_capabilities_from_help(CODEX_HELP)
+    args = build_codex_args(repo, CodexOptions(json=True, output_last_message=".premode/out/final.md"), caps)
     assert args[-1] == "-"
     assert args.count("-") == 1
     assert "--json" in args
@@ -45,13 +55,16 @@ def test_execute_uses_compiled_packet_stdin(monkeypatch, repo):
     init_project(repo)
     index_project(repo, "lite")
     captured = {}
+    caps = codex_capabilities_from_help(CODEX_HELP)
+    monkeypatch.setattr("premode.codex_exec.detect_codex_capabilities", lambda: caps)
     class Result:
         returncode = 0
         stdout = '{"usage":{"input_tokens":1,"output_tokens":1}}\n'
         stderr = ""
-    def fake_run(args, input, text, capture_output, check):
+    def fake_run(args, input, text, capture_output, check, cwd=None):
         captured["args"] = args
         captured["input"] = input
+        captured["cwd"] = cwd
         return Result()
     monkeypatch.setattr("subprocess.run", fake_run)
     run_codex(repo, SENTINEL_PROMPT, "lite", CodexOptions(json=True))

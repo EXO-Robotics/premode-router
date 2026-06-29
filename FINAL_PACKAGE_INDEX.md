@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.6 Local Validation + macOS Portability Cleanup
+# Final Package Index — v0.2.6.7 Codex CLI Adapter Compatibility
 
 This package is the current release-candidate base for external Codex testing.
 
@@ -57,6 +57,7 @@ premode benchmark --profile lite
 
 ```text
 tests/test_v263_benchmark.py
+tests/test_v267_codex_cli_compat.py
 tests/test_v260_review_patch.py
 tests/test_v257_cache_packet.py
 tests/test_v256_universal_stress.py

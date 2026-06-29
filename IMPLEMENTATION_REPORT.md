@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.6
+# Implementation Report — Pre-mode Router v0.2.6.7
 
 ## Release summary
 
-`v0.2.6.6 — Local Validation + macOS Portability Cleanup` stabilizes the v2.6 release-candidate base. It does not add a new runtime feature. It fixes macOS smoke-test portability, documents no-install validation, clarifies Python 3.11+ setup, and keeps v2.7 Agent Config Linter work isolated to the handoff prompt.
+`v0.2.6.7 — Codex CLI Adapter Compatibility` is a narrow local compatibility patch for Codex CLIs that reject legacy execution flags. It detects `codex exec --help`, builds only supported adapter flags, keeps compiled packets on stdin, and reports capabilities/warnings in dry-run and execution JSON.
 
 ## Product loop
 
@@ -29,6 +29,16 @@ premode compile / pcodex
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
 
+## v0.2.6.7 changes
+
+- Bumped package version to `0.2.6.7`.
+- Added Codex CLI capability detection from `codex exec --help`.
+- Prefer `--approval-mode on-request`, fall back to `--ask-for-approval on-request`, or omit approval flags with warnings.
+- Fall back from `-C` to `--cd`, then subprocess `cwd`, depending on supported flags.
+- Omit unsupported optional Codex flags such as `--sandbox`, `--ephemeral`, and `--output-last-message` with JSON warnings.
+- Added `codex_capabilities` and `codex_warnings` to dry-run and execution JSON.
+- Added focused compatibility tests for approval, cwd, output, stdin sentinel, and raw prompt privacy.
+
 ## v0.2.6.6 changes
 
 - Bumped package version to `0.2.6.6`.
@@ -48,6 +58,7 @@ v2.6.3 — Benchmark + Release Candidate
 v2.6.4 — Release Candidate Polish
 v2.6.5 — Release Candidate Cleanup
 v2.6.6 — Local Validation + macOS Portability Cleanup
+v2.6.7 — Codex CLI Adapter Compatibility
 ```
 
 ## Standard validation

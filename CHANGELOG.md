@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.6.7
+
+- Codex CLI adapter compatibility patch for local CLIs that reject `--ask-for-approval`.
+- Detects supported `codex exec --help` flags before building the subprocess command.
+- Prefers `--approval-mode on-request`, falls back to `--ask-for-approval on-request`, or omits approval flags with JSON warnings.
+- Falls back from `-C` to `--cd`, then subprocess `cwd`, while keeping the compiled packet on stdin with the final `-` sentinel.
+- Adds dry-run `codex_capabilities` and `codex_warnings` fields.
+- Bumped package version to `0.2.6.7`.
+
 ## v0.2.6.6
 
 - Local validation and macOS portability cleanup for the v2.6 release-candidate line.
