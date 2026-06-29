@@ -1,0 +1,13 @@
+DerivedData/
+build/
+.env
+.env.*
+*.p12
+*.mobileprovision
+*.xcarchive
+*.pem
+*.key
+node_modules/
+.venv/
+dist/
+.cache/

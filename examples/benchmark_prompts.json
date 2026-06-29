@@ -1,0 +1,22 @@
+{
+  "prompts": [
+    {
+      "name": "focused_bugfix",
+      "prompt": "Fix the failing test with the smallest safe source change.",
+      "expected_files": [],
+      "expected_tests": []
+    },
+    {
+      "name": "docs_quickstart",
+      "prompt": "Update the README quickstart without changing source code.",
+      "expected_files": [],
+      "expected_tests": []
+    },
+    {
+      "name": "scope_guarded_patch",
+      "prompt": "Fix the CLI validation without touching dependency, CI, generated, or secret-like files.",
+      "expected_files": [],
+      "expected_tests": []
+    }
+  ]
+}

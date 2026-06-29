@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.premode/out/
+.premode/audit/
+.premode/metrics/
+.premode/index/
+.DS_Store

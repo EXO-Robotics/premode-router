@@ -1,0 +1,26 @@
+from __future__ import annotations
+
+TASK_PACKET_SCHEMA = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "Pre-mode Task Packet Manifest",
+    "type": "object",
+    "additionalProperties": True,
+    "required": [
+        "primary_intent",
+        "intents",
+        "tool_plan",
+        "acceptance_checks",
+        "selected_context_manifest",
+        "excluded_context_summary",
+        "redaction_summary",
+    ],
+    "properties": {
+        "primary_intent": {"type": "string"},
+        "intents": {"type": "array", "items": {"type": "object"}},
+        "tool_plan": {"type": "array", "items": {"type": "object"}},
+        "acceptance_checks": {"type": "array", "items": {"type": "string"}},
+        "selected_context_manifest": {"type": "array", "items": {"type": "object"}},
+        "excluded_context_summary": {"type": "object"},
+        "redaction_summary": {"type": "object"},
+    },
+}

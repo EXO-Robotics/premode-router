@@ -1,0 +1,29 @@
+{
+  "schema_version": 2,
+  "commands": {
+    "test_symphony": {
+      "command": "pytest tests/symphony -q",
+      "description": "OpenClaw Symphony validator tests",
+      "safe_to_suggest": true,
+      "auto_run": false
+    },
+    "test_spatial": {
+      "command": "pytest tests/spatial -q",
+      "description": "OpenClaw spatial validator tests",
+      "safe_to_suggest": true,
+      "auto_run": false
+    },
+    "task_queue_help": {
+      "command": "python tools/gamebot/task_queue.py --help",
+      "description": "Inspect task-queue CLI without mutating state",
+      "safe_to_suggest": true,
+      "auto_run": false
+    },
+    "bridge_write_danger": {
+      "command": "DO_NOT_RUN bridge-write / Unreal / Blender mutation commands unless explicitly authorized",
+      "description": "Dangerous mutation class; safety note only",
+      "safe_to_suggest": false,
+      "auto_run": false
+    }
+  }
+}

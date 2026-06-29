@@ -1,0 +1,8 @@
+{
+  "premode": {
+    "command": "premode",
+    "args": [
+      "mcp-server"
+    ]
+  }
+}

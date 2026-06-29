@@ -1,0 +1,5 @@
+{
+  "commands": {},
+  "note": "User overrides only. Discovered commands are written to .premode/out/discovered_commands.json.",
+  "schema_version": 2
+}

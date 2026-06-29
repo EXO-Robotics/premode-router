@@ -1,0 +1,34 @@
+# OpenClaw Pre-mode ignore/evidence guidance
+# Keep local Pre-mode output out of agent context.
+.premode/out/**
+.premode/audit/**
+.premode/metrics/**
+
+# Dependency/build/cache folders.
+**/node_modules/**
+**/.venv/**
+**/venv/**
+**/__pycache__/**
+**/.pytest_cache/**
+**/dist/**
+**/build/**
+
+# Large binary/artifact surfaces.
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.mp4
+**/*.mov
+**/*.blend
+**/*.uasset
+**/*.umap
+
+# Generated proof/output bundles are usually evidence-only. If task-named,
+# explicitly mention the file/path in the prompt instead of broad-reading them.
+_claw_output/**
+PROJECT/artifacts/generated/**
+PROJECT/state/history/**
+PROJECT/state/archive/**
+logs/**
+proof/**
+proofs/**
