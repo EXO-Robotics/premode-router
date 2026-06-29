@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sys
 
+from . import __version__
 from .paths import find_repo_root
 from .config import init_project
 from .indexer import index_project
@@ -29,6 +30,7 @@ def _print_json(obj) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="premode")
+    p.add_argument("--version", action="version", version=f"premode {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init")
