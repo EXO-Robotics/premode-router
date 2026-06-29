@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.21
+
+- Bridged safe Elixir/Phoenix, PHP/Composer, Ruby/Rails, and Terraform adapter `likely_edit_files` into `patch_boundary.allowed_edit_files` and saved `review_contract.allowed_edit_files`.
+- Kept central routing safety filtering in front of the bridge so manifests, generated/build outputs, state/proof/runtime files, secrets, and prompt-forbidden paths remain non-editable.
+- Added review-patch fixtures for clean allowed-source passes and forbidden adapter paths.
+- Added process diagnostics and process-group termination for timeout-wrapped smoke child processes.
+- Bumped package version to `0.2.6.21`.
+
 ## v0.2.6.20
 
 - Added Elixir/Phoenix, PHP/Composer, Ruby/Rails, and Terraform adapter detection, source routing, related-test mapping, and command discovery.

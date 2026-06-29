@@ -983,6 +983,71 @@ def _semantic_buckets_from_impact_or_boundary(
     }
 
 
+ADAPTER_ALLOWED_EDIT_BRIDGE_KINDS = {"elixir", "elixir_phoenix", "php_composer", "ruby_rails", "terraform"}
+
+
+def _bridge_adapter_likely_edits_into_patch_boundary(
+    impact_map: dict[str, Any] | None,
+    patch_boundary: dict[str, Any],
+    project_detection: dict[str, Any] | None,
+    raw_prompt: str,
+    prompt_forbidden_paths: set[str],
+) -> None:
+    if not isinstance(impact_map, dict) or not isinstance(patch_boundary, dict):
+        return
+    active_project = (project_detection or {}).get("active_project", {}) if project_detection else {}
+    project_kind = str(active_project.get("project_kind") or "")
+    if project_kind not in ADAPTER_ALLOWED_EDIT_BRIDGE_KINDS:
+        return
+
+    existing = {str(path).lower() for path in patch_boundary.get("allowed_edit_files") or []}
+    read_only = {str(path).lower() for path in patch_boundary.get("read_only_context_files") or []}
+    forbidden = set(patch_boundary.get("forbidden_without_user_confirmation") or [])
+    bridged: list[str] = []
+    for item in impact_map.get("likely_edit_files") or []:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path") or "").strip()
+        if not path:
+            continue
+        lower = path.lower()
+        if lower in existing or lower in read_only:
+            continue
+        if _is_test_path_for_boundary(path) or not _is_source_path_for_boundary(path):
+            continue
+        safety = classify_path_for_routing(path, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+        if safety["category"] != "editable_source_or_support" and not safety.get("editable"):
+            continue
+        if (
+            _path_matches_any(path, forbidden)
+            or _is_same_path_or_suffix(lower, prompt_forbidden_paths)
+            or _is_guidance_path(path)
+            or _is_protected_metadata_path(path)
+            or is_restricted_edit_bucket_path(path, raw_prompt, prompt_forbidden_paths=prompt_forbidden_paths)
+        ):
+            continue
+        bridged.append(path)
+        existing.add(lower)
+
+    if not bridged:
+        return
+    patch_boundary["allowed_edit_files"] = list(patch_boundary.get("allowed_edit_files") or []) + bridged
+    categories = _dedupe_categories({
+        "forbidden_without_user_confirmation": list(patch_boundary.get("forbidden_without_user_confirmation") or []),
+        "read_only_context_files": list(patch_boundary.get("read_only_context_files") or []),
+        "allowed_if_justified": list(patch_boundary.get("allowed_if_justified") or []),
+        "allowed_edit_files": list(patch_boundary.get("allowed_edit_files") or []),
+        "discouraged_files": list(patch_boundary.get("discouraged_files") or []),
+    })
+    for key, value in categories.items():
+        patch_boundary[key] = value
+    diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
+    if isinstance(diagnostics, dict):
+        diagnostics["adapter_allowed_edit_bridge_active"] = True
+        diagnostics["adapter_allowed_edit_bridge_project_kind"] = project_kind
+        diagnostics["adapter_allowed_edit_bridge_paths"] = bridged[:12]
+
+
 def _enforce_central_routing_safety_impact_map(
     impact_map: dict[str, Any] | None,
     raw_prompt: str,
@@ -1862,6 +1927,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
                 swiftui_scope_rank_downranked_count,
             )
     patch_boundary = _patch_boundary(full_text_files, summarized_files, classification, project_detection, raw_prompt, prompt_forbidden_paths)
+    _bridge_adapter_likely_edits_into_patch_boundary(impact_map, patch_boundary, project_detection, raw_prompt, prompt_forbidden_paths)
     semantic_buckets = _semantic_buckets_from_impact_or_boundary(impact_map, patch_boundary, prompt_forbidden_paths)
     selected_manifest = context_tiers["full_text_files"] + [
         {k: v for k, v in item.items() if k != "summary"} for item in summarized_files
