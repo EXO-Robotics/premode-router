@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.7
+# Implementation Report — Pre-mode Router v0.2.6.9
 
 ## Release summary
 
-`v0.2.6.7 — Codex CLI Adapter Compatibility` is a narrow local compatibility patch for Codex CLIs that reject legacy execution flags. It detects `codex exec --help`, builds only supported adapter flags, keeps compiled packets on stdin, and reports capabilities/warnings in dry-run and execution JSON.
+`v0.2.6.9 — Metadata Budget Compaction + Nested Root Selection` keeps lite Packet V3 usable on large proof-governed repos. It compacts dirty-file, diff, redaction, and trust-warning metadata in packets while preserving governance data for saved manifests, and it prevents deeply nested external/reference projects from hijacking task-root selection.
 
 ## Product loop
 
@@ -28,6 +28,15 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.9 changes
+
+- Bumped package version to `0.2.6.9`.
+- Added packet-facing dirty-file summaries by category/count/sample instead of raw large dirty lists.
+- Added compact packet summaries for redactions, trust-boundary warnings, and current diff samples.
+- Penalized deeply nested external/generated/proof/state/build-cache project roots during detection.
+- Let OpenClaw authority markers choose their containing child repo when launched from a messy parent directory.
+- Added focused tests for OpenClaw-style dirty metadata compaction and messy-parent nested root selection.
 
 ## v0.2.6.7 changes
 
@@ -59,6 +68,7 @@ v2.6.4 — Release Candidate Polish
 v2.6.5 — Release Candidate Cleanup
 v2.6.6 — Local Validation + macOS Portability Cleanup
 v2.6.7 — Codex CLI Adapter Compatibility
+v2.6.9 — Metadata Budget Compaction + Nested Root Selection
 ```
 
 ## Standard validation

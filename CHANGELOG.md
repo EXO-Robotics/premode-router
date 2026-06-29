@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.9
+
+- Compacted lite Packet V3 metadata for dirty files, diff summaries, redaction summaries, and trust-boundary warnings.
+- Summarized dirty paths by category and noisy prefix instead of dumping large dirty-file lists into packets.
+- Hardened nested root selection so deeply nested external/generated/reference project markers do not win over direct child repo markers.
+- Added focused OpenClaw-style metadata budget and messy-parent nested-root tests.
+- Bumped package version to `0.2.6.9`.
+
 ## v0.2.6.7
 
 - Codex CLI adapter compatibility patch for local CLIs that reject `--ask-for-approval`.

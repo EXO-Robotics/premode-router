@@ -10,6 +10,7 @@ from .intake import build_intake_report, intake_score_delta
 
 
 PRIMARY_ROOT_MARKERS: tuple[str, ...] = (
+    ".git",
     "pyproject.toml",
     "package.json",
     "Cargo.toml",
@@ -33,6 +34,7 @@ PRIMARY_ROOT_MARKERS: tuple[str, ...] = (
 )
 
 ROOT_MARKER_PRIORITY: dict[str, int] = {
+    ".git": 130,
     "pyproject.toml": 100,
     "package.json": 100,
     "cargo.toml": 100,
@@ -54,6 +56,20 @@ ROOT_MARKER_PRIORITY: dict[str, int] = {
     "projectsettings": 85,
     "assets": 80,
 }
+
+PENALIZED_ROOT_SEGMENTS: tuple[str, ...] = (
+    "_external_references",
+    "_claw_output",
+    "generated",
+    "artifacts",
+    "proof",
+    "proofs",
+    "state",
+    "saved",
+    "intermediate",
+    "binaries",
+    "deriveddatacache",
+)
 
 
 
@@ -114,6 +130,8 @@ def _matched_primary_marker(rel_path: str) -> tuple[str, int] | None:
     name = Path(p).name
     lower_name = name.lower()
     lower_path = p.lower()
+    if lower_name == ".git":
+        return name, ROOT_MARKER_PRIORITY[".git"]
     if lower_name in {m.lower() for m in PRIMARY_ROOT_MARKERS if not m.startswith(".")}:
         return name, ROOT_MARKER_PRIORITY.get(lower_name, 70)
     if lower_path in {"assets", "projectsettings"}:
@@ -124,6 +142,30 @@ def _matched_primary_marker(rel_path: str) -> tuple[str, int] | None:
         if lower_name.endswith(suffix):
             return name, ROOT_MARKER_PRIORITY.get(suffix, 70)
     return None
+
+
+def _root_depth(root: str) -> int:
+    root = root.strip("/")
+    if not root or root == ".":
+        return 0
+    return root.count("/") + 1
+
+
+def _root_penalty(root: str) -> int:
+    lower = root.lower().strip("/")
+    if not lower or lower == ".":
+        return 0
+    parts = set(lower.split("/"))
+    penalty = max(0, _root_depth(lower) - 1) * 12
+    if parts & set(PENALIZED_ROOT_SEGMENTS):
+        penalty += 180
+    if lower.startswith("_external_references/") or "/_external_references/" in lower:
+        penalty += 260
+    return penalty
+
+
+def _select_marker_root(marker_roots: dict[str, int]) -> str:
+    return sorted(marker_roots.items(), key=lambda kv: (-(kv[1] - _root_penalty(kv[0])), _root_depth(kv[0]), kv[0]))[0][0]
 
 SKIP_DIRS = {".git", ".premode", ".agents", "node_modules", "DerivedData", "build", "dist", ".next", ".venv", "venv", "__pycache__", ".build", "target", "vendor", "Pods"}
 
@@ -277,6 +319,9 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
             count += 1
             rel = f"{rel_cur}/{d}".strip("/")
             lower = d.lower()
+            if lower == ".git":
+                markers.append(rel)
+                continue
             if lower.endswith((".xcodeproj", ".xcworkspace")) or lower in {"assets", "projectsettings"}:
                 markers.append(rel)
                 # Do not descend into package/project marker directories.
@@ -293,6 +338,19 @@ def _iter_filesystem_root_markers(repo_root: Path, max_dirs: int = 30000) -> lis
         if count >= max_dirs:
             break
     return sorted(set(markers))
+
+
+def _root_for_marker_suffix(marker_path: str, marker_suffix: str) -> str | None:
+    marker = marker_path.strip("/")
+    suffix = marker_suffix.strip("/")
+    lower_marker = marker.lower()
+    lower_suffix = suffix.lower()
+    if lower_marker == lower_suffix:
+        return "."
+    if lower_marker.endswith("/" + lower_suffix):
+        prefix = marker[:-(len(suffix) + 1)].strip("/")
+        return prefix or "."
+    return None
 
 
 
@@ -446,16 +504,27 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
                 continue
             # OpenClaw/control-plane authority markers define the repository root.
             # Do not let nested Node executor/package.json markers hijack the active project.
-            marker_roots["."] = max(marker_roots.get(".", 0), 120)
+            authority_roots: dict[str, int] = {}
+            for marker in strong_markers:
+                for authority in (*OPENCLAW_AUTHORITY_MARKERS, "_claw_output", "tools/gamebot", "tools/symphony"):
+                    root = _root_for_marker_suffix(marker, authority)
+                    if root is not None:
+                        authority_roots[root] = authority_roots.get(root, 0) + 1
+                        break
+            if authority_roots:
+                root = sorted(authority_roots.items(), key=lambda kv: (-kv[1], _root_penalty(kv[0]), _root_depth(kv[0]), kv[0]))[0][0]
+                marker_roots[root] = max(marker_roots.get(root, 0), 125)
+            else:
+                marker_roots["."] = max(marker_roots.get(".", 0), 120)
 
         if not markers and ext_hits == 0:
             continue
 
         if marker_roots:
             # Project markers are authoritative. Prefer strongest marker, then shortest path.
-            root = sorted(marker_roots.items(), key=lambda kv: (-kv[1], kv[0].count("/"), kv[0]))[0][0]
+            root = _select_marker_root(marker_roots)
         elif source_roots:
-            root = max(source_roots.items(), key=lambda x: x[1])[0]
+            root = sorted(source_roots.items(), key=lambda x: (-(x[1] - _root_penalty(x[0])), _root_depth(x[0]), x[0]))[0][0]
         else:
             root = "."
 
@@ -463,6 +532,7 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
         ext_score = min(0.30, 0.02 * ext_hits)
         prompt_score = 0.10 if (kind.replace("_", " ") in prompt_l or kind.split("_")[0] in prompt_l) else 0
         confidence = round(min(0.99, 0.32 + marker_score + ext_score + prompt_score), 2)
+        confidence = round(max(0.10, confidence - min(0.35, _root_penalty(root) / 800)), 2)
         extra: dict[str, Any] = {}
         if kind == "openclaw_control_plane" and markers:
             authority_hits = [m for m in sorted(set(markers)) if _is_openclaw_authority_path(m) or m.lower() in {"_claw_output", "tools/gamebot", "tools/symphony"}]

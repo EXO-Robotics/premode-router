@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.7 Codex CLI Adapter Compatibility
+# Final Package Index — v0.2.6.9 Metadata Budget Compaction + Nested Root Selection
 
 This package is the current release-candidate base for external Codex testing.
 
@@ -57,6 +57,7 @@ premode benchmark --profile lite
 
 ```text
 tests/test_v263_benchmark.py
+tests/test_v269_metadata_root.py
 tests/test_v267_codex_cli_compat.py
 tests/test_v260_review_patch.py
 tests/test_v257_cache_packet.py

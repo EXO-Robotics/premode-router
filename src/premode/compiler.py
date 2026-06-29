@@ -427,6 +427,188 @@ def _safe_json_dump(obj: Any) -> str:
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
 
 
+NOISY_METADATA_PREFIXES: tuple[str, ...] = (
+    ".codex/",
+    ".openclaw/",
+    ".openclaw_workspaces/",
+    "_claw_output/",
+    "_evidence/",
+    "_integration_staging/",
+    "_run_captures/",
+    "backups/",
+    "docs/for_codex_remove_when_finished/",
+    "saved/",
+    "intermediate/",
+    "binaries/",
+    "deriveddatacache/",
+)
+
+
+def _status_path(line: str) -> str:
+    candidate = line[3:].strip() if len(line) > 3 else line.strip()
+    if " -> " in candidate:
+        candidate = candidate.split(" -> ")[-1].strip()
+    return candidate.replace("\\", "/").strip()
+
+
+def _metadata_path_category(path: str) -> str:
+    lower = path.lower().strip("/")
+    name = Path(lower).name
+    suffix = Path(lower).suffix
+    if is_secret_name(lower):
+        return "secrets"
+    if lower.startswith("_external_references/") or "/_external_references/" in lower:
+        return "external"
+    if lower.startswith(("artifacts/", "_evidence/", "_run_captures/", "_integration_staging/", "backups/", ".codex/", ".openclaw_workspaces/")) or "/artifacts/" in lower:
+        return "artifacts"
+    if lower.startswith(("_claw_output/", "generated/", "saved/", "intermediate/", "binaries/", "deriveddatacache/")) or any(f"/{part}/" in lower for part in ("generated", "saved", "intermediate", "binaries", "deriveddatacache")):
+        return "generated"
+    if lower.startswith(("state/", "project/state/", ".openclaw/")) or "/state/" in lower:
+        return "state"
+    if lower.startswith(("tests/", "test/")) or name.startswith("test_") or suffix in {".spec.ts", ".test.ts"}:
+        return "test"
+    if lower.startswith("docs/") or suffix in {".md", ".rst", ".txt"}:
+        return "docs"
+    if suffix in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".c", ".cc", ".cpp", ".h", ".hpp"}:
+        return "source"
+    if name in {"pyproject.toml", "package.json", "cargo.toml", "go.mod", "package.swift", "sconstruct", "cmakelists.txt"} or suffix in {".json", ".toml", ".yaml", ".yml", ".plist", ".ini", ".cfg"}:
+        return "config"
+    return "unknown"
+
+
+def _is_noisy_metadata_path(path: str) -> bool:
+    lower = path.lower().strip("/")
+    return any(lower == p.rstrip("/") or lower.startswith(p) or f"/{p}" in lower for p in NOISY_METADATA_PREFIXES)
+
+
+def _summarize_paths_for_packet(paths: list[str] | set[str], *, relevant_paths: set[str] | None = None, sample_limit: int = 10) -> dict[str, Any]:
+    relevant = {p.lower().strip("/") for p in (relevant_paths or set())}
+    records: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in paths:
+        path = _status_path(str(raw))
+        if not path:
+            continue
+        key = path.lower().strip("/")
+        if key in seen:
+            continue
+        seen.add(key)
+        category = _metadata_path_category(path)
+        records.append({
+            "path": path,
+            "category": category,
+            "is_noisy": _is_noisy_metadata_path(path),
+            "is_relevant": key in relevant or any(key.endswith("/" + r) or key == r for r in relevant),
+        })
+    categories = ["source", "config", "test", "docs", "generated", "state", "secrets", "external", "artifacts", "unknown"]
+    by_category = {cat: 0 for cat in categories}
+    noisy_by_prefix: dict[str, int] = {}
+    for rec in records:
+        by_category[rec["category"]] = by_category.get(rec["category"], 0) + 1
+        lower = rec["path"].lower().strip("/")
+        for prefix in NOISY_METADATA_PREFIXES:
+            if lower == prefix.rstrip("/") or lower.startswith(prefix) or f"/{prefix}" in lower:
+                noisy_by_prefix[prefix.rstrip("/")] = noisy_by_prefix.get(prefix.rstrip("/"), 0) + 1
+                break
+    sample_records = sorted(records, key=lambda r: (not r["is_relevant"], r["is_noisy"], r["category"] == "secrets", r["path"].lower()))
+    sample = [
+        {"path": r["path"], "category": r["category"]}
+        for r in sample_records
+        if r["category"] != "secrets"
+    ][:sample_limit]
+    return {
+        "count": len(records),
+        "by_category": {k: v for k, v in by_category.items() if v},
+        "noisy_by_prefix": noisy_by_prefix,
+        "sample": sample,
+        "sample_count": len(sample),
+        "omitted_count": max(0, len(records) - len(sample)),
+        "policy": "Dirty paths are summarized in lite packets; secret-like paths are counted but not sampled.",
+    }
+
+
+def _compact_redaction_summary_for_packet(summary: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(summary, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    examples: dict[str, list[Any]] = {}
+    for key, value in summary.items():
+        if isinstance(value, int):
+            compact[key] = value
+        elif isinstance(value, list):
+            examples[key] = value[:3]
+    if examples:
+        compact["examples"] = examples
+    policy = summary.get("policy")
+    if policy:
+        compact["policy"] = policy
+    return compact
+
+
+def _compact_trust_warnings_for_packet(warnings: list[dict[str, Any]] | None) -> dict[str, Any]:
+    items = list(warnings or [])
+    examples = []
+    for item in items[:3]:
+        examples.append({
+            "path": item.get("path"),
+            "warning": item.get("warning"),
+            "trust_level": item.get("trust_level"),
+            "instruction_authority": item.get("instruction_authority"),
+        })
+    return {"count": len(items), "examples": examples, "omitted_count": max(0, len(items) - len(examples))}
+
+
+def _compact_diff_summary_for_packet(diff_summary: str | None, *, max_chars: int = 1200) -> dict[str, Any]:
+    text = diff_summary or ""
+    return {
+        "available": bool(text),
+        "chars": len(text),
+        "sha256": sha256_text(text) if text else None,
+        "truncated": len(text) > max_chars,
+        "sample": text[:max_chars],
+    }
+
+
+def _compact_evidence_summary_for_packet(evidence: dict[str, Any], *, dirty_summary: dict[str, Any]) -> dict[str, Any]:
+    compact = dict(evidence or {})
+    compact.pop("dirty_files", None)
+    compact["dirty_files_summary"] = dirty_summary
+    if isinstance(compact.get("highest_confidence_files"), list):
+        compact["highest_confidence_files"] = compact["highest_confidence_files"][:5]
+    return compact
+
+
+def _compact_list_with_count(items: list[Any] | None, limit: int) -> dict[str, Any]:
+    values = list(items or [])
+    return {"count": len(values), "items": values[:limit], "omitted_count": max(0, len(values) - limit)}
+
+
+def _compact_patch_boundary_for_packet(boundary: dict[str, Any] | None, profile_name: str) -> dict[str, Any]:
+    if not isinstance(boundary, dict) or profile_name != "lite":
+        return boundary or {}
+    compact: dict[str, Any] = {}
+    for key in ("allowed_edit_files", "read_only_context_files", "allowed_if_justified", "forbidden_without_user_confirmation", "discouraged_files"):
+        values = list(boundary.get(key) or [])
+        if key in {"read_only_context_files", "forbidden_without_user_confirmation"} and len(values) > 10:
+            compact[key] = _summarize_paths_for_packet(values, sample_limit=3)
+        else:
+            compact[key] = values[:10]
+        compact[f"{key}_count"] = len(values)
+    control = boundary.get("control_plane_boundary")
+    if isinstance(control, dict):
+        def control_sample(value: Any) -> list[Any]:
+            values = list(value if isinstance(value, list) else [])
+            ordered = sorted(values, key=lambda item: (_is_noisy_metadata_path(str(item)), str(item).lower()))
+            return ordered[:3]
+        compact["control_plane_boundary"] = {
+            key: {"count": len(value if isinstance(value, list) else []), "sample": control_sample(value)}
+            for key, value in control.items()
+        }
+    compact["notes"] = list(boundary.get("notes") or [])[:3]
+    compact["compaction_policy"] = "Lite packets carry counts and samples; saved manifests and review contracts retain full patch-boundary lists."
+    return compact
+
+
 def ensure_index(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
     idx = load_index(repo_root)
     if idx is None:
@@ -645,6 +827,10 @@ def _is_guidance_path(path: str) -> bool:
     return name in GUIDANCE_NAMES or lower == ".premode/rules.md" or lower.startswith("docs/")
 
 
+def _is_protected_metadata_path(path: str) -> bool:
+    return _metadata_path_category(path) in {"generated", "state", "secrets", "external", "artifacts"} or _is_noisy_metadata_path(path)
+
+
 def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]], classification: dict[str, Any], project_detection: dict[str, Any] | None = None, raw_prompt: str = "", prompt_forbidden_paths: set[str] | None = None) -> dict[str, Any]:
     primary = classification.get("primary_intent")
     docs_intent = primary in {"documentation", "branch_review"}
@@ -661,6 +847,8 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
             read_only.append(p)
         elif _is_same_path_or_suffix(p.lower(), prompt_forbidden_paths):
             read_only.append(p)
+        elif _is_protected_metadata_path(p):
+            read_only.append(p)
         elif kind in {"source", "config", "docs", "log", "guidance"}:
             allowed.append(p)
 
@@ -672,6 +860,8 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
         if _is_guidance_path(p) and not docs_intent:
             read_only.append(p)
         elif _is_same_path_or_suffix(p.lower(), prompt_forbidden_paths):
+            read_only.append(p)
+        elif _is_protected_metadata_path(p):
             read_only.append(p)
         elif kind in {"source", "config", "docs"}:
             allowed.append(p)
@@ -883,6 +1073,9 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             "evidence_flags": sorted(flags),
             "reason": entry.get("reason") or "not directly implicated",
         }
+        protected_metadata = _is_protected_metadata_path(str(entry.get("path") or ""))
+        if protected_metadata:
+            strong = False
 
         if strong and len(full_text_files) < caps.hard_full_text_file_count:
             result = safe_read(repo_root, entry["path"], caps, ignore)
@@ -938,7 +1131,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             full_tokens += content_tokens
             continue
 
-        if score >= 500 and len(summarized_files) < caps.hard_summary_count:
+        if score >= 500 and not protected_metadata and len(summarized_files) < caps.hard_summary_count:
             try:
                 summary = summarize_file(repo_root, entry, caps, ignore)
             except Exception as exc:
@@ -1125,10 +1318,33 @@ def _compact_project_detection_for_packet(project_detection: dict[str, Any]) -> 
             "authority_model": intake.get("authority_model", {}).get("kind"),
             "authority_surface_count": len(intake.get("authority_model", {}).get("authority_surfaces", []) or []),
             "generated_surface_count": len(intake.get("authority_model", {}).get("generated_surfaces", []) or []),
-            "evidence_only_dirs": intake.get("artifact_model", {}).get("evidence_only_dirs", [])[:8],
-            "dangerous_zones": intake.get("mutation_model", {}).get("dangerous_zones", [])[:10],
+            "evidence_only_dirs": {
+                "count": len(intake.get("artifact_model", {}).get("evidence_only_dirs", []) or []),
+                "sample": (intake.get("artifact_model", {}).get("evidence_only_dirs", []) or [])[:3],
+            },
+            "dangerous_zones": {
+                "count": len(intake.get("mutation_model", {}).get("dangerous_zones", []) or []),
+                "sample": (intake.get("mutation_model", {}).get("dangerous_zones", []) or [])[:5],
+            },
             "warnings": intake.get("intake_warnings", [])[:5],
         }
+    detected_projects = compact.pop("detected_projects", None)
+    if isinstance(detected_projects, list):
+        compact["detected_project_summary"] = [
+            {
+                "project_kind": item.get("project_kind"),
+                "adapter": item.get("adapter"),
+                "root": item.get("root"),
+                "confidence": item.get("confidence"),
+                "marker_count": len(item.get("markers") or []),
+            }
+            for item in detected_projects[:8]
+            if isinstance(item, dict)
+        ]
+        compact["detected_project_count"] = len(detected_projects)
+    warnings = compact.get("intake_warnings")
+    if isinstance(warnings, list):
+        compact["intake_warnings"] = {"count": len(warnings), "examples": warnings[:3], "omitted_count": max(0, len(warnings) - 3)}
     active = compact.get("active_project")
     if isinstance(active, dict):
         active = dict(active)
@@ -1142,6 +1358,17 @@ def _compact_project_detection_for_packet(project_detection: dict[str, Any]) -> 
             elif isinstance(values, dict):
                 active[f"{key}_count"] = len(values)
                 active.pop(key, None)
+        markers = active.get("markers")
+        if isinstance(markers, list):
+            active["marker_count"] = len(markers)
+            active["markers"] = markers[:8]
+        root_selection = active.get("root_selection")
+        if isinstance(root_selection, dict):
+            active["root_selection"] = {
+                "strategy": root_selection.get("strategy"),
+                "marker_root_count": len(root_selection.get("marker_roots") or {}),
+                "source_root_count": len(root_selection.get("source_roots") or {}),
+            }
         compact["active_project"] = active
     return compact
 
@@ -1195,13 +1422,40 @@ def _compact_intake_policy_for_packet(intake_policy: dict[str, Any] | None, proj
 
 
 
-def _packet_context_tiers(manifest: dict[str, Any]) -> dict[str, Any]:
+def _packet_context_tiers(manifest: dict[str, Any], profile_name: str | None = None) -> dict[str, Any]:
     tiers = manifest.get("context_tiers") or {}
     def strip_items(items: list[dict[str, Any]], extra_drop: set[str]) -> list[dict[str, Any]]:
         out = []
         for item in items:
             out.append({k: v for k, v in item.items() if k not in extra_drop})
         return out
+    if profile_name == "lite":
+        def lite_item(item: dict[str, Any], *, include_summary: bool = False) -> dict[str, Any]:
+            out = {
+                "path": item.get("path"),
+                "kind": item.get("kind"),
+                "score": item.get("score"),
+                "evidence_flags": item.get("evidence_flags") or [],
+                "tier": item.get("tier"),
+            }
+            if include_summary:
+                summary = item.get("summary")
+                out["summary"] = summary if isinstance(summary, dict) else {"text": str(summary)[:300]}
+            return out
+        def representative(items: list[dict[str, Any]], limit: int) -> list[dict[str, Any]]:
+            return sorted(items, key=lambda item: (_is_protected_metadata_path(str(item.get("path") or "")), str(item.get("path") or "").lower()))[:limit]
+        full_items = list(tiers.get("full_text_files") or [])
+        summary_items = list(tiers.get("summarized_files") or [])
+        manifest_items = list(tiers.get("manifest_only_files") or [])
+        return {
+            "full_text_files": [lite_item(item) for item in representative(full_items, 8)],
+            "full_text_file_count": len(full_items),
+            "summarized_files": [lite_item(item, include_summary=True) for item in representative(summary_items, 8)],
+            "summarized_file_count": len(summary_items),
+            "manifest_only_files": [lite_item(item) for item in representative(manifest_items, 12)],
+            "manifest_only_file_count": len(manifest_items),
+            "compaction_policy": "Lite packet context tiers include counts and representative entries; saved manifests retain complete tier metadata.",
+        }
     # The JSON result/audit keeps full explainability. The prompt packet keeps a
     # slimmer version so why-excluded receipts do not consume agent input budget.
     return {
@@ -1216,7 +1470,7 @@ def _packet_lines(manifest: dict[str, Any], selected: list[dict[str, Any]]) -> l
     packet_project_detection = _compact_project_detection_for_packet(manifest["project_detection"])
     packet_proof_policy = _compact_proof_policy_for_packet(manifest.get("proof_policy"), manifest.get("project_detection"), profile_name, str(manifest.get("sanitized_user_intent") or ""))
     packet_intake_policy = _compact_intake_policy_for_packet(manifest.get("intake_policy"), manifest.get("project_detection"), profile_name)
-    packet_tiers = _packet_context_tiers(manifest)
+    packet_tiers = _packet_context_tiers(manifest, profile_name)
     if packet_mode == "tiny":
         return [
             PACKET_MARKER,
@@ -1381,7 +1635,7 @@ def _packet_manifest_for_prompt(manifest: dict[str, Any]) -> dict[str, Any]:
         "packet_version": manifest.get("packet_marker"),
         "metrics": metrics,
         "excluded_context_summary": compact_excluded_summary,
-        "redaction_summary": manifest["redaction_summary"],
+        "redaction_summary": _compact_redaction_summary_for_packet(manifest.get("redaction_summary")),
     }
 
 
@@ -1464,11 +1718,20 @@ def _v3_suffix_lines(manifest: dict[str, Any], selected: list[dict[str, Any]]) -
     profile_name = str(manifest.get("resource_profile") or "standard")
     packet_proof_policy = _compact_proof_policy_for_packet(manifest.get("proof_policy"), manifest.get("project_detection"), profile_name, str(manifest.get("sanitized_user_intent") or ""))
     packet_intake_policy = _compact_intake_policy_for_packet(manifest.get("intake_policy"), manifest.get("project_detection"), profile_name)
-    packet_tiers = _packet_context_tiers(manifest)
+    packet_tiers = _packet_context_tiers(manifest, profile_name)
     git_state = manifest.get("git_state") or {}
+    evidence = manifest.get("evidence_summary") or {}
+    relevant_paths = set(evidence.get("prompt_mentioned_files") or []) | set(evidence.get("prompt_forbidden_files") or [])
+    for item in evidence.get("highest_confidence_files") or []:
+        if isinstance(item, dict) and item.get("path"):
+            relevant_paths.add(str(item["path"]))
+    dirty_summary = _summarize_paths_for_packet(git_state.get("dirty_files") or [], relevant_paths=relevant_paths, sample_limit=10 if profile_name == "lite" else 20)
+    packet_evidence_summary = _compact_evidence_summary_for_packet(evidence, dirty_summary=dirty_summary)
+    packet_patch_boundary = _compact_patch_boundary_for_packet(manifest.get("patch_boundary"), profile_name)
     dynamic_git = {
-        "dirty_files": git_state.get("dirty_files"),
-        "diff_summary": git_state.get("diff_summary"),
+        "dirty_files_summary": dirty_summary,
+        "diff_summary": _compact_diff_summary_for_packet(git_state.get("diff_summary"), max_chars=500 if profile_name == "lite" else 4000),
+        "diff_truncated": git_state.get("diff_truncated"),
         "available": git_state.get("available"),
     }
     lines = [
@@ -1481,7 +1744,7 @@ def _v3_suffix_lines(manifest: dict[str, Any], selected: list[dict[str, Any]]) -
         "- The original raw prompt is intentionally not included. Use this packet as the complete task instruction.",
         "",
         "## 11. Dirty files",
-        _safe_json_dump(dynamic_git.get("dirty_files") or []),
+        _safe_json_dump(dirty_summary),
         "",
         "## 12. Current diff summary",
         _safe_json_dump(dynamic_git),
@@ -1491,9 +1754,9 @@ def _v3_suffix_lines(manifest: dict[str, Any], selected: list[dict[str, Any]]) -
         "",
         "## 14. Likely files/tests and patch boundary",
         _safe_json_dump({
-            "evidence_summary": manifest.get("evidence_summary"),
+            "evidence_summary": packet_evidence_summary,
             "root_cause_hypotheses": manifest.get("root_cause_hypotheses"),
-            "patch_boundary": manifest.get("patch_boundary"),
+            "patch_boundary": packet_patch_boundary,
             "repo_map_summary_ref": {
                 "present": bool(manifest.get("repo_map_summary")),
                 "repo_map_sha256": (manifest.get("repo_map_summary") or {}).get("repo_map_sha256") if isinstance(manifest.get("repo_map_summary"), dict) else None,
@@ -1509,8 +1772,8 @@ def _v3_suffix_lines(manifest: dict[str, Any], selected: list[dict[str, Any]]) -
         _safe_json_dump({
             "raw_prompt_sha256": manifest.get("raw_prompt_sha256"),
             "repo_map_sha256": (manifest.get("repo_map_summary") or {}).get("repo_map_sha256") if isinstance(manifest.get("repo_map_summary"), dict) else None,
-            "redaction_summary": manifest.get("redaction_summary"),
-            "trust_boundary_warnings": manifest.get("trust_boundary_warnings") or [],
+            "redaction_summary": _compact_redaction_summary_for_packet(manifest.get("redaction_summary")),
+            "trust_boundary_warnings": _compact_trust_warnings_for_packet(manifest.get("trust_boundary_warnings") or []),
             "prompt_forbidden_paths": manifest.get("prompt_forbidden_paths") or [],
         }),
         "",
