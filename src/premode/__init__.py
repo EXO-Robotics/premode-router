@@ -5,4 +5,4 @@ The package intentionally exposes from ``src/premode/__init__.py`` and must
 not include ``src/premode/init.py``.
 """
 
-__version__ = "0.2.6.13"
+__version__ = "0.2.6.14"

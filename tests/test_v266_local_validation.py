@@ -14,6 +14,17 @@ def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True)
 
 
+def _subprocess_diagnostics(repo: Path, result: subprocess.CompletedProcess[str]) -> str:
+    return "\n".join([
+        f"cwd={repo}",
+        f"returncode={result.returncode}",
+        f"stdout_tail={result.stdout[-2000:]}",
+        f"stderr_tail={result.stderr[-2000:]}",
+        f"premode_out_exists={(repo / '.premode' / 'out').exists()}",
+        f"last_packet_exists={(repo / '.premode' / 'out' / 'last_packet.json').exists()}",
+    ])
+
+
 def _env() -> dict[str, str]:
     env = dict(os.environ)
     env["PYTHONPATH"] = str(ROOT / "src")
@@ -87,7 +98,7 @@ def test_review_patch_since_compile_end_to_end_cli_temp_git_repo(tmp_path: Path)
         capture_output=True,
         check=False,
     )
-    assert compile_result.returncode == 0, compile_result.stderr
+    assert compile_result.returncode == 0, _subprocess_diagnostics(repo, compile_result)
     assert (repo / ".premode" / "out" / "last_packet.json").exists()
 
     (repo / "src" / "app.py").write_text("def value():\n    return 2\n", encoding="utf-8")
@@ -99,7 +110,7 @@ def test_review_patch_since_compile_end_to_end_cli_temp_git_repo(tmp_path: Path)
         capture_output=True,
         check=False,
     )
-    assert review_result.returncode == 0, review_result.stderr
+    assert review_result.returncode == 0, _subprocess_diagnostics(repo, review_result)
     payload = json.loads(review_result.stdout)
     assert "src/app.py" in payload["changed_files"]
     assert payload["merge_readiness"] == "warning"

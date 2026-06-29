@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.13
+# Implementation Report — Pre-mode Router v0.2.6.14
 
 ## Release summary
 
-`v0.2.6.13 — Ignore-Boundary Routing Enforcement` keeps ignored/reference/generated paths out of likely-file, test, verification, and selected-context routing unless the prompt explicitly names them.
+`v0.2.6.14 — Validation Reliability + Semantic Impact Buckets` improves CLI automation output, smoke diagnostics, impact bucket semantics, and OpenClaw explicit-file edit boundaries.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.14 changes
+
+- Bumped package version to `0.2.6.14`.
+- Changed compile stdout with both `--out` and `--json-out` to emit a compact receipt unless `--show-raw` is requested.
+- Added semantic impact buckets for editable likely files, read-only support files, prompt-forbidden files, related tests, and verification order.
+- Tightened OpenClaw/control-plane allowed edits when a prompt names one specific source file without asking for a broader refactor.
+- Added phase and duration diagnostics to the smoke script.
 
 ## v0.2.6.13 changes
 
@@ -106,6 +114,7 @@ v2.6.10 — Direct Child Git Root Discovery
 v2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget
 v2.6.12 — Child Repo Context Boundary
 v2.6.13 — Ignore-Boundary Routing Enforcement
+v2.6.14 — Validation Reliability + Semantic Impact Buckets
 ```
 
 ## Standard validation

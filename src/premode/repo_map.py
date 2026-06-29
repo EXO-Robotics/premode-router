@@ -54,6 +54,8 @@ NEGATIVE_BOUNDARY_TERMS = (
     'avoid binaries',
 )
 
+NEGATIVE_INTENT_RE = re.compile(r"(?i)\b(?:do not|don't|dont|must not|never|avoid|without|leave)\b[^\n;]*(?:touch|edit|modify|mutate|change|alter|write|touching)[^\n;]*")
+
 
 def _sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -75,6 +77,15 @@ def _is_ignore_boundary_path(path: str) -> bool:
 def _prompt_has_negative_boundary(raw_prompt: str) -> bool:
     prompt = raw_prompt.lower()
     return any(term in prompt for term in NEGATIVE_BOUNDARY_TERMS)
+
+
+def _path_matches_any(path: str, candidates: set[str]) -> bool:
+    lower = path.lower().strip("/")
+    for candidate in candidates:
+        c = str(candidate).lower().strip("/")
+        if c and (lower == c or lower.endswith("/" + c) or lower.startswith(c.rstrip("/") + "/")):
+            return True
+    return False
 
 
 def _file_sha256(path: Path) -> str:
@@ -559,6 +570,17 @@ def _prompt_mentioned_existing_paths(raw_prompt: str, repo_root: Path | None, fi
     return out
 
 
+def _prompt_forbidden_repo_paths(raw_prompt: str, files: dict[str, dict[str, Any]], repo_root: Path | None) -> set[str]:
+    forbidden: set[str] = set()
+    for match in NEGATIVE_INTENT_RE.finditer(raw_prompt or ""):
+        clause = match.group(0)
+        sources, tests = _prompt_mentioned_repo_paths(clause, files)
+        forbidden.update(sources)
+        forbidden.update(tests)
+        forbidden.update(_prompt_mentioned_existing_paths(clause, repo_root, files))
+    return forbidden
+
+
 def _related_tests_for(path: str, all_paths: set[str]) -> list[str]:
     p = path.replace('\\', '/').strip('/')
     stem = Path(p).stem
@@ -1007,7 +1029,7 @@ def _domain_keyword_hints(raw_prompt: str, files: dict[str, dict[str, Any]], lik
                 if path in files:
                     likely.append({'path': path, 'kind': 'domain_keyword_hint', 'source': 'domain_keyword_hints', 'reason': f'prompt mentions `{phrase}`'})
 
-def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, Any]:
+def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbidden_paths: set[str] | None = None) -> dict[str, Any]:
     prompt = raw_prompt.lower()
     entrypoints = repo_map.get('entrypoints') or []
     files = repo_map.get('files') or {}
@@ -1018,6 +1040,8 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
     prompt_existing_paths = _prompt_mentioned_existing_paths(raw_prompt, repo_root, files)
     explicit_paths = set(prompt_sources) | set(prompt_tests)
     explicit_paths.update(prompt_existing_paths)
+    forbidden_paths = {str(p).strip("/") for p in (prompt_forbidden_paths or set()) if p}
+    forbidden_paths.update(_prompt_forbidden_repo_paths(raw_prompt, files, repo_root))
 
     for path in prompt_sources:
         info = files.get(path) or {}
@@ -1088,15 +1112,40 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
     filtered_likely: list[dict[str, Any]]
     filtered_related: list[dict[str, Any]]
     filtered_likely, removed_likely = _filter_routing_paths(raw_prompt, out, explicit_paths)
-    filtered_likely_paths = [str(item.get('path')) for item in filtered_likely if item.get('path')]
+    prompt_forbidden_files: list[dict[str, Any]] = []
+    read_only_support_files: list[dict[str, Any]] = []
+    likely_edit_files: list[dict[str, Any]] = []
+    for item in filtered_likely:
+        path = str(item.get('path') or '')
+        suffix = Path(path).suffix.lower()
+        if path and _path_matches_any(path, forbidden_paths):
+            prompt_forbidden_files.append({**item, 'reason': 'prompt_forbidden_read_only'})
+        elif suffix not in SOURCE_EXTENSIONS | CONFIG_EXTENSIONS:
+            read_only_support_files.append({**item, 'reason': item.get('reason') or 'read_only_support_file'})
+        else:
+            likely_edit_files.append(item)
+    filtered_likely_paths = [str(item.get('path')) for item in likely_edit_files if item.get('path')]
     direct_dependencies, direct_dependents = _dependency_slices(repo_map, filtered_likely_paths)
     related_tests = _related_tests_for_paths(repo_map, filtered_likely_paths, explicit_tests=prompt_tests)
     filtered_related, removed_related = _filter_routing_paths(raw_prompt, related_tests, explicit_paths)
+    kept_related: list[dict[str, Any]] = []
+    seen_forbidden = {str(item.get('path') or '') for item in prompt_forbidden_files}
+    for item in filtered_related:
+        path = str(item.get('path') or '')
+        if path and _path_matches_any(path, forbidden_paths):
+            if path not in seen_forbidden:
+                prompt_forbidden_files.append({**item, 'reason': 'prompt_forbidden_read_only'})
+                seen_forbidden.add(path)
+        else:
+            kept_related.append(item)
+    filtered_related = kept_related
     direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths)
     direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths)
     diagnostics = {
         'ignored_boundary_filter_active': bool(removed_likely or removed_related or removed_deps or removed_dependents or _prompt_has_negative_boundary(raw_prompt)),
         'negative_boundary_prompt': _prompt_has_negative_boundary(raw_prompt),
+        'prompt_forbidden_count': len(prompt_forbidden_files),
+        'read_only_support_count': len(read_only_support_files),
         'removed_likely_count': len(removed_likely),
         'removed_related_test_count': len(removed_related),
         'removed_dependency_edge_count': removed_deps,
@@ -1105,7 +1154,10 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
         'policy': 'Ignored/reference/generated paths are excluded from routing unless explicitly prompt-mentioned.',
     }
     return {
-        'likely_files': filtered_likely[:24],
+        'likely_edit_files': likely_edit_files[:24],
+        'read_only_support_files': read_only_support_files[:24],
+        'prompt_forbidden_files': prompt_forbidden_files[:24],
+        'likely_files': likely_edit_files[:24],
         'direct_dependencies': direct_dependencies,
         'direct_dependents': direct_dependents,
         'related_tests': filtered_related,
@@ -1115,7 +1167,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any]) -> dict[str, An
         'edge_count': repo_map.get('edge_count'),
         'hint_source': 'deterministic_repo_map',
         'full_text_guardrail': 'repo-map relevance alone does not promote files to full text',
-        'omitted_impact_detail_count': max(0, len(likely) - len(filtered_likely[:24])),
+        'omitted_impact_detail_count': max(0, len(likely) - len(likely_edit_files[:24])),
         'routing_filter_diagnostics': diagnostics,
     }
 

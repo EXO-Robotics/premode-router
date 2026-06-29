@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.13 Ignore-Boundary Routing Enforcement
+# Final Package Index — v0.2.6.14 Validation Reliability + Semantic Impact Buckets
 
 This package is the current release-candidate base for external Codex testing.
 

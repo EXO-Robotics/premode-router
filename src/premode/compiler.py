@@ -940,6 +940,20 @@ def _is_protected_metadata_path(path: str) -> bool:
     return _metadata_path_category(path) in {"generated", "state", "secrets", "external", "artifacts"} or _is_noisy_metadata_path(path)
 
 
+def _is_source_path_for_boundary(path: str) -> bool:
+    return Path(path).suffix.lower() in {".py", ".swift", ".js", ".jsx", ".ts", ".tsx", ".go", ".rs", ".java", ".kt", ".c", ".cc", ".cpp", ".h", ".hpp"}
+
+
+def _is_test_path_for_boundary(path: str) -> bool:
+    lower = path.lower()
+    name = Path(lower).name
+    return lower.startswith(("tests/", "test/")) or "/tests/" in lower or name.startswith("test_") or "_test." in name or ".test." in name or ".spec." in name
+
+
+def _broad_refactor_requested(raw_prompt: str) -> bool:
+    return bool(re.search(r"(?i)\b(refactor|rework|redesign|across|all related|all affected|multiple files|whole module|system-wide|broader)\b", raw_prompt or ""))
+
+
 def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]], classification: dict[str, Any], project_detection: dict[str, Any] | None = None, raw_prompt: str = "", prompt_forbidden_paths: set[str] | None = None) -> dict[str, Any]:
     primary = classification.get("primary_intent")
     docs_intent = primary in {"documentation", "branch_review"}
@@ -1007,6 +1021,19 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
             else:
                 moved_allowed.append(path)
         allowed = moved_allowed
+    if _is_control_plane_detection(project_detection) and not _broad_refactor_requested(raw_prompt):
+        selected_items = list(full) + list(summaries)
+        prompt_sources = [
+            str(item.get("path") or "")
+            for item in selected_items
+            if "prompt_mentioned" in set(item.get("evidence_flags") or []) and _is_source_path_for_boundary(str(item.get("path") or ""))
+        ]
+        prompt_sources = list(dict.fromkeys([p for p in prompt_sources if p]))
+        if len(prompt_sources) == 1:
+            focused_allowed = [p for p in allowed if p == prompt_sources[0] or _is_test_path_for_boundary(p)]
+            if len(focused_allowed) != len(allowed):
+                read_only.extend([p for p in allowed if p not in focused_allowed])
+                allowed = focused_allowed
     mutation_model = intake_report.get("mutation_model", {}) if isinstance(intake_report, dict) else {}
     for zone in mutation_model.get("dangerous_zones", []) or []:
         if zone and zone not in forbidden:
@@ -1107,7 +1134,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     classification = classify_task(sanitized, git_state, log_state)
     primary_intent = classification["primary_intent"]
     repo_map = build_repo_map(repo_root, entries=entries, profile_name=caps.name) if use_repo_map else None
-    impact_map = task_impact_hints(raw_prompt, repo_map) if repo_map else None
+    impact_map = task_impact_hints(raw_prompt, repo_map, prompt_forbidden_paths=prompt_forbidden_paths) if repo_map else None
     repo_map_paths = {str(item.get("path", "")).lower() for item in ((impact_map or {}).get("likely_files") or []) if item.get("path")}
     source_gameplay_prompt = _is_source_gameplay_prompt(sanitized)
     compact_authority_for_lite = caps.name == "lite" and source_gameplay_prompt and _is_control_plane_detection(project_detection)

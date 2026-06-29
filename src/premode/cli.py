@@ -28,6 +28,24 @@ def _print_json(obj) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
 
 
+def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -> dict:
+    metrics = result.get("metrics") or {}
+    return {
+        "status": "compiled",
+        "packet_version": result.get("packet_version"),
+        "resource_profile": result.get("resource_profile"),
+        "packet_sha256": result.get("compiled_packet_sha256"),
+        "cacheable_prefix_sha256": result.get("cacheable_prefix_sha256"),
+        "dynamic_suffix_sha256": result.get("dynamic_suffix_sha256"),
+        "packet_tokens": metrics.get("packet_total_tokens"),
+        "hard_packet_token_budget": (result.get("caps") or {}).get("hard_packet_token_budget"),
+        "budget_exceeded_by": metrics.get("budget_exceeded_by"),
+        "out": str(out) if out else None,
+        "json_out": str(json_out) if json_out else None,
+        "show_raw_hint": "rerun with --show-raw to print the compiled packet to stdout",
+    }
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="premode")
     p.add_argument("--version", action="version", version=f"premode {__version__}")
@@ -198,6 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.json:
             _print_json({k: v for k, v in result.items() if k != "packet"})
+        elif out and json_out and not args.show_raw:
+            _print_json(_compile_receipt(result, out=out, json_out=json_out))
         else:
             print(result["packet"])
             if args.show_raw:

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.14
+
+- Changed `premode compile --out ... --json-out ...` to print a compact receipt by default instead of the full packet; `--show-raw` still prints the packet.
+- Split impact routing into semantic buckets: `likely_edit_files`, `read_only_support_files`, `prompt_forbidden_files`, `related_tests`, and `verification_order`.
+- Tightened OpenClaw/control-plane allowed edits for prompts naming one explicit source file.
+- Added smoke phase/duration diagnostics for core, plugin, and benchmark phases.
+- Bumped package version to `0.2.6.14`.
+
 ## v0.2.6.13
 
 - Enforced ignored/reference/generated path boundaries in repo-map impact routing.
