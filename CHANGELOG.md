@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6.18
+
+- Surfaced semantic routing buckets at top level in compile JSON so consumers can read likely edit files, support files, related tests, verification order, and diagnostics without unpacking `impact_map`.
+- Tightened SwiftUI tutorial/UI-shell prompts to keep only strongly matched Swift UI/ViewModel/state files in allowed edits and downrank broad Swift candidates.
+- Preserved animal/art manifest suppression while adding diagnostics for Swift scope tightening.
+- Bumped package version to `0.2.6.18`.
+
 ## v0.2.6.17
 
 - Reconciled safe Swift full-text source recovery back into `likely_edit_files` and `likely_files` even when the final selected context is the recovery proof.

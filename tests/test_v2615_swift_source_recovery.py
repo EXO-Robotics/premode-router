@@ -30,8 +30,14 @@ def _make_goldpine_like_repo(repo: Path) -> None:
     _write(repo / "GoldpineValley" / "Views" / "MainMenuView.swift", "struct MainMenuView { var tutorialOverlayVisible = false }\n")
     _write(repo / "GoldpineValley" / "Views" / "BottomBarView.swift", "struct BottomBarView { var body: String { \"bar\" } }\n")
     _write(repo / "GoldpineValley" / "Views" / "SharedViewStyles.swift", "struct SharedViewStyles {}\n")
+    _write(repo / "GoldpineValley" / "Views" / "FounderSelectView.swift", "struct FounderSelectView { var body: String { \"founder\" } }\n")
+    _write(repo / "GoldpineValley" / "Views" / "EventCardView.swift", "struct EventCardView { var body: String { \"event\" } }\n")
+    _write(repo / "GoldpineValley" / "ViewModels" / "NewGameViewModel.swift", "final class NewGameViewModel { var selectedFounder = \"\" }\n")
     _write(repo / "GoldpineValley" / "ViewModels" / "GameSessionViewModel+HomesteadNavigation.swift", "final class GameSessionViewModel { var tutorialState = 0 }\n")
     _write(repo / "GoldpineValley" / "Models" / "TutorialState.swift", "struct TutorialState { var step: Int }\n")
+    _write(repo / "GoldpineValley" / "Models" / "FrontierRisk" / "FrontierRiskModels.swift", "struct FrontierRiskModels { var risk = 0 }\n")
+    _write(repo / "GoldpineValley" / "Systems" / "RiskResolver.swift", "struct RiskResolver { func resolve() {} }\n")
+    _write(repo / "GoldpineValley" / "DevTools" / "DevCheckpointID.swift", "enum DevCheckpointID { case start }\n")
     _write(repo / "GoldpineValley" / "Assets.xcassets" / "AppIcon.appiconset" / "Contents.json", "{}\n")
     animal_manifest = "[\n" + ",\n".join(
         f'  {{"animal": "fox", "sprite": "pose_{i}", "source": "ArtSource/NPC_Models/fox_{i}.png", "crop": [{i}, {i + 1}, 64, 64]}}'
@@ -79,6 +85,8 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     impact = result["impact_map"]
     likely_edit = {item["path"] for item in impact["likely_edit_files"]}
     likely_files = {item["path"] for item in impact["likely_files"]}
+    top_level_likely_edit = {item["path"] for item in result["likely_edit_files"]}
+    top_level_likely_files = {item["path"] for item in result["likely_files"]}
     required_swift = {
         "GoldpineValley/Views/MainMenuView.swift",
         "GoldpineValley/Views/BottomBarView.swift",
@@ -93,7 +101,22 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     }
     assert required_swift <= likely_edit
     assert required_swift <= likely_files
+    assert required_swift <= top_level_likely_edit
+    assert required_swift <= top_level_likely_files
     assert likely_edit & expected_swift
+    broad_swift = {
+        "GoldpineValley/ViewModels/NewGameViewModel.swift",
+        "GoldpineValley/DevTools/DevCheckpointID.swift",
+        "GoldpineValley/Models/FrontierRisk/FrontierRiskModels.swift",
+        "GoldpineValley/Systems/RiskResolver.swift",
+        "GoldpineValley/Views/FounderSelectView.swift",
+        "GoldpineValley/Views/EventCardView.swift",
+    }
+    assert not broad_swift & likely_edit
+    assert not broad_swift & top_level_likely_edit
+    allowed = set(result["patch_boundary"]["allowed_edit_files"])
+    assert required_swift <= allowed
+    assert not broad_swift & allowed
     forbidden_fragments = (
         "Docs/Planning_Bundles",
         "ArtSource",
@@ -136,3 +159,5 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     assert diagnostics["docs_downranked_count"] >= 0
     assert diagnostics["asset_manifest_filtered_count"] >= 2
     assert diagnostics["filtered_reasons"]["asset_manifest_boundary"] >= 2
+    assert result["routing_filter_diagnostics"]
+    assert result["routing_filter_diagnostics"]["swiftui_scope_tightened"] is True

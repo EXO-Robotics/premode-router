@@ -55,6 +55,7 @@ NEGATIVE_BOUNDARY_TERMS = (
 )
 
 SWIFT_SOURCE_PROMPT_RE = re.compile(r"(?i)\b(swiftui|swift|ios|xcode|tutorial|overlay|state|ui shell|view model|viewmodel|views?|source)\b")
+SWIFTUI_TUTORIAL_SCOPE_RE = re.compile(r"(?i)\b(swiftui|ui shell|tutorial|overlay|guidance|onboarding)\b")
 SWIFT_SOURCE_PATH_HINTS = (
     '/views/',
     '/viewmodels/',
@@ -141,6 +142,40 @@ def _prompt_has_negative_boundary(raw_prompt: str) -> bool:
 
 def _prompt_is_swift_source_task(raw_prompt: str) -> bool:
     return bool(SWIFT_SOURCE_PROMPT_RE.search(raw_prompt or ''))
+
+
+def _prompt_is_swiftui_tutorial_scope_task(raw_prompt: str) -> bool:
+    prompt = raw_prompt or ''
+    return bool(SWIFTUI_TUTORIAL_SCOPE_RE.search(prompt)) and _prompt_is_swift_source_task(prompt)
+
+
+def _swiftui_tutorial_scope_score(path: str) -> int:
+    lower = str(path).replace('\\', '/').lower().strip('/')
+    if not lower.endswith('.swift'):
+        return 0
+    name = Path(lower).name
+    score = 0
+    if lower in {
+        'goldpinevalley/views/bottombarview.swift',
+        'goldpinevalley/views/mainmenuview.swift',
+        'goldpinevalley/viewmodels/gamesessionviewmodel+homesteadnavigation.swift',
+    }:
+        score += 1000
+    if any(part in lower for part in ('/views/', '/viewmodels/')):
+        score += 160
+    if any(term in lower for term in ('tutorial', 'overlay', 'guidance', 'onboarding')):
+        score += 360
+    if any(term in lower for term in ('homesteadnavigation', 'tutorialstate', 'tutorial_state', 'session', 'state')):
+        score += 260
+    if any(term in lower for term in ('bottom', 'bar', 'mainmenu', 'main_menu', 'menu', 'shell')):
+        score += 240
+    if 'viewmodel' in lower:
+        score += 120
+    if any(term in lower for term in ('devtools/', 'frontierrisk/', 'riskresolver', 'founderselectview', 'eventcardview')):
+        score -= 500
+    if lower.endswith('tests.swift') or '/tests/' in lower:
+        score -= 200
+    return score
 
 
 def _prompt_excludes_in_repo_planning_art(raw_prompt: str) -> bool:
@@ -1178,6 +1213,12 @@ def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any
             score += 120
         if 'tutorial' in prompt and any(term in lower for term in ('tutorial', 'overlay', 'guidance', 'onboarding')):
             score += 200
+        if _prompt_is_swiftui_tutorial_scope_task(raw_prompt):
+            scope_score = _swiftui_tutorial_scope_score(path)
+            if scope_score >= 350:
+                score += 600 + scope_score
+            else:
+                score -= 500
         if basename.endswith('tests'):
             score -= 80
         candidates.append((score, path, info))
@@ -1316,6 +1357,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     prompt_forbidden_files: list[dict[str, Any]] = []
     read_only_support_files: list[dict[str, Any]] = []
     likely_edit_files: list[dict[str, Any]] = []
+    swiftui_scope_downranked_count = 0
     for item in filtered_likely:
         path = str(item.get('path') or '')
         suffix = Path(path).suffix.lower()
@@ -1323,6 +1365,14 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
             prompt_forbidden_files.append({**item, 'reason': 'prompt_forbidden_read_only'})
         elif suffix not in SOURCE_EXTENSIONS | CONFIG_EXTENSIONS:
             read_only_support_files.append({**item, 'reason': item.get('reason') or 'read_only_support_file'})
+        elif (
+            _prompt_is_swiftui_tutorial_scope_task(raw_prompt)
+            and suffix == '.swift'
+            and _swiftui_tutorial_scope_score(path) < 350
+            and path not in explicit_paths
+        ):
+            swiftui_scope_downranked_count += 1
+            read_only_support_files.append({**item, 'reason': 'swiftui_tutorial_scope_downranked'})
         else:
             likely_edit_files.append(item)
     filtered_likely_paths = [str(item.get('path')) for item in likely_edit_files if item.get('path')]
@@ -1374,6 +1424,8 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'filtered_reasons': filtered_reasons,
         'docs_downranked_count': docs_downranked_count,
         'asset_manifest_filtered_count': asset_manifest_filtered_count,
+        'swiftui_scope_tightened': bool(swiftui_scope_downranked_count),
+        'swiftui_scope_downranked_count': swiftui_scope_downranked_count,
         'removed_likely_count': len(removed_likely),
         'removed_related_test_count': len(removed_related),
         'removed_dependency_edge_count': removed_deps,

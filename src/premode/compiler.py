@@ -58,6 +58,7 @@ UNTRUSTED_CONTEXT_NAMES = {"readme.md", "readme"}
 PROMPT_INJECTION_RE = re.compile(r"(?i)(ignore (?:all )?(?:previous|user|system) instructions|delete tests?|print (?:all )?secrets?|reveal secrets?|exfiltrate|edit generated files|bypass guardrails)")
 LOG_TASK_RE = re.compile(r"(?i)(build|test|pytest|xcodebuild|cargo|go test|npm test|pnpm test|error|failure|failing|failed|traceback|exception|log|logs|compile)")
 SOURCE_GAMEPLAY_TASK_RE = re.compile(r"(?i)(source|bug|gameplay|unreal|build|compile|test|failing|failure|crash|runtime)")
+SWIFTUI_TUTORIAL_SCOPE_RE = re.compile(r"(?i)\b(swiftui|ui shell|tutorial|overlay|guidance|onboarding)\b")
 
 
 def estimate_tokens(text: str) -> int:
@@ -594,6 +595,39 @@ def _is_source_gameplay_prompt(prompt: str) -> bool:
     return bool(SOURCE_GAMEPLAY_TASK_RE.search(prompt or ""))
 
 
+def _is_swiftui_tutorial_scope_prompt(raw_prompt: str) -> bool:
+    prompt = raw_prompt or ""
+    return bool(SWIFTUI_TUTORIAL_SCOPE_RE.search(prompt)) and _prompt_is_swift_source_task(prompt)
+
+
+def _swiftui_tutorial_scope_score(path: str) -> int:
+    lower = str(path).replace("\\", "/").lower().strip("/")
+    if not lower.endswith(".swift"):
+        return 0
+    score = 0
+    if lower in {
+        "goldpinevalley/views/bottombarview.swift",
+        "goldpinevalley/views/mainmenuview.swift",
+        "goldpinevalley/viewmodels/gamesessionviewmodel+homesteadnavigation.swift",
+    }:
+        score += 1000
+    if any(part in lower for part in ("/views/", "/viewmodels/")):
+        score += 160
+    if any(term in lower for term in ("tutorial", "overlay", "guidance", "onboarding")):
+        score += 360
+    if any(term in lower for term in ("homesteadnavigation", "tutorialstate", "tutorial_state", "session", "state")):
+        score += 260
+    if any(term in lower for term in ("bottom", "bar", "mainmenu", "main_menu", "menu", "shell")):
+        score += 240
+    if "viewmodel" in lower:
+        score += 120
+    if any(term in lower for term in ("devtools/", "frontierrisk/", "riskresolver", "founderselectview", "eventcardview")):
+        score -= 500
+    if lower.endswith("tests.swift") or "/tests/" in lower:
+        score -= 200
+    return score
+
+
 def _is_source_or_config_context(entry: dict[str, Any]) -> bool:
     path = str(entry.get("path") or "").lower()
     kind = str(entry.get("kind") or "")
@@ -823,6 +857,107 @@ def _is_swift_source_path_safe_for_recovery(path: str, raw_prompt: str) -> bool:
         "/.github/",
         "package.resolved",
     ))
+
+
+def _path_bucket_item(path: str, *, kind: str, source: str, reason: str) -> dict[str, Any]:
+    return {
+        "path": path,
+        "kind": kind,
+        "source": source,
+        "reason": reason,
+        "language": "swift" if path.lower().endswith(".swift") else None,
+    }
+
+
+def _tighten_swiftui_scope_impact_map(impact_map: dict[str, Any] | None, raw_prompt: str) -> None:
+    if not isinstance(impact_map, dict) or not _is_swiftui_tutorial_scope_prompt(raw_prompt):
+        return
+    likely_edit = list(impact_map.get("likely_edit_files") or [])
+    kept: list[dict[str, Any]] = []
+    demoted: list[dict[str, Any]] = []
+    for item in likely_edit:
+        path = str(item.get("path") or "")
+        if path.lower().endswith(".swift") and _swiftui_tutorial_scope_score(path) < 350:
+            demoted.append({**item, "reason": "swiftui_tutorial_scope_downranked"})
+        else:
+            kept.append(item)
+    if demoted:
+        impact_map["likely_edit_files"] = kept
+        impact_map["likely_files"] = kept
+        existing_support = list(impact_map.get("read_only_support_files") or [])
+        seen = {str(item.get("path") or "") for item in existing_support}
+        existing_support.extend(item for item in demoted if str(item.get("path") or "") not in seen)
+        impact_map["read_only_support_files"] = existing_support
+    diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
+    if isinstance(diagnostics, dict):
+        diagnostics["swiftui_scope_tightened"] = True
+        diagnostics["swiftui_scope_downranked_count"] = max(
+            int(diagnostics.get("swiftui_scope_downranked_count") or 0),
+            len(demoted),
+        )
+        diagnostics["swiftui_scope_kept_edit_files"] = [str(item.get("path")) for item in kept if item.get("path")]
+        filtered_reasons = diagnostics.setdefault("filtered_reasons", {})
+        if demoted and isinstance(filtered_reasons, dict):
+            filtered_reasons["swiftui_tutorial_scope_downranked"] = max(
+                int(filtered_reasons.get("swiftui_tutorial_scope_downranked") or 0),
+                len(demoted),
+            )
+        diagnostics["filtered_count"] = max(
+            int(diagnostics.get("filtered_count") or 0),
+            sum(int(v) for v in (filtered_reasons or {}).values() if isinstance(v, int)),
+        )
+
+
+def _semantic_buckets_from_impact_or_boundary(
+    impact_map: dict[str, Any] | None,
+    patch_boundary: dict[str, Any],
+    prompt_forbidden_paths: set[str],
+) -> dict[str, Any]:
+    impact = impact_map if isinstance(impact_map, dict) else {}
+
+    def impact_list(key: str) -> list[dict[str, Any]]:
+        value = impact.get(key)
+        return list(value) if isinstance(value, list) else []
+
+    likely_edit = impact_list("likely_edit_files")
+    if not likely_edit:
+        likely_edit = [
+            _path_bucket_item(path, kind="source", source="patch_boundary", reason="allowed_edit_file")
+            for path in patch_boundary.get("allowed_edit_files") or []
+            if str(path).strip()
+        ]
+    likely_files = impact_list("likely_files") or list(likely_edit)
+    read_only_support = impact_list("read_only_support_files")
+    if not read_only_support:
+        read_only_support = [
+            _path_bucket_item(path, kind="support", source="patch_boundary", reason="read_only_context_file")
+            for path in patch_boundary.get("read_only_context_files") or []
+            if str(path).strip()
+        ]
+    prompt_forbidden = impact_list("prompt_forbidden_files")
+    if not prompt_forbidden:
+        prompt_forbidden = [
+            _path_bucket_item(path, kind="forbidden", source="prompt_forbidden_paths", reason="prompt_forbidden_read_only")
+            for path in sorted(prompt_forbidden_paths)
+            if str(path).strip()
+        ]
+    diagnostics = dict(impact.get("routing_filter_diagnostics") or {})
+    if not diagnostics and (likely_edit or read_only_support or prompt_forbidden):
+        diagnostics = {
+            "bucket_projection_source": "patch_boundary",
+            "projected_likely_edit_count": len(likely_edit),
+            "projected_read_only_support_count": len(read_only_support),
+            "projected_prompt_forbidden_count": len(prompt_forbidden),
+        }
+    return {
+        "likely_edit_files": likely_edit,
+        "read_only_support_files": read_only_support,
+        "prompt_forbidden_files": prompt_forbidden,
+        "likely_files": likely_files,
+        "related_tests": impact_list("related_tests"),
+        "verification_order": impact_list("verification_order"),
+        "routing_filter_diagnostics": diagnostics,
+    }
 
 
 def ensure_index(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
@@ -1141,6 +1276,22 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
             if len(focused_allowed) != len(allowed):
                 read_only.extend([p for p in allowed if p not in focused_allowed])
                 allowed = focused_allowed
+    swiftui_scope_tightened = False
+    if _is_swiftui_tutorial_scope_prompt(raw_prompt):
+        focused_allowed: list[str] = []
+        demoted_allowed: list[str] = []
+        for path in allowed:
+            lower = str(path).replace("\\", "/").lower().strip("/")
+            if not lower.endswith(".swift"):
+                demoted_allowed.append(path)
+            elif _swiftui_tutorial_scope_score(path) >= 350:
+                focused_allowed.append(path)
+            else:
+                demoted_allowed.append(path)
+        if demoted_allowed:
+            read_only.extend(demoted_allowed)
+            allowed = focused_allowed
+            swiftui_scope_tightened = True
     mutation_model = intake_report.get("mutation_model", {}) if isinstance(intake_report, dict) else {}
     for zone in mutation_model.get("dangerous_zones", []) or []:
         if zone and zone not in forbidden:
@@ -1165,6 +1316,8 @@ def _patch_boundary(full: list[dict[str, Any]], summaries: list[dict[str, Any]],
         "Guidance files are read-only context by default unless the task is documentation-focused.",
         "Allowed-if-justified files may be edited only when the final report explains why they were necessary.",
     ]
+    if swiftui_scope_tightened:
+        notes.append("SwiftUI tutorial/UI shell prompts keep only strongly matched Swift UI/ViewModel files in allowed edits.")
     intake_report = (project_detection or {}).get("intake_report") if project_detection else {}
     for warning in (intake_report.get("intake_warnings", []) if isinstance(intake_report, dict) else []):
         msg = warning.get("message") if isinstance(warning, dict) else None
@@ -1312,6 +1465,21 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             score = min(score, 320)
             flags = sorted((set(flags) - {"dirty_file"}) | {"asset_manifest_compacted"})
             reason = (reason + ", asset_manifest_compacted").strip(", ")
+        if (
+            _is_swiftui_tutorial_scope_prompt(raw_prompt)
+            and lower_entry_path.endswith(".swift")
+            and _is_swift_source_path_safe_for_recovery(lower_entry_path, raw_prompt)
+            and "prompt_mentioned" not in flags
+        ):
+            scope_score = _swiftui_tutorial_scope_score(lower_entry_path)
+            if scope_score >= 350:
+                score += 260
+                flags = sorted(set(flags + ["swiftui_scope_preferred"]))
+                reason = (reason + ", swiftui_scope_preferred").strip(", ")
+            else:
+                score = min(score, 430)
+                flags = sorted((set(flags) - {"dirty_file", "source_recovery"}) | {"swiftui_scope_downranked"})
+                reason = (reason + ", swiftui_scope_downranked").strip(", ")
         if enforce_child_context_boundary and not _is_inside_selected_root(lower_entry_path, selected_child_root) and "prompt_mentioned" not in flags:
             if _is_parent_authority_guidance_path(lower_entry_path):
                 inherited_score = 650 if Path(lower_entry_path).name == "agents.md" else 620
@@ -1325,6 +1493,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         ranked.append({**entry, "score": score, "evidence_flags": flags, "reason": reason})
     ranked.sort(key=lambda e: (int(e.get("score", 0)), -int(e.get("bytes", 0))), reverse=True)
     asset_manifest_filtered_count = sum(1 for entry in ranked if "asset_manifest_compacted" in set(entry.get("evidence_flags") or []))
+    swiftui_scope_rank_downranked_count = sum(1 for entry in ranked if "swiftui_scope_downranked" in set(entry.get("evidence_flags") or []))
 
     ignore = IgnoreMatcher.from_repo(repo_root)
     trust_boundary_warnings = _scan_untrusted_context_warnings(repo_root, entries, caps, ignore)
@@ -1537,7 +1706,6 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     if child_boundary:
         evidence_summary["child_context_boundary"] = child_boundary
     root_cause_hypotheses = _root_cause_hypotheses(classification, evidence_summary)
-    patch_boundary = _patch_boundary(full_text_files, summarized_files, classification, project_detection, raw_prompt, prompt_forbidden_paths)
     proof_policy = openclaw_policy_from_detection(project_detection)
     intake_policy = intake_policy_from_detection(project_detection)
 
@@ -1553,6 +1721,18 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         prompt_forbidden_paths,
         asset_manifest_filtered_count=asset_manifest_filtered_count,
     )
+    _tighten_swiftui_scope_impact_map(impact_map, raw_prompt)
+    if isinstance(impact_map, dict) and _is_swiftui_tutorial_scope_prompt(raw_prompt):
+        diagnostics = impact_map.setdefault("routing_filter_diagnostics", {})
+        if isinstance(diagnostics, dict):
+            diagnostics["swiftui_scope_tightened"] = bool(swiftui_scope_rank_downranked_count or diagnostics.get("swiftui_scope_downranked_count"))
+            diagnostics["swiftui_scope_rank_downranked_count"] = swiftui_scope_rank_downranked_count
+            diagnostics["swiftui_scope_downranked_count"] = max(
+                int(diagnostics.get("swiftui_scope_downranked_count") or 0),
+                swiftui_scope_rank_downranked_count,
+            )
+    patch_boundary = _patch_boundary(full_text_files, summarized_files, classification, project_detection, raw_prompt, prompt_forbidden_paths)
+    semantic_buckets = _semantic_buckets_from_impact_or_boundary(impact_map, patch_boundary, prompt_forbidden_paths)
     selected_manifest = context_tiers["full_text_files"] + [
         {k: v for k, v in item.items() if k != "summary"} for item in summarized_files
     ]
@@ -1616,6 +1796,7 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         "metrics": metrics,
         "repo_map_summary": compact_repo_map_summary(repo_map, profile_name=caps.name, impact_map=impact_map) if repo_map else None,
         "impact_map": impact_map,
+        **semantic_buckets,
         "context_receipt": None,
         "pre_agent_worktree_state": _pre_agent_worktree_state(repo_root),
     }
@@ -1643,6 +1824,13 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         "metrics": manifest["metrics"],
         "repo_map_summary": manifest.get("repo_map_summary"),
         "impact_map": manifest.get("impact_map"),
+        "likely_edit_files": manifest.get("likely_edit_files"),
+        "read_only_support_files": manifest.get("read_only_support_files"),
+        "prompt_forbidden_files": manifest.get("prompt_forbidden_files"),
+        "likely_files": manifest.get("likely_files"),
+        "related_tests": manifest.get("related_tests"),
+        "verification_order": manifest.get("verification_order"),
+        "routing_filter_diagnostics": manifest.get("routing_filter_diagnostics"),
         "pre_agent_worktree_state": manifest.get("pre_agent_worktree_state"),
     }) + "\n", encoding="utf-8")
     return {"manifest": manifest, "selected": full_text_files}
@@ -2497,6 +2685,13 @@ def compile_prompt(
         "metrics": manifest["metrics"],
         "repo_map_summary": manifest.get("repo_map_summary"),
         "impact_map": manifest.get("impact_map"),
+        "likely_edit_files": manifest.get("likely_edit_files"),
+        "read_only_support_files": manifest.get("read_only_support_files"),
+        "prompt_forbidden_files": manifest.get("prompt_forbidden_files"),
+        "likely_files": manifest.get("likely_files"),
+        "related_tests": manifest.get("related_tests"),
+        "verification_order": manifest.get("verification_order"),
+        "routing_filter_diagnostics": manifest.get("routing_filter_diagnostics"),
         "context_receipt": manifest.get("context_receipt"),
         "pre_agent_worktree_state": manifest.get("pre_agent_worktree_state"),
         "cacheable_prefix_tokens": manifest["metrics"].get("cacheable_prefix_tokens"),

@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.17 Final Swift Bucket Reconciliation + Asset Manifest Suppression
+# Final Package Index — v0.2.6.18 Goldpine Contract Surfacing + Swift Scope Tightening
 
 This package is the current release-candidate base for external Codex testing.
 

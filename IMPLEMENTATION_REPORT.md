@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.17
+# Implementation Report — Pre-mode Router v0.2.6.18
 
 ## Release summary
 
-`v0.2.6.17 — Final Swift Bucket Reconciliation + Asset Manifest Suppression` closes the remaining Goldpine SwiftUI routing gap by keeping recovered Swift source in edit buckets, suppressing animal/art manifest JSON from full text, and filling routing diagnostics.
+`v0.2.6.18 — Goldpine Contract Surfacing + Swift Scope Tightening` surfaces semantic routing buckets at top level and narrows SwiftUI tutorial/UI-shell edit contracts to strongly matched Swift source.
 
 ## Product loop
 
@@ -28,6 +28,13 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.18 changes
+
+- Bumped package version to `0.2.6.18`.
+- Surfaced `likely_edit_files`, `read_only_support_files`, `prompt_forbidden_files`, `likely_files`, `related_tests`, `verification_order`, and `routing_filter_diagnostics` at top level in compile JSON.
+- Tightened SwiftUI tutorial/UI-shell prompts so broad Swift files such as dev tools, risk systems, and unrelated views are read-only support instead of allowed edits.
+- Kept animal/art/source manifest JSON suppression and added Swift scope tightening diagnostics.
 
 ## v0.2.6.17 changes
 
