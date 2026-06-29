@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.10
+
+- Added direct child `.git` root discovery for messy parent launches.
+- Promotes direct child Git roots over deeply nested ignored/reference package markers.
+- Added `active_root_candidates` diagnostics with scores, penalties, and reasons.
+- Prevented `_external_references` and `node_modules` package roots from outranking visible child repos.
+- Bumped package version to `0.2.6.10`.
+
 ## v0.2.6.9
 
 - Compacted lite Packet V3 metadata for dirty files, diff summaries, redaction summaries, and trust-boundary warnings.

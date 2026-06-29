@@ -59,6 +59,14 @@ ROOT_MARKER_PRIORITY: dict[str, int] = {
 
 PENALIZED_ROOT_SEGMENTS: tuple[str, ...] = (
     "_external_references",
+    "node_modules",
+    "vendor",
+    "third_party",
+    ".venv",
+    "venv",
+    "env",
+    "build",
+    "dist",
     "_claw_output",
     "generated",
     "artifacts",
@@ -166,6 +174,59 @@ def _root_penalty(root: str) -> int:
 
 def _select_marker_root(marker_roots: dict[str, int]) -> str:
     return sorted(marker_roots.items(), key=lambda kv: (-(kv[1] - _root_penalty(kv[0])), _root_depth(kv[0]), kv[0]))[0][0]
+
+
+def _root_has_penalized_segment(root: str) -> bool:
+    parts = {p.lower() for p in root.strip("/").split("/") if p}
+    return bool(parts & set(PENALIZED_ROOT_SEGMENTS))
+
+
+def _direct_child_git_roots(repo_root: Path) -> list[str]:
+    roots: list[str] = []
+    try:
+        children = sorted(repo_root.iterdir(), key=lambda p: p.name.lower())
+    except OSError:
+        return roots
+    for child in children:
+        if not child.is_dir():
+            continue
+        name = child.name
+        lower = name.lower()
+        if lower in set(PENALIZED_ROOT_SEGMENTS) or lower in {".git", ".premode", ".agents", ".codex"}:
+            continue
+        if (child / ".git").exists():
+            roots.append(name)
+    return roots
+
+
+def _root_candidate(root: str, *, source: str, base_score: int, reasons: list[str], project_kind: str | None = None) -> dict[str, Any]:
+    penalty = _root_penalty(root)
+    return {
+        "root": root,
+        "source": source,
+        "project_kind": project_kind,
+        "score": base_score - penalty,
+        "base_score": base_score,
+        "penalty": penalty,
+        "depth": _root_depth(root),
+        "ignored_or_reference_like": _root_has_penalized_segment(root),
+        "reasons": reasons,
+    }
+
+
+def _synthetic_git_project(root: str) -> dict[str, Any]:
+    return {
+        "project_kind": "generic",
+        "adapter": "generic",
+        "display_name": ADAPTERS["generic"].display_name,
+        "root": root,
+        "confidence": 0.95,
+        "markers": [f"{root}/.git"],
+        "root_selection": {"strategy": "direct_child_git", "marker_roots": {root: ROOT_MARKER_PRIORITY[".git"]}, "source_roots": {}},
+        "build_tools": list(ADAPTERS["generic"].build_tools),
+        "rule_files": [],
+        "important_dirs": [],
+    }
 
 SKIP_DIRS = {".git", ".premode", ".agents", "node_modules", "DerivedData", "build", "dist", ".next", ".venv", "venv", "__pycache__", ".build", "target", "vendor", "Pods"}
 
@@ -438,6 +499,7 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
     lower_paths = [p.lower() for p in rel_paths]
     intake_report = build_intake_report(repo_root, rel_paths)
     detected: list[dict[str, Any]] = []
+    direct_child_git_roots = _direct_child_git_roots(repo_root)
     prompt_l = (prompt or "").lower()
 
     for kind, adapter in ADAPTERS.items():
@@ -567,6 +629,11 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
             **extra,
         })
 
+    existing_roots = {str(d.get("root") or ".") for d in detected}
+    for git_root in direct_child_git_roots:
+        if git_root not in existing_roots:
+            detected.append(_synthetic_git_project(git_root))
+
     if not detected:
         detected.append({
             "project_kind": "generic",
@@ -580,6 +647,35 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
             "rule_files": [p for p in ADAPTERS["generic"].important_files if (repo_root / p).exists()],
             "important_dirs": [d for d in ADAPTERS["generic"].important_dirs if (repo_root / d).exists()],
         })
+    active_root_candidates: list[dict[str, Any]] = []
+    for git_root in direct_child_git_roots:
+        active_root_candidates.append(_root_candidate(
+            git_root,
+            source="direct_child_git",
+            base_score=1000,
+            reasons=["direct child .git marker"],
+            project_kind=next((d.get("project_kind") for d in detected if d.get("root") == git_root), "generic"),
+        ))
+    for d in detected:
+        root = str(d.get("root") or ".")
+        marker_count = len(d.get("markers") or [])
+        base = int(float(d.get("confidence") or 0) * 100) + marker_count * 5
+        if root in direct_child_git_roots:
+            base += 250
+        active_root_candidates.append(_root_candidate(
+            root,
+            source=f"adapter:{d.get('adapter')}",
+            base_score=base,
+            reasons=[str((d.get("root_selection") or {}).get("strategy") or "adapter_detection")],
+            project_kind=str(d.get("project_kind") or "generic"),
+        ))
+    deduped_candidates: dict[str, dict[str, Any]] = {}
+    for candidate in active_root_candidates:
+        root = str(candidate.get("root") or ".")
+        previous = deduped_candidates.get(root)
+        if previous is None or int(candidate["score"]) > int(previous["score"]):
+            deduped_candidates[root] = candidate
+    active_root_candidates = sorted(deduped_candidates.values(), key=lambda c: (-int(c["score"]), int(c["depth"]), str(c["root"])))
     prompt_paths = _prompt_mentioned_paths(prompt, rel_paths)
     task_root = None
     task_root_reason = None
@@ -593,6 +689,23 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
     detected.sort(key=lambda d: d["confidence"], reverse=True)
     openclaw = next((d for d in detected if d.get("adapter") == "openclaw_control_plane" and len(d.get("markers", [])) >= 3), None)
     active = openclaw or detected[0]
+    best_root_candidate = active_root_candidates[0] if active_root_candidates else None
+    if best_root_candidate and best_root_candidate.get("source") == "direct_child_git":
+        active_root = str(active.get("root") or ".")
+        active_is_weaker_nested = active_root == "." or _root_has_penalized_segment(active_root) or _root_depth(active_root) > 1
+        if active_is_weaker_nested:
+            promoted = next((d for d in detected if d.get("root") == best_root_candidate["root"]), None)
+            active = promoted or _synthetic_git_project(str(best_root_candidate["root"]))
+            active = {
+                **active,
+                "task_root": best_root_candidate["root"],
+                "task_root_reason": "direct_child_git outranks nested ignored/reference project markers",
+                "root_selection": {
+                    **(active.get("root_selection") or {}),
+                    "strategy": "direct_child_git",
+                    "promoted_over": active_root,
+                },
+            }
     if task_root and not openclaw:
         for d in detected:
             if d.get('root') == task_root:
@@ -617,6 +730,7 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
         "active_project": active,
         "task_root": task_root or active.get("root"),
         "task_root_reason": task_root_reason or active.get("root_selection", {}).get("strategy"),
+        "active_root_candidates": active_root_candidates[:20],
         "detected_projects": detected,
         "traits": intake_traits,
         "policy_packs": sorted((intake_report.get("policy_packs") or {}).keys()),

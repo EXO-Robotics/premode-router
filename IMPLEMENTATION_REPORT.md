@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.9
+# Implementation Report — Pre-mode Router v0.2.6.10
 
 ## Release summary
 
-`v0.2.6.9 — Metadata Budget Compaction + Nested Root Selection` keeps lite Packet V3 usable on large proof-governed repos. It compacts dirty-file, diff, redaction, and trust-warning metadata in packets while preserving governance data for saved manifests, and it prevents deeply nested external/reference projects from hijacking task-root selection.
+`v0.2.6.10 — Direct Child Git Root Discovery` hardens messy-parent launches. Direct child `.git` repos are now explicit high-score task-root candidates, and deeply nested ignored/reference package markers cannot outrank visible child Git repos.
 
 ## Product loop
 
@@ -28,6 +28,14 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.10 changes
+
+- Bumped package version to `0.2.6.10`.
+- Added direct child `.git` root discovery before nested package-root promotion.
+- Added `active_root_candidates` diagnostics with candidate score, penalty, source, and reasons.
+- Strongly penalized `_external_references`, `node_modules`, dependency/vendor, build, generated, proof, and runtime artifact roots.
+- Added a focused messy-parent fixture covering `openclaw_repo/.git`, `_external_references/.../package.json`, and `node_modules/.../package.json`.
 
 ## v0.2.6.9 changes
 
@@ -69,6 +77,7 @@ v2.6.5 — Release Candidate Cleanup
 v2.6.6 — Local Validation + macOS Portability Cleanup
 v2.6.7 — Codex CLI Adapter Compatibility
 v2.6.9 — Metadata Budget Compaction + Nested Root Selection
+v2.6.10 — Direct Child Git Root Discovery
 ```
 
 ## Standard validation

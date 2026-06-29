@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.9 Metadata Budget Compaction + Nested Root Selection
+# Final Package Index — v0.2.6.10 Direct Child Git Root Discovery
 
 This package is the current release-candidate base for external Codex testing.
 

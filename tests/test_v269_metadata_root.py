@@ -116,3 +116,37 @@ def test_v269_messy_parent_does_not_select_external_reference_task_root(tmp_path
     assert detection["active_project"]["root"] == "openclaw_repo"
     assert detection["active_project"]["project_kind"] == "openclaw_control_plane"
     assert detection["task_root"] != "_external_references/articraft/upstream_repo/viewer/web"
+
+
+def test_v2610_direct_child_git_root_outranks_external_package_json(tmp_path: Path) -> None:
+    parent = tmp_path
+    intended = parent / "openclaw_repo"
+    intended.mkdir()
+    (intended / ".git").mkdir()
+    (intended / "executor").mkdir()
+    (intended / "executor" / "package.json").write_text('{"scripts":{"test":"npm test"}}\n', encoding="utf-8")
+    external = parent / "_external_references" / "articraft" / "upstream_repo" / "viewer" / "web"
+    external.mkdir(parents=True)
+    (external / "package.json").write_text('{"scripts":{"test":"vitest","build":"vite build"}}\n', encoding="utf-8")
+    (external / "src").mkdir()
+    (external / "src" / "viewer.ts").write_text("export const viewer = true\n", encoding="utf-8")
+    node_module = parent / "other_noise" / "executor" / "node_modules" / "express"
+    node_module.mkdir(parents=True)
+    (node_module / "package.json").write_text('{"scripts":{"test":"node test.js"}}\n', encoding="utf-8")
+
+    idx = index_project(parent, "lite")
+    detection = detect_projects(parent, entries=idx["entries"], prompt="Review the intended child repo from the messy parent.")
+    assert detection["task_root"] == "openclaw_repo"
+    assert detection["active_project"]["root"] == "openclaw_repo"
+    assert detection["task_root"] != "_external_references/articraft/upstream_repo/viewer/web"
+    candidates = detection["active_root_candidates"]
+    assert candidates[0]["root"] == "openclaw_repo"
+    assert candidates[0]["source"] == "direct_child_git"
+    assert not any(c["root"].endswith("node_modules/express") for c in candidates)
+
+    result = compile_prompt(parent, "Review the intended child repo from the messy parent.", "lite")
+    assert result["project_detection"]["task_root"] == "openclaw_repo"
+    assert result["commands"]["project_root"] == "openclaw_repo"
+    commands_text = str(result["commands"].get("commands") or {})
+    assert "npm test" not in commands_text
+    assert "vite build" not in commands_text
