@@ -1,4 +1,4 @@
-# Final Package Index — v0.2.6.10 Direct Child Git Root Discovery
+# Final Package Index — v0.2.6.11 Prompt-Aware Repo Selection + Authority Surface Budget
 
 This package is the current release-candidate base for external Codex testing.
 

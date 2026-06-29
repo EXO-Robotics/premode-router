@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.6.11
+
+- Added prompt-affinity scoring for direct child Git roots so OpenClaw/Unreal prompts select `openclaw_repo` and Goldpine/iOS/Swift prompts select the matching iOS repo.
+- Expanded `active_root_candidates` diagnostics with markers, marker bonuses, prompt-affinity bonuses, and ignored/reference penalties.
+- Added ambiguity diagnostics when multiple direct child Git roots remain close-scoring without prompt affinity.
+- Compacted dirty authority/runbook/history/memory docs under lite source/gameplay prompts so they remain visible without dominating full-text context.
+- Bumped package version to `0.2.6.11`.
+
 ## v0.2.6.10
 
 - Added direct child `.git` root discovery for messy parent launches.

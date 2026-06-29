@@ -181,6 +181,82 @@ def _root_has_penalized_segment(root: str) -> bool:
     return bool(parts & set(PENALIZED_ROOT_SEGMENTS))
 
 
+def _root_marker_paths(repo_root: Path, root: str, rel_paths: list[str]) -> list[str]:
+    prefix = "" if root == "." else root.strip("/") + "/"
+    root_path = repo_root if root == "." else repo_root / root
+    markers: set[str] = set()
+    if (root_path / ".git").exists():
+        markers.add(prefix + ".git")
+    scoped = [p for p in rel_paths if not prefix or p == root.strip("/") or p.startswith(prefix)]
+    for path in scoped:
+        rel = path[len(prefix):] if prefix and path.startswith(prefix) else path
+        rel_lower = rel.lower()
+        name = Path(rel).name
+        lower_name = name.lower()
+        if lower_name == "package.json":
+            markers.add(prefix + rel)
+        elif lower_name == "package.swift" or rel_lower.endswith(".swift"):
+            markers.add(prefix + rel)
+        elif lower_name.endswith((".xcodeproj", ".xcworkspace")):
+            markers.add(prefix + rel)
+        elif rel_lower.endswith(".uproject"):
+            markers.add(prefix + rel)
+        elif rel_lower.startswith(("source/", "config/")):
+            markers.add(prefix + rel.split("/", 1)[0] + "/")
+        elif lower_name.endswith((".build.cs", ".target.cs")):
+            markers.add(prefix + rel)
+    return sorted(markers)[:20]
+
+
+def _root_marker_bonus(markers: list[str]) -> tuple[int, list[str]]:
+    lower = [m.lower() for m in markers]
+    bonus = 0
+    reasons: list[str] = []
+    if any(m.endswith("/.git") or m == ".git" for m in lower):
+        bonus += 80
+        reasons.append(".git marker")
+    if any(m.endswith(".uproject") or m.endswith(".build.cs") or m.endswith(".target.cs") or m.endswith("source/") or m.endswith("config/") for m in lower):
+        bonus += 110
+        reasons.append("unreal/native markers")
+    if any(m.endswith(".xcodeproj") or m.endswith(".xcworkspace") or m.endswith("package.swift") or m.endswith(".swift") for m in lower):
+        bonus += 100
+        reasons.append("ios/swift markers")
+    if any(m.endswith("package.json") for m in lower):
+        bonus += 25
+        reasons.append("package.json marker")
+    return bonus, reasons
+
+
+def _prompt_affinity_bonus(root: str, markers: list[str], prompt: str | None) -> tuple[int, list[str]]:
+    prompt_l = (prompt or "").lower()
+    root_l = root.lower()
+    markers_l = " ".join(m.lower() for m in markers)
+    bonus = 0
+    reasons: list[str] = []
+    has_unreal_marker = any(term in markers_l for term in [".uproject", ".build.cs", ".target.cs", "source/", "config/"])
+    has_ios_marker = any(term in markers_l for term in [".xcodeproj", ".xcworkspace", "package.swift", ".swift"])
+    has_node_marker = "package.json" in markers_l
+    if "openclaw" in prompt_l and "openclaw" in root_l:
+        bonus += 650
+        reasons.append("prompt mentions OpenClaw and root name matches")
+    if any(term in prompt_l for term in ["unreal", "gameplay", "game bug", "native"]):
+        if has_unreal_marker or "openclaw" in root_l:
+            bonus += 320
+            reasons.append("prompt has Unreal/gameplay affinity")
+    if "goldpine" in prompt_l and "goldpine" in root_l:
+        bonus += 650
+        reasons.append("prompt mentions Goldpine and root name matches")
+    if any(term in prompt_l for term in ["ios", "swift", "xcode"]):
+        if has_ios_marker or "ios" in root_l or "goldpine" in root_l:
+            bonus += 320
+            reasons.append("prompt has iOS/Swift/Xcode affinity")
+    if any(term in prompt_l for term in ["node", "web", "frontend", "react", "vite", "npm"]):
+        if has_node_marker:
+            bonus += 120
+            reasons.append("prompt has Node/web affinity")
+    return bonus, reasons
+
+
 def _direct_child_git_roots(repo_root: Path) -> list[str]:
     roots: list[str] = []
     try:
@@ -199,18 +275,35 @@ def _direct_child_git_roots(repo_root: Path) -> list[str]:
     return roots
 
 
-def _root_candidate(root: str, *, source: str, base_score: int, reasons: list[str], project_kind: str | None = None) -> dict[str, Any]:
+def _root_candidate(
+    root: str,
+    *,
+    source: str,
+    base_score: int,
+    reasons: list[str],
+    project_kind: str | None = None,
+    repo_root: Path | None = None,
+    rel_paths: list[str] | None = None,
+    prompt: str | None = None,
+) -> dict[str, Any]:
     penalty = _root_penalty(root)
+    markers = _root_marker_paths(repo_root, root, rel_paths or []) if repo_root is not None else []
+    marker_bonus, marker_reasons = _root_marker_bonus(markers)
+    prompt_bonus, prompt_reasons = _prompt_affinity_bonus(root, markers, prompt)
     return {
         "root": root,
         "source": source,
         "project_kind": project_kind,
-        "score": base_score - penalty,
+        "score": base_score + marker_bonus + prompt_bonus - penalty,
         "base_score": base_score,
+        "marker_bonus": marker_bonus,
+        "prompt_affinity_bonus": prompt_bonus,
+        "ignored_reference_penalty": penalty,
         "penalty": penalty,
         "depth": _root_depth(root),
         "ignored_or_reference_like": _root_has_penalized_segment(root),
-        "reasons": reasons,
+        "markers": markers,
+        "reasons": list(dict.fromkeys(reasons + marker_reasons + prompt_reasons)),
     }
 
 
@@ -655,6 +748,9 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
             base_score=1000,
             reasons=["direct child .git marker"],
             project_kind=next((d.get("project_kind") for d in detected if d.get("root") == git_root), "generic"),
+            repo_root=repo_root,
+            rel_paths=rel_paths,
+            prompt=prompt,
         ))
     for d in detected:
         root = str(d.get("root") or ".")
@@ -668,6 +764,9 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
             base_score=base,
             reasons=[str((d.get("root_selection") or {}).get("strategy") or "adapter_detection")],
             project_kind=str(d.get("project_kind") or "generic"),
+            repo_root=repo_root,
+            rel_paths=rel_paths,
+            prompt=prompt,
         ))
     deduped_candidates: dict[str, dict[str, Any]] = {}
     for candidate in active_root_candidates:
@@ -676,6 +775,26 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
         if previous is None or int(candidate["score"]) > int(previous["score"]):
             deduped_candidates[root] = candidate
     active_root_candidates = sorted(deduped_candidates.values(), key=lambda c: (-int(c["score"]), int(c["depth"]), str(c["root"])))
+    direct_candidates = [c for c in active_root_candidates if c.get("root") in direct_child_git_roots]
+    root_selection_ambiguity = None
+    if len(direct_candidates) > 1:
+        top = direct_candidates[0]
+        close = [c for c in direct_candidates[1:] if int(top.get("score") or 0) - int(c.get("score") or 0) < 120]
+        if close and not any(int(c.get("prompt_affinity_bonus") or 0) >= 250 for c in direct_candidates[: len(close) + 1]):
+            root_selection_ambiguity = {
+                "message": "Multiple direct child git roots are close-scoring and no prompt affinity clearly disambiguated them.",
+                "candidate_count": len(close) + 1,
+                "candidates": [
+                    {
+                        "root": c.get("root"),
+                        "score": c.get("score"),
+                        "prompt_affinity_bonus": c.get("prompt_affinity_bonus"),
+                        "markers": c.get("markers"),
+                        "reasons": c.get("reasons"),
+                    }
+                    for c in [top, *close]
+                ],
+            }
     prompt_paths = _prompt_mentioned_paths(prompt, rel_paths)
     task_root = None
     task_root_reason = None
@@ -690,20 +809,26 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
     openclaw = next((d for d in detected if d.get("adapter") == "openclaw_control_plane" and len(d.get("markers", [])) >= 3), None)
     active = openclaw or detected[0]
     best_root_candidate = active_root_candidates[0] if active_root_candidates else None
-    if best_root_candidate and best_root_candidate.get("source") == "direct_child_git":
+    if best_root_candidate and best_root_candidate.get("root") in direct_child_git_roots:
         active_root = str(active.get("root") or ".")
         active_is_weaker_nested = active_root == "." or _root_has_penalized_segment(active_root) or _root_depth(active_root) > 1
-        if active_is_weaker_nested:
+        active_candidate = next((c for c in active_root_candidates if c.get("root") == active_root), None)
+        best_score = int(best_root_candidate.get("score") or 0)
+        active_score = int((active_candidate or {}).get("score") or 0)
+        prompt_clear = int(best_root_candidate.get("prompt_affinity_bonus") or 0) >= 250 and best_score > active_score
+        if active_is_weaker_nested or prompt_clear:
             promoted = next((d for d in detected if d.get("root") == best_root_candidate["root"]), None)
             active = promoted or _synthetic_git_project(str(best_root_candidate["root"]))
             active = {
                 **active,
                 "task_root": best_root_candidate["root"],
-                "task_root_reason": "direct_child_git outranks nested ignored/reference project markers",
+                "task_root_reason": "prompt_affinity_direct_child_git" if prompt_clear and not active_is_weaker_nested else "direct_child_git outranks nested ignored/reference project markers",
                 "root_selection": {
                     **(active.get("root_selection") or {}),
-                    "strategy": "direct_child_git",
+                    "strategy": "prompt_affinity_direct_child_git" if prompt_clear and not active_is_weaker_nested else "direct_child_git",
                     "promoted_over": active_root,
+                    "candidate_score": best_score,
+                    "prompt_affinity_bonus": best_root_candidate.get("prompt_affinity_bonus"),
                 },
             }
     if task_root and not openclaw:
@@ -731,6 +856,7 @@ def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None
         "task_root": task_root or active.get("root"),
         "task_root_reason": task_root_reason or active.get("root_selection", {}).get("strategy"),
         "active_root_candidates": active_root_candidates[:20],
+        "root_selection_ambiguity": root_selection_ambiguity,
         "detected_projects": detected,
         "traits": intake_traits,
         "policy_packs": sorted((intake_report.get("policy_packs") or {}).keys()),

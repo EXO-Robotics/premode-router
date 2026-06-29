@@ -46,6 +46,7 @@ TRUSTED_GUIDANCE_NAMES = {"agents.md", "codex.md", "rules.md"}
 UNTRUSTED_CONTEXT_NAMES = {"readme.md", "readme"}
 PROMPT_INJECTION_RE = re.compile(r"(?i)(ignore (?:all )?(?:previous|user|system) instructions|delete tests?|print (?:all )?secrets?|reveal secrets?|exfiltrate|edit generated files|bypass guardrails)")
 LOG_TASK_RE = re.compile(r"(?i)(build|test|pytest|xcodebuild|cargo|go test|npm test|pnpm test|error|failure|failing|failed|traceback|exception|log|logs|compile)")
+SOURCE_GAMEPLAY_TASK_RE = re.compile(r"(?i)(source|bug|gameplay|unreal|build|compile|test|failing|failure|crash|runtime)")
 
 
 def estimate_tokens(text: str) -> int:
@@ -578,6 +579,52 @@ def _compact_evidence_summary_for_packet(evidence: dict[str, Any], *, dirty_summ
     return compact
 
 
+def _is_source_gameplay_prompt(prompt: str) -> bool:
+    return bool(SOURCE_GAMEPLAY_TASK_RE.search(prompt or ""))
+
+
+def _is_source_or_config_context(entry: dict[str, Any]) -> bool:
+    path = str(entry.get("path") or "").lower()
+    kind = str(entry.get("kind") or "")
+    return (
+        kind in {"source", "config", "test"}
+        or path.startswith(("source/", "src/", "config/", "tests/", "test/"))
+        or "/source/" in path
+        or "/config/" in path
+        or path.endswith((".build.cs", ".target.cs", ".uproject"))
+    )
+
+
+def _is_preferred_root_authority_doc(path: str) -> bool:
+    lower = path.lower().strip("/")
+    return lower in {"agents.md", "workflow.md", "codex.md", ".premode/rules.md"}
+
+
+def _is_compactable_authority_context_path(path: str) -> bool:
+    lower = path.lower().strip("/")
+    name = Path(lower).name
+    if _is_preferred_root_authority_doc(lower):
+        return False
+    return (
+        lower.startswith(("docs/runbooks/", "docs/for_codex_remove_when_finished/", "memory/", "superpowers/"))
+        or "/docs/runbooks/" in f"/{lower}"
+        or "/memory/" in f"/{lower}"
+        or "/superpowers/" in f"/{lower}"
+        or "runbook" in lower
+        or "handoff" in name
+        or _is_noisy_metadata_path(lower)
+    )
+
+
+def _is_authority_guidance_candidate(path: str, flags: set[str]) -> bool:
+    lower = path.lower().strip("/")
+    return (
+        bool(flags & {"guidance_file", "current_authority_surface", "untrusted_project_context"})
+        or lower.endswith((".md", ".rst", ".txt"))
+        and any(part in lower for part in ("runbook", "workflow", "agents.md", "handoff", "memory", "superpowers"))
+    )
+
+
 def _compact_list_with_count(items: list[Any] | None, limit: int) -> dict[str, Any]:
     values = list(items or [])
     return {"count": len(values), "items": values[:limit], "omitted_count": max(0, len(values) - limit)}
@@ -999,6 +1046,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     repo_map = build_repo_map(repo_root, entries=entries, profile_name=caps.name) if use_repo_map else None
     impact_map = task_impact_hints(raw_prompt, repo_map) if repo_map else None
     repo_map_paths = {str(item.get("path", "")).lower() for item in ((impact_map or {}).get("likely_files") or []) if item.get("path")}
+    source_gameplay_prompt = _is_source_gameplay_prompt(sanitized)
+    compact_authority_for_lite = caps.name == "lite" and source_gameplay_prompt and _is_control_plane_detection(project_detection)
 
     dirty_paths = _dirty_paths_from_git(git_state)
     # Resolve prompt path mentions from the raw prompt before high-entropy
@@ -1033,6 +1082,10 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
             score += 900
             flags = sorted(set(flags + ["repo_map_entrypoint"]))
             reason = (reason + ", repo_map_entrypoint").strip(", ")
+        if compact_authority_for_lite and _is_source_or_config_context(entry):
+            score += 180
+            flags = sorted(set(flags + ["source_gameplay_budget_priority"]))
+            reason = (reason + ", source_gameplay_budget_priority").strip(", ")
         ranked.append({**entry, "score": score, "evidence_flags": flags, "reason": reason})
     ranked.sort(key=lambda e: (int(e.get("score", 0)), -int(e.get("bytes", 0))), reverse=True)
 
@@ -1043,6 +1096,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
     manifest_only_files: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     redaction_counts: list[dict[str, int]] = [redact_text(raw_prompt).counts]
+    authority_full_text_count = 0
+    authority_full_text_limit = 2 if compact_authority_for_lite else caps.hard_full_text_file_count
 
     hard_budget = int(caps.hard_packet_token_budget)
     effective_budget = int(hard_budget * 0.95)
@@ -1076,6 +1131,25 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
         protected_metadata = _is_protected_metadata_path(str(entry.get("path") or ""))
         if protected_metadata:
             strong = False
+        authority_guidance = _is_authority_guidance_candidate(str(entry.get("path") or ""), flags)
+        compactable_authority = (
+            compact_authority_for_lite
+            and authority_guidance
+            and _is_compactable_authority_context_path(str(entry.get("path") or ""))
+            and not (flags & {"prompt_mentioned", "first_meaningful_error_file"})
+        )
+        if compactable_authority:
+            strong = False
+            flags = set(flags)
+            flags.add("authority_surface_compacted")
+            manifest["evidence_flags"] = sorted(flags)
+            manifest["reason"] = (str(manifest.get("reason") or "") + ", lite_authority_surface_compacted").strip(", ")
+        elif compact_authority_for_lite and strong and authority_guidance and authority_full_text_count >= authority_full_text_limit and not (flags & {"prompt_mentioned", "first_meaningful_error_file"}):
+            strong = False
+            flags = set(flags)
+            flags.add("authority_surface_compacted")
+            manifest["evidence_flags"] = sorted(flags)
+            manifest["reason"] = (str(manifest.get("reason") or "") + ", lite_authority_full_text_cap").strip(", ")
 
         if strong and len(full_text_files) < caps.hard_full_text_file_count:
             result = safe_read(repo_root, entry["path"], caps, ignore)
@@ -1128,6 +1202,8 @@ def select_context(repo_root: Path, raw_prompt: str, profile_name: str | None = 
                 result.truncated = True
             record = {**manifest, "bytes_read": result.bytes_read, "truncated": result.truncated, "max_bytes": result.max_bytes, "tier": "full_text", "content": content, "why_included": _why_included(manifest), "editable": _is_likely_editable_context(manifest)}
             full_text_files.append(record)
+            if authority_guidance:
+                authority_full_text_count += 1
             full_tokens += content_tokens
             continue
 

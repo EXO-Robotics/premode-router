@@ -1,8 +1,8 @@
-# Implementation Report — Pre-mode Router v0.2.6.10
+# Implementation Report — Pre-mode Router v0.2.6.11
 
 ## Release summary
 
-`v0.2.6.10 — Direct Child Git Root Discovery` hardens messy-parent launches. Direct child `.git` repos are now explicit high-score task-root candidates, and deeply nested ignored/reference package markers cannot outrank visible child Git repos.
+`v0.2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget` chooses among direct child Git repos using prompt affinity and keeps dirty authority/runbook docs compact under lite source/gameplay prompts.
 
 ## Product loop
 
@@ -28,6 +28,15 @@ premode compile / pcodex
 - Packet-bound test evidence binding.
 - Benchmark prompt suites and token-savings reports.
 - Universal stress harness across 11 fixture shapes.
+
+## v0.2.6.11 changes
+
+- Bumped package version to `0.2.6.11`.
+- Added prompt-affinity scoring for `active_root_candidates` using root names and Unreal/OpenClaw, Goldpine/iOS/Swift/Xcode, and Node/web markers.
+- Added candidate diagnostics for markers, marker bonuses, prompt-affinity bonuses, ignored/reference penalties, and direct-child ambiguity.
+- Preserved v2.6.10 protection against `_external_references` and dependency package roots outranking visible child repos.
+- Added lite authority-surface compaction so dirty runbook/history/memory/superpowers/handoff docs do not consume full-text context for source/gameplay prompts.
+- Added focused tests for OpenClaw vs Goldpine prompt routing, ambiguous direct child roots, and OpenClaw-style dirty authority budget compaction.
 
 ## v0.2.6.10 changes
 
@@ -78,6 +87,7 @@ v2.6.6 — Local Validation + macOS Portability Cleanup
 v2.6.7 — Codex CLI Adapter Compatibility
 v2.6.9 — Metadata Budget Compaction + Nested Root Selection
 v2.6.10 — Direct Child Git Root Discovery
+v2.6.11 — Prompt-Aware Repo Selection + Authority Surface Budget
 ```
 
 ## Standard validation
