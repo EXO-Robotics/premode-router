@@ -1076,16 +1076,17 @@ def default_commands_for_detection(detection: dict[str, Any]) -> dict[str, Any]:
     return {"schema_version": 1, "commands": commands}
 
 
-def load_commands(repo_root: Path, detection: dict[str, Any] | None = None) -> dict[str, Any]:
+def load_commands(repo_root: Path, detection: dict[str, Any] | None = None, *, record: bool = True) -> dict[str, Any]:
     # Late import avoids an adapters/config command-discovery cycle during setup.
     from .command_discovery import discover_commands, load_user_commands, merge_user_commands, write_discovered_commands
 
     detection = detection or detect_projects(repo_root)
     discovered = discover_commands(repo_root, detection)
-    try:
-        write_discovered_commands(repo_root, discovered)
-    except OSError:
-        pass
+    if record:
+        try:
+            write_discovered_commands(repo_root, discovered)
+        except OSError:
+            pass
     user = load_user_commands(repo_root)
     return merge_user_commands(discovered, user)
 

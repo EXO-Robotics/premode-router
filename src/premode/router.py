@@ -110,7 +110,7 @@ def scope_guardrails_for_intents(classification: dict[str, Any], project_detecti
     names = {i["name"] for i in classification.get("intents", [])}
     active = (project_detection or {}).get("active_project", {})
     guardrails = [
-        "Do not request or rely on the original raw prompt; this compiled packet replaces it.",
+        "Treat the exact user prompt as the canonical task instruction; this compiled packet only supplies repo context and boundaries.",
         "Do not read ignored, binary, build output, vendor, asset, or secret-like files unless explicitly granted.",
         "Prefer minimal, reviewable edits over broad rewrites.",
     ]

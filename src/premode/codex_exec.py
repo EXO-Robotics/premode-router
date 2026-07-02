@@ -12,6 +12,7 @@ from typing import Any
 from .compiler import compile_prompt
 from .config import premode_dir
 from .audit import sha256_text, write_audit
+from .launch_safety import write_external_payload_manifest
 from .metrics import append_metric
 
 
@@ -37,6 +38,11 @@ class CodexOptions:
     cache_optimized: bool = True
     packet_version: str | None = None
     save: bool = True
+    context_only: bool = False
+    record: bool = True
+    lane: str = "codex"
+    repo_is_private: bool = False
+    private_paths_forbidden: bool = False
 
 
 @dataclass(frozen=True)
@@ -239,10 +245,22 @@ def run_codex(
         cache_optimized=options.cache_optimized,
         packet_version=options.packet_version,
         save=options.save,
+        context_only=options.context_only,
+        record_artifacts=options.record,
     )
     packet = compiled["packet"]
     if packet == raw_prompt:
         raise AssertionError("Compiled packet must not equal raw prompt.")
+    external_payload = None
+    if options.record:
+        external_payload = write_external_payload_manifest(
+            repo=repo_root,
+            packet=packet,
+            compiled=compiled,
+            lane=options.lane,
+            repo_is_private=options.repo_is_private,
+            private_paths_forbidden=options.private_paths_forbidden,
+        )
     invocation = build_codex_invocation(repo_root, options)
     args = invocation.args
     validate_codex_args(args, raw_prompt)
@@ -253,6 +271,8 @@ def run_codex(
         "dry_run": options.dry_run,
         "codex_capabilities": invocation.capabilities,
         "codex_warnings": invocation.warnings,
+        "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
+        "external_launch_allowed": (external_payload["manifest"]["launch_allowed"] if external_payload else None),
     }
     if options.dry_run:
         output = {
@@ -269,14 +289,45 @@ def run_codex(
                 "cache_optimized": options.cache_optimized,
                 "packet_version": compiled.get("packet_version"),
                 "save": options.save,
+                "context_only": options.context_only,
+                "record": options.record,
             },
             "saved_artifacts": compiled.get("saved_artifacts"),
+            "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
+            "external_launch_allowed": (external_payload["manifest"]["launch_allowed"] if external_payload else None),
         }
         if options.show_raw:
             output["raw_prompt"] = raw_prompt
-        write_audit(repo_root, "codex_dry_run", sha256_text(raw_prompt), command_record)
-        append_metric(repo_root, {"event": "codex_dry_run", "raw_prompt_sha256": sha256_text(raw_prompt), "estimated_input_bytes": len(packet.encode()), "actual_usage": None})
+        if options.record:
+            write_audit(repo_root, "codex_dry_run", sha256_text(raw_prompt), command_record)
+            append_metric(repo_root, {"event": "codex_dry_run", "raw_prompt_sha256": sha256_text(raw_prompt), "estimated_input_bytes": len(packet.encode()), "actual_usage": None})
         return output
+
+    if external_payload and not external_payload["manifest"]["launch_allowed"]:
+        blocked = {
+            "args": args,
+            "cwd": str(invocation.cwd) if invocation.cwd else None,
+            "returncode": 2,
+            "stdout": "",
+            "stderr": "External Codex launch blocked by external_payload_manifest policy.",
+            "actual_usage": None,
+            "codex_capabilities": invocation.capabilities,
+            "codex_warnings": invocation.warnings,
+            "external_payload_manifest": external_payload["manifest_path"],
+            "external_launch_allowed": False,
+            "external_launch_block_reasons": external_payload["manifest"].get("block_reasons") or [],
+        }
+        if options.record:
+            write_audit(repo_root, "codex_execute_blocked", sha256_text(raw_prompt), {**command_record, **blocked})
+            append_metric(repo_root, {
+                "event": "codex_execute_blocked",
+                "raw_prompt_sha256": sha256_text(raw_prompt),
+                "estimated_input_bytes": len(packet.encode()),
+                "actual_usage": None,
+                "returncode": 2,
+                "external_launch_block_reasons": blocked["external_launch_block_reasons"],
+            })
+        return blocked
 
     if options.watch:
         proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, cwd=invocation.cwd)
@@ -312,20 +363,21 @@ def run_codex(
         stderr = completed.stderr
 
     actual_usage = _extract_usage_from_jsonl(stdout)
-    write_audit(repo_root, "codex_execute", sha256_text(raw_prompt), {
-        **command_record,
-        "watch": options.watch,
-        "returncode": returncode,
-        "stdout_sha256": sha256_text(stdout or ""),
-        "stderr_sha256": sha256_text(stderr or ""),
-    })
-    append_metric(repo_root, {
-        "event": "codex_execute",
-        "raw_prompt_sha256": sha256_text(raw_prompt),
-        "estimated_input_bytes": len(packet.encode()),
-        "actual_usage": actual_usage,
-        "returncode": returncode,
-    })
+    if options.record:
+        write_audit(repo_root, "codex_execute", sha256_text(raw_prompt), {
+            **command_record,
+            "watch": options.watch,
+            "returncode": returncode,
+            "stdout_sha256": sha256_text(stdout or ""),
+            "stderr_sha256": sha256_text(stderr or ""),
+        })
+        append_metric(repo_root, {
+            "event": "codex_execute",
+            "raw_prompt_sha256": sha256_text(raw_prompt),
+            "estimated_input_bytes": len(packet.encode()),
+            "actual_usage": actual_usage,
+            "returncode": returncode,
+        })
     return {
         "args": args,
         "cwd": str(invocation.cwd) if invocation.cwd else None,
@@ -335,6 +387,8 @@ def run_codex(
         "actual_usage": actual_usage,
         "codex_capabilities": invocation.capabilities,
         "codex_warnings": invocation.warnings,
+        "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
+        "external_launch_allowed": (external_payload["manifest"]["launch_allowed"] if external_payload else None),
     }
 
 

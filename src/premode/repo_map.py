@@ -12,7 +12,8 @@ from .config import premode_dir
 from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
 from .profiles import resolve_profile
-from .routing_safety import classify_path_for_routing, is_restricted_edit_bucket_path
+from .context_constraints import classify_path_for_routing, is_restricted_edit_bucket_path
+from .role_model import classify_path_role, infer_prompt_intent, path_role_rank
 from .safe_reader import safe_read
 from .timeutil import timestamp_iso
 
@@ -65,8 +66,9 @@ NEGATIVE_BOUNDARY_TERMS = (
     'avoid binaries',
 )
 
-SWIFT_SOURCE_PROMPT_RE = re.compile(r"(?i)\b(swiftui|swift|ios|xcode|tutorial|overlay|state|ui shell|view model|viewmodel|views?|source)\b")
+SWIFT_SOURCE_PROMPT_RE = re.compile(r"(?i)\b(swiftui|swift|ios|xcode|tutorial|overlay|state|ui shell|view model|viewmodel|views?|screens?|surface|ui|user interface|source)\b")
 SWIFTUI_TUTORIAL_SCOPE_RE = re.compile(r"(?i)\b(swiftui|ui shell|tutorial|overlay|guidance|onboarding)\b")
+SWIFT_SCREEN_ACTION_RE = re.compile(r"(?i)\b(screens?|surface|ui|user interface|views?)\b")
 SWIFT_SOURCE_PATH_HINTS = (
     '/views/',
     '/viewmodels/',
@@ -165,9 +167,21 @@ def _prompt_is_swift_source_task(raw_prompt: str) -> bool:
     return bool(SWIFT_SOURCE_PROMPT_RE.search(raw_prompt or ''))
 
 
+def _prompt_mentions_swift_context(raw_prompt: str) -> bool:
+    return bool(re.search(r"(?i)\b(swiftui|swift|ios|xcode)\b", raw_prompt or ""))
+
+
 def _prompt_is_swiftui_tutorial_scope_task(raw_prompt: str) -> bool:
     prompt = raw_prompt or ''
     return bool(SWIFTUI_TUTORIAL_SCOPE_RE.search(prompt)) and _prompt_is_swift_source_task(prompt)
+
+
+def _prompt_is_swift_screen_action_task(raw_prompt: str) -> bool:
+    prompt = raw_prompt or ''
+    if not _prompt_is_swift_source_task(prompt):
+        return False
+    intent_terms = bool(re.search(r"(?i)\b(next|today|action|task|plan|priority|important|obvious|clear|clearer)\b", prompt))
+    return bool(SWIFT_SCREEN_ACTION_RE.search(prompt)) and intent_terms
 
 
 def _swiftui_tutorial_scope_score(path: str) -> int:
@@ -182,16 +196,27 @@ def _swiftui_tutorial_scope_score(path: str) -> int:
         'goldpinevalley/viewmodels/gamesessionviewmodel+homesteadnavigation.swift',
     }:
         score += 1000
-    if any(part in lower for part in ('/views/', '/viewmodels/')):
-        score += 160
+    in_views = '/views/' in lower
+    in_viewmodels = '/viewmodels/' in lower
+    if in_views:
+        score += 260
+    elif in_viewmodels:
+        score += 100
     if any(term in lower for term in ('tutorial', 'overlay', 'guidance', 'onboarding')):
         score += 360
-    if any(term in lower for term in ('homesteadnavigation', 'tutorialstate', 'tutorial_state', 'session', 'state')):
+    homestead_map_location_score = sum(
+        weight for term, weight in (('homestead', 180), ('map', 140), ('location', 240)) if term in lower
+    )
+    if homestead_map_location_score:
+        score += homestead_map_location_score
+    if in_views and homestead_map_location_score:
         score += 260
+    if any(term in lower for term in ('homesteadnavigation', 'tutorialstate', 'tutorial_state', 'session', 'state')):
+        score += 80
     if any(term in lower for term in ('bottom', 'bar', 'mainmenu', 'main_menu', 'menu', 'shell')):
-        score += 240
+        score += 260
     if 'viewmodel' in lower:
-        score += 120
+        score += 60
     if any(term in lower for term in ('devtools/', 'frontierrisk/', 'riskresolver', 'founderselectview', 'eventcardview')):
         score -= 500
     if lower.endswith('tests.swift') or '/tests/' in lower:
@@ -657,6 +682,8 @@ def _normalize_prompt_path_token(token: str) -> str:
 def _is_test_file(path: str, info: dict[str, Any] | None = None) -> bool:
     lower = path.lower().replace('\\', '/')
     name = Path(lower).name
+    if classify_path_role(path).is_test:
+        return True
     return bool(
         (info or {}).get('test_functions')
         or lower.startswith('tests/')
@@ -858,6 +885,104 @@ def _related_tests_for(path: str, all_paths: set[str]) -> list[str]:
     return sorted(c for c in candidates if c in all_paths)[:40]
 
 
+def _path_depth(path: str) -> int:
+    return len([part for part in str(path).replace('\\', '/').split('/') if part])
+
+
+def _role_model_hints(raw_prompt: str, files: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    intent = infer_prompt_intent(raw_prompt)
+    prompt_words = {
+        _normalize_task_token(token)
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", raw_prompt or "")
+    }
+    ranked: list[tuple[int, str, dict[str, Any]]] = []
+    for path, info in files.items():
+        role = info.get('role_model') if isinstance(info.get('role_model'), dict) else classify_path_role(path).to_dict()
+        if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+            continue
+        if role.get('is_generated_or_vendor'):
+            continue
+        if role.get('is_example') and intent.intent != 'example':
+            continue
+        score = path_role_rank(path, intent)
+        normalized_path = _normalize_task_token(path)
+        prompt_path_overlap = sum(1 for word in prompt_words if word and word in normalized_path)
+        if prompt_path_overlap:
+            score += min(240, 80 * prompt_path_overlap)
+        if (
+            intent.intent == 'runtime'
+            and role.get('role') == 'source'
+            and role.get('entrypoint_likelihood') == 'low'
+            and prompt_path_overlap == 0
+        ):
+            continue
+        if score > 0:
+            ranked.append((score, path, role))
+    ranked.sort(key=lambda item: (-item[0], _path_depth(item[1]), item[1].lower()))
+    likely: list[dict[str, Any]] = []
+    related: list[dict[str, Any]] = []
+    primary_limit = (
+        3 if intent.intent == 'workflow'
+        else 1 if intent.intent == 'test_edit'
+        else 2 if intent.intent in {'docs', 'config'}
+        else 4 if intent.intent == 'runtime'
+        else 4
+    )
+    for score, path, role in ranked[:primary_limit]:
+        if role.get('role') == 'test' and intent.intent != 'test_edit':
+            related.append({
+                'path': path,
+                'source': 'cross_ecosystem_role_model',
+                'reason': 'role_model_test_verification_candidate',
+                'role_model_score': score,
+                'related_test_resolution_reason': 'fallback',
+                'related_test_anchor_confidence': 'low',
+            })
+            continue
+        likely.append({
+            'path': path,
+            'kind': f"role_model_{role.get('role')}",
+            'source': 'cross_ecosystem_role_model',
+            'reason': f"prompt intent `{intent.intent}` selected {role.get('role')} role",
+            'role_model_score': score,
+            'role_model': role,
+        })
+    docs_prompt_needs_tests = bool(re.search(r"\b(tests?|coverage|validation|benchmark|expectation|regression)\b", raw_prompt or "", re.IGNORECASE))
+    if 'test' in intent.verification_roles and not (intent.intent == 'docs' and not docs_prompt_needs_tests):
+        tests: list[tuple[int, str]] = []
+        for path, info in files.items():
+            role = info.get('role_model') if isinstance(info.get('role_model'), dict) else classify_path_role(path).to_dict()
+            if not role.get('is_test') or role.get('is_generated_or_vendor'):
+                continue
+            if _is_docs_fixture_test_path(path):
+                continue
+            score = path_role_rank(path, intent, for_related_test=True)
+            lower = path.lower()
+            if any(term in lower for term in ('local_validation', 'smoke', 'workflow', 'package', 'metadata', 'layout', 'cli', 'command')):
+                score += 150
+            if lower in {'tests/__init__.py', 'test/__init__.py'}:
+                score += 180
+            tests.append((score, path))
+        tests.sort(key=lambda item: (-item[0], _path_depth(item[1]), item[1].lower()))
+        related_limit = 1 if intent.intent in {'test_edit', 'docs'} else 2 if intent.intent in {'config', 'workflow'} else 3
+        for score, path in tests[:related_limit]:
+            related.append({
+                'path': path,
+                'source': 'cross_ecosystem_role_model',
+                'reason': f"prompt intent `{intent.intent}` requested verification role",
+                'role_model_score': score,
+                'related_test_resolution_reason': 'fallback',
+                'related_test_anchor_confidence': 'low',
+            })
+    diagnostics = {
+        'prompt_intent': intent.to_dict(),
+        'role_model_ranked_candidate_count': len(ranked),
+        'role_model_likely_count': len(likely),
+        'role_model_related_count': len(related),
+    }
+    return likely, related, diagnostics
+
+
 def _cargo_entrypoints(repo_root: Path, all_paths: set[str]) -> list[dict[str, Any]]:
     path = repo_root / 'Cargo.toml'
     if not path.exists():
@@ -1037,26 +1162,272 @@ def _related_tests_for_paths(
 
     for test_path in explicit_tests or []:
         if test_path in files and test_path not in seen:
-            out.append({'path': test_path, 'source': 'prompt', 'reason': 'prompt_mentioned_test_file'})
+            out.append({
+                'path': test_path,
+                'source': 'prompt',
+                'reason': 'prompt_mentioned_test_file',
+                'related_test_resolution_reason': 'prompt_explicit_test',
+                'related_test_anchor_confidence': 'high',
+            })
             seen.add(test_path)
 
     for path in paths:
         info = files.get(path) or {}
+        if path in files and _is_test_file(path, info) and path not in seen:
+            out.append({
+                'path': path,
+                'source': path,
+                'reason': 'test_candidate_mirrored_to_related_tests',
+                'related_test_resolution_reason': 'test_candidate_mirrored',
+                'related_test_anchor_confidence': 'high',
+            })
+            seen.add(path)
         for test_path in info.get('related_tests') or []:
             if test_path not in seen and test_path in files:
-                out.append({'path': test_path, 'source': path, 'reason': 'repo_map related_tests'})
+                out.append({
+                    'path': test_path,
+                    'source': path,
+                    'reason': 'repo_map related_tests',
+                    'related_test_resolution_reason': 'source_adjacent_test',
+                    'related_test_anchor_confidence': 'medium',
+                })
                 seen.add(test_path)
         for candidate, candidate_info in files.items():
             if candidate in seen or not _is_test_file(candidate, candidate_info):
                 continue
             if candidate in (info.get('referenced_by') or []):
-                out.append({'path': candidate, 'source': path, 'reason': 'test imports impacted source'})
+                out.append({
+                    'path': candidate,
+                    'source': path,
+                    'reason': 'test imports impacted source',
+                    'related_test_resolution_reason': 'source_adjacent_test',
+                    'related_test_anchor_confidence': 'medium',
+                })
                 seen.add(candidate)
                 continue
             if _test_matches_source_path(candidate, path):
-                out.append({'path': candidate, 'source': path, 'reason': 'test path matches impacted source name'})
+                out.append({
+                    'path': candidate,
+                    'source': path,
+                    'reason': 'test path matches impacted source name',
+                    'related_test_resolution_reason': 'same_basename',
+                    'related_test_anchor_confidence': 'high',
+                })
                 seen.add(candidate)
     return out[:40]
+
+
+def _related_test_prompt_score(path: str, raw_prompt: str) -> int:
+    prompt = (raw_prompt or "").lower()
+    lower = path.lower()
+    score = 0
+    phrase_scores = [
+        (("packet-mode", "packet mode", "cli help", "help text"), ("codex_cli", "cli_compat"), 520),
+        (("repo-map", "repo map", "candidate ranking"), ("repo_map", "impact"), 520),
+        (("package metadata", "packaging", "package layout", "project metadata"), ("package_layout", "metadata_root"), 560),
+        (("local validation", "smoke validation", "smoke test", "ci-style", "workflow"), ("local_validation", "v266", "smoke"), 560),
+        (("source recovery", "swiftui", "viewmodels", "views"), ("swift_source_recovery", "v2615"), 520),
+        (("review-patch", "review patch", "patch review", "merge readiness"), ("review_patch", "v260"), 520),
+        (("benchmark", "expectation"), ("benchmark", "v263"), 360),
+    ]
+    for prompt_terms, path_terms, value in phrase_scores:
+        if any(term in prompt for term in prompt_terms) and any(term in lower for term in path_terms):
+            score += value
+    prompt_words = {_normalize_task_token(token) for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", prompt)}
+    path_norm = _normalize_task_token(path)
+    score += min(180, 30 * sum(1 for word in prompt_words if word and word in path_norm))
+    return score
+
+
+def _is_docs_fixture_test_path(path: str) -> bool:
+    lower = str(path).replace("\\", "/").lower()
+    suffix = Path(lower).suffix
+    return (
+        suffix in {".md", ".rst", ".txt", ".mdx"}
+        or lower.startswith(("fixtures/", "fixture/", "examples/", "samples/"))
+        or "/fixtures/" in lower
+        or "/fixture/" in lower
+        or "/testdata/" in lower
+        or "/test-data/" in lower
+        or "/__snapshots__/" in lower
+        or "/snapshots/" in lower
+        or "/docs_src/" in lower
+        or lower.startswith(("docs_src/", "agents/", ".agents/", "claude/", ".claude/"))
+        or "/skills/" in lower
+        or lower.endswith("/readme.md")
+        or lower.endswith("/readme.rst")
+    )
+
+
+def _package_affinity_prefix(path: str) -> str:
+    parts = [part for part in str(path).replace("\\", "/").split("/") if part]
+    if len(parts) >= 2 and parts[0] in {"packages", "crates", "examples", "samples"}:
+        return "/".join(parts[:2])
+    if len(parts) >= 2 and parts[0] == "Sources":
+        return f"swift:{parts[1].lower()}"
+    if len(parts) >= 2 and parts[0] == "Tests":
+        package = parts[1].lower()
+        package = re.sub(r"(tests?|test)$", "", package)
+        return f"swift:{package}" if package else "Tests"
+    if len(parts) >= 2 and parts[0] in {"src", "lib", "app", "cmd", "internal", "pkg", "Sources", "Tests"}:
+        return parts[0]
+    return ""
+
+
+def _related_test_resolution_reason(item: dict[str, Any], raw_prompt: str, likely_paths: list[str]) -> str:
+    path = str(item.get("path") or "")
+    reason = str(item.get("reason") or "")
+    source = str(item.get("source") or "")
+    if reason == "prompt_mentioned_test_file":
+        return "prompt_explicit_test"
+    if reason == "test_candidate_mirrored_to_related_tests":
+        return "test_candidate_mirrored"
+    if "package_layout_test" in reason:
+        return "config_layout_test"
+    if "root_test_anchor" in reason:
+        return "root_layout_test"
+    if "workflow_prompt_routes" in reason or re.search(r"(?i)(local_validation|smoke|workflow|ci)", path):
+        return "workflow_validation_test"
+    if "path matches impacted source name" in reason:
+        return "same_basename"
+    if "same directory" in reason:
+        return "same_directory"
+    if "test imports impacted source" in reason or "repo_map related_tests" in reason:
+        return "source_adjacent_test"
+    path_prefix = _package_affinity_prefix(path)
+    source_prefix = _package_affinity_prefix(source)
+    likely_prefixes = {_package_affinity_prefix(candidate) for candidate in likely_paths if _package_affinity_prefix(candidate)}
+    if path_prefix and source_prefix and path_prefix == source_prefix:
+        return "same_package"
+    if path_prefix and path_prefix in likely_prefixes:
+        return "same_package"
+    if path_prefix and likely_prefixes and any(path_prefix.split(":", 1)[0] == prefix.split(":", 1)[0] for prefix in likely_prefixes):
+        return "same_workspace"
+    return "fallback"
+
+
+def _rank_related_tests(
+    repo_map: dict[str, Any],
+    raw_prompt: str,
+    likely_paths: list[str],
+    related_tests: list[dict[str, Any]],
+    *,
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    intent = infer_prompt_intent(raw_prompt)
+    if intent.intent == "test_edit":
+        limit = min(limit, 2)
+    elif intent.intent in {"config", "workflow", "docs"}:
+        limit = min(limit, 2)
+    else:
+        limit = min(limit, 3)
+    if intent.intent == "docs" and not re.search(r"\b(tests?|coverage|validation|benchmark|expectation|regression)\b", raw_prompt or "", re.IGNORECASE):
+        return [
+            {
+                **item,
+                "related_test_demotion_reason": "docs_prompt_without_verification_terms",
+            }
+            for item in related_tests
+            if str(item.get("reason") or "") == "prompt_mentioned_test_file"
+        ][:1]
+    files = repo_map.get("files") or {}
+    likely_set = {str(path) for path in likely_paths}
+    likely_prefixes = {_package_affinity_prefix(path) for path in likely_paths if _package_affinity_prefix(path)}
+
+    def score(item: dict[str, Any]) -> tuple[int, str]:
+        path = str(item.get("path") or "")
+        source = str(item.get("source") or "")
+        reason = str(item.get("reason") or "")
+        value = _related_test_prompt_score(path, raw_prompt)
+        if reason == "prompt_mentioned_test_file":
+            value += 2000
+        if reason == "test_candidate_mirrored_to_related_tests":
+            value += 1800
+        if "package_layout_test" in reason:
+            value += 1700
+        if "root_test_anchor" in reason:
+            value += 1550
+        if "path matches impacted source name" in reason:
+            value += 1200
+        if "test imports impacted source" in reason:
+            value += 720
+        if "repo_map related_tests" in reason:
+            value += 560
+        if source in likely_set:
+            value += 120
+        info = files.get(path) or {}
+        if path in likely_set and _is_test_file(path, info):
+            value += 900
+        prefix = _package_affinity_prefix(path)
+        if prefix and prefix in likely_prefixes:
+            value += 620
+        elif prefix and likely_prefixes and prefix not in likely_prefixes:
+            value -= 260
+        if _is_docs_fixture_test_path(path):
+            value -= 1200
+        if path.lower() in {"tests/__init__.py", "test/__init__.py"}:
+            value += 260
+        return (-value, path)
+
+    ranked = sorted(related_tests, key=score)
+    strong = [
+        item for item in ranked
+        if _related_test_prompt_score(str(item.get("path") or ""), raw_prompt) >= 500
+        or str(item.get("reason") or "") in {"prompt_mentioned_test_file", "test_candidate_mirrored_to_related_tests"}
+        or "path matches impacted source name" in str(item.get("reason") or "")
+        or "root_test_anchor" in str(item.get("reason") or "")
+        or "package_layout_test" in str(item.get("reason") or "")
+    ]
+    selected = (strong or ranked)[:limit]
+    selected_paths = {str(item.get("path") or "") for item in selected}
+    trimmed_count = sum(1 for item in ranked if str(item.get("path") or "") not in selected_paths)
+    fallback_only = bool(selected) and all(
+        _related_test_resolution_reason(item, raw_prompt, likely_paths) == "fallback"
+        for item in selected
+    )
+    annotated: list[dict[str, Any]] = []
+    likely_prefixes = {_package_affinity_prefix(path) for path in likely_paths if _package_affinity_prefix(path)}
+    for item in selected:
+        path = str(item.get("path") or "")
+        existing_resolution = str(item.get("related_test_resolution_reason") or "")
+        inferred_resolution = _related_test_resolution_reason(item, raw_prompt, likely_paths)
+        resolution = inferred_resolution if not existing_resolution or existing_resolution == "fallback" else existing_resolution
+        affinity = _package_affinity_prefix(path)
+        if resolution == "fallback":
+            confidence = "low"
+        elif resolution in {"prompt_explicit_test", "test_candidate_mirrored", "same_basename", "config_layout_test", "root_layout_test", "workflow_validation_test"}:
+            confidence = "high"
+        else:
+            confidence = "medium"
+        annotated_item = {
+            **item,
+            "related_test_resolution_reason": resolution,
+            "related_test_package_affinity": {
+                "test_prefix": affinity,
+                "likely_prefixes": sorted(likely_prefixes),
+                "same_package": bool(affinity and affinity in likely_prefixes),
+            },
+            "related_test_anchor_confidence": str(item.get("related_test_anchor_confidence") or confidence),
+        }
+        if resolution == "fallback":
+            annotated_item["related_test_fallback_warning"] = True
+        if _is_docs_fixture_test_path(path):
+            annotated_item["related_test_demotion_reason"] = "docs_fixture_or_generated_test_penalized"
+        if fallback_only:
+            annotated_item["related_test_fallback_warning"] = True
+            annotated_item["related_test_demotion_reason"] = annotated_item.get("related_test_demotion_reason") or "fallback_only_related_test_selection"
+        annotated.append(annotated_item)
+    selected = annotated
+    if trimmed_count:
+        selected = [
+            {
+                **item,
+                "related_test_ranking": "ranked_direct_or_prompt_relevant",
+                "related_tests_trimmed_count": trimmed_count,
+            }
+            for item in selected
+        ]
+    return selected
 
 
 def _dependency_slices(repo_map: dict[str, Any], paths: list[str], *, limit: int = 24) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
@@ -1358,13 +1729,43 @@ def _go_command_folder_hints(raw_prompt: str, files: dict[str, dict[str, Any]], 
 DOMAIN_KEYWORD_HINTS = {
     'repo-map': ['src/premode/repo_map.py', 'tests/test_v250_repo_map.py'],
     'repo map': ['src/premode/repo_map.py', 'tests/test_v250_repo_map.py'],
+    'source recovery': ['src/premode/repo_map.py', 'src/premode/compiler.py', 'tests/test_v2615_swift_source_recovery.py'],
+    'source candidates': ['src/premode/repo_map.py', 'src/premode/compiler.py'],
+    'views and viewmodels': ['src/premode/repo_map.py', 'src/premode/compiler.py'],
+    'candidate ranking': ['src/premode/repo_map.py', 'tests/test_v250_repo_map.py'],
+    'impact hints': ['src/premode/repo_map.py'],
+    'task impact': ['src/premode/repo_map.py'],
     'map output': ['src/premode/repo_map.py', 'src/premode/cli.py'],
+    'benchmark expectation': ['src/premode/benchmark.py', 'tests/test_v263_benchmark.py'],
+    'benchmark report': ['src/premode/benchmark.py', 'tests/test_v263_benchmark.py'],
+    'benchmark summary': ['src/premode/benchmark.py', 'tests/test_v263_benchmark.py'],
+    'expectation failures': ['src/premode/benchmark.py', 'tests/test_v263_benchmark.py'],
+    'expectation validation': ['src/premode/benchmark.py', 'tests/test_v263_benchmark.py'],
     'context receipt': ['src/premode/compiler.py', 'tests/test_v253_output_hardening.py'],
     'receipt': ['src/premode/compiler.py', 'tests/test_v253_output_hardening.py'],
     'why-included': ['src/premode/compiler.py', 'tests/test_v253_output_hardening.py'],
     'why included': ['src/premode/compiler.py', 'tests/test_v253_output_hardening.py'],
     'packet': ['src/premode/compiler.py', 'src/premode/packet_schema.py'],
+    'context packet': ['src/premode/compiler.py'],
+    'compile prompt': ['src/premode/compiler.py'],
+    'model-facing packet': ['src/premode/compiler.py'],
+    'candidate buckets': ['src/premode/compiler.py'],
+    'support buckets': ['src/premode/compiler.py'],
+    'verification buckets': ['src/premode/compiler.py'],
     'compile output': ['src/premode/compiler.py', 'src/premode/cli.py'],
+    'review-patch': ['src/premode/review_patch.py', 'tests/test_v260_review_patch.py'],
+    'review patch': ['src/premode/review_patch.py', 'tests/test_v260_review_patch.py'],
+    'patch review': ['src/premode/review_patch.py', 'tests/test_v260_review_patch.py'],
+    'scope compliance': ['src/premode/review_patch.py'],
+    'merge readiness': ['src/premode/review_patch.py'],
+    'validation evidence': ['src/premode/review_patch.py'],
+    'log parsing': ['src/premode/log_scanner.py'],
+    'log scanner': ['src/premode/log_scanner.py'],
+    'codex jsonl': ['src/premode/log_scanner.py'],
+    'jsonl': ['src/premode/log_scanner.py'],
+    'live ledger': ['src/premode/live_ledger.py'],
+    'command ledger': ['src/premode/live_ledger.py'],
+    'token ledger': ['src/premode/live_ledger.py'],
 }
 
 def _domain_keyword_hints(raw_prompt: str, files: dict[str, dict[str, Any]], likely: list[dict[str, Any]]) -> None:
@@ -1373,7 +1774,399 @@ def _domain_keyword_hints(raw_prompt: str, files: dict[str, dict[str, Any]], lik
         if phrase in prompt:
             for path in paths:
                 if path in files:
-                    likely.append({'path': path, 'kind': 'domain_keyword_hint', 'source': 'domain_keyword_hints', 'reason': f'prompt mentions `{phrase}`'})
+                    likely.append({'path': path, 'kind': 'semantic_module_alias', 'source': 'semantic_module_alias', 'reason': f'prompt mentions `{phrase}`'})
+
+
+PACKAGE_METADATA_FILENAMES = {
+    'pyproject.toml',
+    'setup.py',
+    'setup.cfg',
+    'package.json',
+    'cargo.toml',
+    'go.mod',
+    'package.swift',
+    'pom.xml',
+    'composer.json',
+    'gemfile',
+}
+
+
+def _package_metadata_prompt(raw_prompt: str) -> bool:
+    text = (raw_prompt or "").lower()
+    return bool(re.search(r"\b(package|packaging|project)\s+metadata\b|\bmetadata\b[^\n.;]{0,80}\b(package|packaging|project)\b|\bpython\s+package\b", text))
+
+
+def _prompt_requests_test_edit(raw_prompt: str) -> bool:
+    text = re.sub(
+        r"\b(?:avoid|do not|don't|dont|without)\b[^\n.;]*",
+        " ",
+        raw_prompt or "",
+        flags=re.IGNORECASE,
+    )
+    return bool(re.search(
+        r"\b(?:add|write|create|update|change|repair|adjust|fix)\b[^\n.;]{0,80}\b(?:tests?|coverage|assertions?|expectations?)\b|\badd\s+coverage\b",
+        text,
+        re.IGNORECASE,
+    ))
+
+
+def _cli_edit_prompt(raw_prompt: str) -> bool:
+    text = re.sub(
+        r"\b(?:avoid|do not|don't|dont|without|keeping|keep)\b[^\n.;]*",
+        " ",
+        raw_prompt or "",
+        flags=re.IGNORECASE,
+    ).lower()
+    return bool(re.search(r"\b(cli|argument|arguments|arg|args|flag|flags|command-line|command line|subcommand|option|options)\b", text))
+
+
+def _prompt_mentions_benchmark_prompts(raw_prompt: str) -> bool:
+    return bool(re.search(r"\bbenchmark[_ -]?prompts(?:\.json)?\b|\bbenchmark\s+examples?\b", raw_prompt or "", re.IGNORECASE))
+
+
+def _is_benchmark_prompt_file(path: str) -> bool:
+    return Path(str(path).replace("\\", "/")).name.lower() == "benchmark_prompts.json"
+
+
+def _manifest_candidate_rank(path: str, raw_prompt: str) -> int:
+    role = classify_path_role(path)
+    name = Path(path).name.lower()
+    score = 0
+    if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+        return -10000
+    if name in PACKAGE_METADATA_FILENAMES:
+        score += 800
+    if role.package_rootness == "repo_root":
+        score += 500
+    elif role.package_rootness == "package_root":
+        score += 140
+    elif role.package_rootness == "nested_package_root":
+        score += 60
+    preferred = {
+        "pyproject.toml": 90,
+        "package.json": 85,
+        "cargo.toml": 80,
+        "go.mod": 75,
+        "package.swift": 70,
+        "pubspec.yaml": 65,
+        "setup.cfg": 50,
+        "setup.py": 45,
+    }
+    score += preferred.get(name, 0)
+    prompt_norm = _normalize_task_token(raw_prompt or "")
+    path_norm = _normalize_task_token(path)
+    if any(term in prompt_norm for term in ("workspace", "crate", "example", "sample")) and any(term in path_norm for term in ("packages", "crates", "examples", "samples")):
+        score += 160
+    return score
+
+
+def _manifest_candidate_rank_reason(path: str, raw_prompt: str) -> str:
+    role = classify_path_role(path)
+    if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+        return "benchmark_prompts_excluded_from_package_metadata"
+    if role.package_rootness == "repo_root":
+        return "root_manifest_preferred_for_package_metadata"
+    if role.package_rootness in {"package_root", "nested_package_root"}:
+        return "nested_manifest_requires_explicit_package_scope"
+    return "manifest_ranked_by_package_metadata_specificity"
+
+
+def _workflow_candidate_rank(path: str, raw_prompt: str) -> int:
+    lower = str(path).replace("\\", "/").lower()
+    name = Path(lower).name
+    score = 0
+    if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+        return -10000
+    if lower.startswith((".github/workflows/", "github/workflows/")):
+        score += 700
+    if lower.startswith("scripts/") and re.search(r"(smoke|test|check|validate|validation|ci)", name):
+        score += 640
+    if name in {"makefile", "justfile", "noxfile.py", "tox.ini"}:
+        score += 520
+    if re.search(r"(ci|test|tests|build|lint|check|validation|smoke)", name):
+        score += 420
+    if re.search(r"(release|publish|deploy|stale|label|triage|issue|backport|changelog|docs?)", name):
+        score -= 360
+    if re.search(r"\bdocs?\s+workflow\b|\bdocs?\s+(?:deploy|build)\b", raw_prompt or "", re.IGNORECASE) and "doc" in name:
+        score += 500
+    prompt_words = {_normalize_task_token(token) for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", raw_prompt or "")}
+    path_norm = _normalize_task_token(path)
+    score += min(180, 45 * sum(1 for word in prompt_words if word and word in path_norm))
+    return score
+
+
+def _workflow_candidate_rank_reason(path: str, raw_prompt: str) -> str:
+    score = _workflow_candidate_rank(path, raw_prompt)
+    lower = str(path).lower()
+    if score < 0:
+        return "workflow_demoted_as_release_docs_or_issue_management"
+    if re.search(r"(ci|test|tests|build|lint|check|validation|smoke)", lower):
+        return "workflow_ranked_by_ci_test_validation_name"
+    return "workflow_ranked_by_generic_workflow_adjacency"
+
+
+def _add_package_metadata_hints(raw_prompt: str, files: dict[str, dict[str, Any]], likely: list[dict[str, Any]], related: list[dict[str, Any]]) -> None:
+    if not _package_metadata_prompt(raw_prompt):
+        return
+    scoped_package_prompt = bool(re.search(r"\b(workspace|crate|example|sample|packages/|crates/)\b", raw_prompt or "", re.IGNORECASE))
+    ranked_manifests: list[tuple[int, str]] = []
+    for path in sorted(files):
+        role = classify_path_role(path)
+        if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+            continue
+        if Path(path).name.lower() in PACKAGE_METADATA_FILENAMES and not role.is_example:
+            if role.package_rootness != "repo_root" and not scoped_package_prompt:
+                continue
+            ranked_manifests.append((_manifest_candidate_rank(path, raw_prompt), path))
+    ranked_manifests.sort(key=lambda item: (-item[0], _path_depth(item[1]), item[1].lower()))
+    manifest_limit = 2 if scoped_package_prompt else 1
+    for _score, path in ranked_manifests[:manifest_limit]:
+        likely.append({
+            'path': path,
+            'kind': 'package_metadata',
+            'source': 'package_metadata_adjacency',
+            'reason': 'package_metadata_prompt_selects_manifest',
+            'manifest_candidate_rank_reason': _manifest_candidate_rank_reason(path, raw_prompt),
+        })
+    for path in sorted(files):
+        lower = path.lower()
+        if lower.startswith(("tests/", "test/")) and ("package_layout" in lower or "metadata_root" in lower):
+            related.append({
+                'path': path,
+                'source': 'package_metadata_adjacency',
+                'reason': 'package_metadata_prompt_routes_package_layout_test',
+                'related_test_resolution_reason': 'config_to_package_layout_test',
+            })
+            return
+    for path in sorted(files):
+        lower = path.lower()
+        if lower in {"tests/__init__.py", "test/__init__.py"}:
+            related.append({
+                'path': path,
+                'source': 'package_metadata_adjacency',
+                'reason': 'package_metadata_prompt_routes_root_test_anchor',
+                'related_test_resolution_reason': 'config_to_root_test_anchor',
+            })
+            return
+
+
+def _workflow_prompt(raw_prompt: str) -> bool:
+    text = (raw_prompt or "").lower()
+    return bool(re.search(r"\b(local\s+)?smoke\s+(?:validation|test|workflow)|\bci-style\b|\bci\s+checks?\b|\bworkflow\b|\blocal\s+validation\b|\bregression guard\b", text))
+
+
+def _workflow_script_prompt(raw_prompt: str) -> bool:
+    text = (raw_prompt or "").lower()
+    return bool(re.search(r"\b(local\s+)?smoke\s+(?:validation|test|workflow)|\bci-style\b|\bci\s+checks?\b|\bworkflow\b|\bvalidation\s+script\b|\bregression guard\b", text))
+
+
+def _add_workflow_hints(raw_prompt: str, files: dict[str, dict[str, Any]], likely: list[dict[str, Any]], related: list[dict[str, Any]]) -> None:
+    if not _workflow_prompt(raw_prompt):
+        return
+    workflow_paths = [
+        "scripts/smoke_test.sh",
+        ".github/workflows/",
+        "Makefile",
+        "noxfile.py",
+        "tox.ini",
+        "justfile",
+    ]
+    if _workflow_script_prompt(raw_prompt):
+        workflow_candidates: list[tuple[int, str]] = []
+        for path in sorted(files):
+            lower = path.lower()
+            script_workflow = (
+                lower.startswith("scripts/")
+                and re.search(r"(smoke|test|check|validate|validation|ci)", Path(lower).name)
+            )
+            if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+                continue
+            if lower == "scripts/smoke_test.sh" or script_workflow or any(lower == item.lower() for item in workflow_paths if not item.endswith("/")) or lower.startswith(".github/workflows/"):
+                workflow_candidates.append((_workflow_candidate_rank(path, raw_prompt), path))
+        workflow_candidates.sort(key=lambda item: (-item[0], _path_depth(item[1]), item[1].lower()))
+        for _score, path in workflow_candidates[:3]:
+            likely.append({
+                'path': path,
+                'kind': 'workflow_validation',
+                'source': 'workflow_adjacency',
+                'reason': 'smoke_or_local_validation_workflow_prompt',
+                'workflow_candidate_rank_reason': _workflow_candidate_rank_reason(path, raw_prompt),
+            })
+    for path in sorted(files):
+        lower = path.lower()
+        if lower.startswith(("tests/", "test/")) and ("local_validation" in lower or "v266" in lower or "smoke" in lower):
+            related.append({
+                'path': path,
+                'source': 'workflow_adjacency',
+                'reason': 'workflow_prompt_routes_local_validation_test',
+                'related_test_resolution_reason': 'workflow_validation_test',
+                'related_test_anchor_confidence': 'high',
+            })
+
+
+def _test_only_prompt(raw_prompt: str) -> bool:
+    text = (raw_prompt or "").lower()
+    return bool(
+        re.search(r"\b(add|write|create)\b[^\n.;]{0,80}\b(?:(?:regression\s+)?tests?|coverage)\b", text)
+        and re.search(r"\bwithout\s+(?:changing|touching|editing|modifying)\s+(?:(?:production|runtime)\s+)?(?:code|source)\b", text)
+    )
+
+
+def _generic_candidate_rank(path: str, raw_prompt: str) -> int:
+    role = classify_path_role(path)
+    score = path_role_rank(path, infer_prompt_intent(raw_prompt))
+    prompt_words = {_normalize_task_token(token) for token in re.findall(r"[A-Za-z][A-Za-z0-9_]{2,}", raw_prompt or "")}
+    path_norm = _normalize_task_token(path)
+    score += min(240, 60 * sum(1 for word in prompt_words if word and word in path_norm))
+    if role.entrypoint_likelihood == "high":
+        score += 260
+    if role.is_example:
+        score -= 260
+    lower = path.lower()
+    if any(part in lower for part in ("/fixtures/", "/fixture/", "/profiling/", "/bench/", "/benchmark/", "/scripts/release")):
+        score -= 220
+    return score
+
+
+def _test_candidate_rank(path: str, raw_prompt: str) -> int:
+    lower = path.lower()
+    score = _related_test_prompt_score(path, raw_prompt)
+    if lower in {"tests/__init__.py", "test/__init__.py"}:
+        score += 380
+    if re.search(r"(^|/)(test_[^/]+|[^/]+_test|[^/]+\.(test|spec))\.", lower):
+        score += 220
+    if _is_docs_fixture_test_path(path):
+        score -= 900
+    score -= 25 * _path_depth(path)
+    return score
+
+
+def _apply_precision_caps(
+    raw_prompt: str,
+    likely_edit_files: list[dict[str, Any]],
+    files: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    intent = infer_prompt_intent(raw_prompt)
+    if not likely_edit_files:
+        return likely_edit_files, [], {"precision_cap_applied": False}
+    if any(str(item.get("source") or "") == "prompt" or str(item.get("reason") or "").startswith("prompt_mentioned") for item in likely_edit_files):
+        return likely_edit_files, [], {
+            "precision_cap_applied": False,
+            "precision_cap_skipped": "explicit_prompt_path",
+        }
+    if _prompt_mentions_swift_context(raw_prompt):
+        return likely_edit_files, [], {
+            "precision_cap_applied": False,
+            "precision_cap_skipped": "swift_source_recovery",
+        }
+
+    kept: list[dict[str, Any]] = []
+    demoted: list[dict[str, Any]] = []
+
+    def demote(item: dict[str, Any], reason: str) -> None:
+        moved = dict(item)
+        moved["reason"] = reason
+        moved["support_projection_reason"] = reason
+        moved["demotion_reason"] = reason
+        demoted.append(moved)
+
+    if intent.intent == "config":
+        scoped = bool(re.search(r"\b(workspace|crate|example|sample|packages/|crates/)\b", raw_prompt or "", re.IGNORECASE))
+        manifest_items: list[tuple[int, dict[str, Any]]] = []
+        for item in likely_edit_files:
+            path = str(item.get("path") or "")
+            role = classify_path_role(path)
+            if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+                demote({**item, "manifest_candidate_rank_reason": "benchmark_prompts_excluded_from_package_metadata"}, "manifest_precision_demoted_benchmark_prompts")
+            elif Path(path).name.lower() in PACKAGE_METADATA_FILENAMES and (role.package_rootness == "repo_root" or scoped):
+                manifest_items.append((_manifest_candidate_rank(path, raw_prompt), {**item, "manifest_candidate_rank_reason": _manifest_candidate_rank_reason(path, raw_prompt)}))
+            else:
+                demote({**item, "manifest_candidate_rank_reason": "support_not_package_manifest"}, "manifest_precision_demoted_non_manifest")
+        manifest_items.sort(key=lambda pair: (-pair[0], _path_depth(str(pair[1].get("path") or "")), str(pair[1].get("path") or "").lower()))
+        keep_limit = 2 if scoped else 1
+        kept = [item for _score, item in manifest_items[:keep_limit]]
+        for _score, item in manifest_items[keep_limit:]:
+            demote(item, "manifest_precision_cap_demoted_nested_manifest")
+    elif intent.intent == "workflow":
+        workflow_items: list[tuple[int, dict[str, Any]]] = []
+        for item in likely_edit_files:
+            path = str(item.get("path") or "")
+            role = classify_path_role(path)
+            if _is_benchmark_prompt_file(path) and not _prompt_mentions_benchmark_prompts(raw_prompt):
+                demote({**item, "workflow_candidate_rank_reason": "benchmark_prompts_excluded_from_workflow"}, "workflow_precision_demoted_benchmark_prompts")
+            elif role.is_workflow:
+                workflow_items.append((_workflow_candidate_rank(path, raw_prompt), {**item, "workflow_candidate_rank_reason": _workflow_candidate_rank_reason(path, raw_prompt)}))
+            else:
+                demote({**item, "workflow_candidate_rank_reason": "support_not_workflow"}, "workflow_precision_demoted_non_workflow")
+        workflow_items.sort(key=lambda pair: (-pair[0], _path_depth(str(pair[1].get("path") or "")), str(pair[1].get("path") or "").lower()))
+        high_confidence_workflows = [pair for pair in workflow_items if pair[0] >= 700]
+        selected_workflows = (high_confidence_workflows or workflow_items)[:3]
+        selected_ids = {id(item) for _score, item in selected_workflows}
+        kept = [item for _score, item in selected_workflows]
+        for _score, item in workflow_items:
+            if id(item) in selected_ids:
+                continue
+            demote(item, "workflow_precision_cap_demoted_lower_ranked_workflow")
+    elif intent.intent == "test_edit":
+        test_items: list[tuple[int, dict[str, Any]]] = []
+        for item in likely_edit_files:
+            path = str(item.get("path") or "")
+            if _is_test_file(path, files.get(path) or {}):
+                test_items.append((_test_candidate_rank(path, raw_prompt), item))
+            else:
+                demote(item, "test_only_precision_demoted_source_support")
+        test_items.sort(key=lambda pair: (-pair[0], _path_depth(str(pair[1].get("path") or "")), str(pair[1].get("path") or "").lower()))
+        kept = [item for _score, item in test_items[:2]]
+        for _score, item in test_items[2:]:
+            demote(item, "test_only_precision_cap_demoted_lower_ranked_test")
+    elif intent.intent == "docs":
+        # Compiler-level docs scoring performs the final README/usage selection.
+        kept = likely_edit_files
+    elif intent.intent == "runtime":
+        if _prompt_mentions_swift_context(raw_prompt):
+            kept = likely_edit_files
+        else:
+            source_items = [(_generic_candidate_rank(str(item.get("path") or ""), raw_prompt), item) for item in likely_edit_files]
+            source_items.sort(key=lambda pair: (-pair[0], _path_depth(str(pair[1].get("path") or "")), str(pair[1].get("path") or "").lower()))
+            kept = [item for _score, item in source_items[:4]]
+            for _score, item in source_items[4:]:
+                demote(item, "runtime_precision_cap_demoted_broad_fallback")
+    else:
+        kept = likely_edit_files
+
+    diagnostics = {
+        "precision_cap_applied": bool(demoted),
+        "precision_cap_intent": intent.intent,
+        "precision_cap_demoted_count": len(demoted),
+    }
+    return kept, demoted, diagnostics
+
+
+def _add_test_only_hints(raw_prompt: str, files: dict[str, dict[str, Any]], likely: list[dict[str, Any]], related: list[dict[str, Any]]) -> None:
+    if not _test_only_prompt(raw_prompt):
+        return
+    ranked: list[tuple[int, str]] = []
+    for path, info in files.items():
+        if not _is_test_file(path, info):
+            continue
+        if _is_docs_fixture_test_path(path):
+            continue
+        ranked.append((_test_candidate_rank(path, raw_prompt), path))
+    ranked.sort(key=lambda pair: (-pair[0], _path_depth(pair[1]), pair[1].lower()))
+    for _score, path in ranked[:1]:
+        item = {
+            'path': path,
+            'kind': 'test_only_candidate',
+            'source': 'test_only_adjacency',
+            'reason': 'test_only_prompt_selects_regression_test',
+        }
+        likely.append(item)
+        related.append({
+            'path': path,
+            'source': 'test_only_adjacency',
+            'reason': 'test_candidate_mirrored_to_related_tests',
+            'related_test_resolution_reason': 'test_only_direct_candidate',
+        })
 
 
 def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any]]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -1386,6 +2179,7 @@ def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any
         }
     prompt = raw_prompt.lower()
     prompt_terms = {w.lower() for w in re.findall(r'[A-Za-z][A-Za-z0-9_]{2,}', raw_prompt or '')}
+    screen_action_prompt = _prompt_is_swift_screen_action_task(raw_prompt)
     candidates: list[tuple[int, str, dict[str, Any]]] = []
     safe_candidate_count = 0
     for path, info in files.items():
@@ -1401,9 +2195,28 @@ def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any
         if lower.endswith('view.swift') or lower.endswith('viewmodel.swift') or 'viewmodel' in lower:
             score += 140
         basename = Path(lower).stem
+        normalized_basename = _normalize_task_token(basename)
         normalized_path = _normalize_task_token(path)
         if any(_normalize_task_token(term) in normalized_path for term in prompt_terms):
             score += 120
+        if screen_action_prompt:
+            matched_path_terms = [
+                term for term in prompt_terms
+                if term not in {'screen', 'screens', 'surface', 'view', 'views', 'clear', 'clearer', 'make', 'want'}
+                and _normalize_task_token(term) in normalized_path
+            ]
+            if matched_path_terms:
+                score += min(360, 90 * len(set(matched_path_terms)))
+            if any(term in lower for term in ('today', 'plan', 'task', 'todo', 'priority', 'next', 'action')):
+                score += 320
+            if ('/views/' in lower or lower.endswith('view.swift')) and any(term in lower for term in ('today', 'plan', 'homestead', 'dashboard', 'screen')):
+                score += 260
+            if '/viewmodels/' in lower and any(term in lower for term in ('today', 'plan', 'next', 'action', 'task')):
+                score += 300
+            if any(term in lower for term in ('minigame', 'engine', 'debug', 'devtools', 'frontierrisk', 'riskresolver', 'project.pbxproj', 'assets.xcassets')):
+                score -= 420
+        if any(normalized_basename == f'{_normalize_task_token(term)}view' for term in prompt_terms):
+            score += 360
         if 'ui' in prompt and any(term in lower for term in ('view', 'style', 'shell', 'menu', 'bar')):
             score += 120
         if 'tutorial' in prompt and any(term in lower for term in ('tutorial', 'overlay', 'guidance', 'onboarding')):
@@ -1419,7 +2232,7 @@ def _swift_source_recovery_hints(raw_prompt: str, files: dict[str, dict[str, Any
         candidates.append((score, path, info))
     candidates.sort(key=lambda item: (item[0], item[1]), reverse=True)
     selected: list[dict[str, Any]] = []
-    for score, path, info in candidates[:8]:
+    for score, path, info in candidates[:6]:
         selected.append({
             'path': path,
             'kind': 'swift_source_recovery',
@@ -1454,6 +2267,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     explicit_paths.update(prompt_existing_paths)
     forbidden_paths = {str(p).strip("/") for p in (prompt_forbidden_paths or set()) if p}
     forbidden_paths.update(_prompt_forbidden_repo_paths(raw_prompt, files, repo_root))
+    related_hints: list[dict[str, Any]] = []
 
     for path in prompt_sources:
         info = files.get(path) or {}
@@ -1473,7 +2287,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
             'reason': 'prompt_mentioned_existing_file',
         })
 
-    prompt_is_cli = any(term in prompt for term in ['cli', 'argument', 'arguments', 'arg ', 'args', 'flag', 'flags', 'command-line', 'command line', 'subcommand', 'option', 'options'])
+    prompt_is_cli = _cli_edit_prompt(raw_prompt)
     if prompt_is_cli:
         for ep in entrypoints:
             source = str(ep.get('source', '')).lower()
@@ -1485,8 +2299,28 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         _go_command_folder_hints(raw_prompt, files, likely)
 
     _domain_keyword_hints(raw_prompt, files, likely)
+    _add_package_metadata_hints(raw_prompt, files, likely, related_hints)
+    _add_workflow_hints(raw_prompt, files, likely, related_hints)
+    _add_test_only_hints(raw_prompt, files, likely, related_hints)
     source_recovery_hints, source_recovery_diagnostics = _swift_source_recovery_hints(raw_prompt, files)
     likely.extend(source_recovery_hints)
+    pre_role_likely_count = len(likely)
+    role_likely, role_related, role_diagnostics = _role_model_hints(raw_prompt, files)
+    role_intent = (role_diagnostics.get('prompt_intent') or {}).get('intent')
+    pre_role_source_like = any(
+        classify_path_role(str(item.get('path') or '')).role == 'source'
+        for item in likely
+        if item.get('path')
+    )
+    suppress_role_likely = pre_role_likely_count and role_intent in {'config', 'workflow', 'test_edit'}
+    suppress_role_likely = suppress_role_likely or (
+        pre_role_likely_count and role_intent == 'runtime' and pre_role_source_like
+    )
+    if suppress_role_likely:
+        role_diagnostics['role_model_suppressed_by_specific_hints'] = len(role_likely)
+    else:
+        likely.extend(role_likely)
+    related_hints.extend(role_related)
 
     # Universal native-engine fallback: SCons/CMake repos often have sparse
     # import graphs, so route platform/option prompts to the engine platform
@@ -1553,6 +2387,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
     read_only_support_files: list[dict[str, Any]] = []
     likely_edit_files: list[dict[str, Any]] = []
     swiftui_scope_downranked_count = 0
+    test_only_prompt = _test_only_prompt(raw_prompt)
     for item in filtered_likely:
         path = str(item.get('path') or '')
         suffix = Path(path).suffix.lower()
@@ -1563,6 +2398,16 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
             read_only_support_files.append({**item, 'reason': safety.get('reason') or 'read_only_manifest_boundary'})
         elif safety.get('category') != 'editable_source_or_support' and not safety.get('editable'):
             prompt_forbidden_files.append({**item, 'reason': safety.get('reason') or 'restricted_routing_boundary'})
+        elif (
+            (item.get('kind') == 'workflow_validation' or item.get('kind') == 'role_model_workflow')
+            and suffix in {'.sh', '.bash', '.zsh'}
+        ):
+            likely_edit_files.append(item)
+        elif _is_test_file(path, files.get(path) or {}) and not (test_only_prompt or _prompt_requests_test_edit(raw_prompt)) and path not in explicit_paths:
+            related_hints.append({**item, 'reason': 'test_candidate_projected_to_related_tests'})
+            read_only_support_files.append({**item, 'reason': 'test_support_related_projection'})
+        elif test_only_prompt and not _is_test_file(path, files.get(path) or {}) and suffix in SOURCE_EXTENSIONS:
+            read_only_support_files.append({**item, 'reason': 'test_only_prompt_source_support'})
         elif suffix not in SOURCE_EXTENSIONS | CONFIG_EXTENSIONS:
             read_only_support_files.append({**item, 'reason': item.get('reason') or 'read_only_support_file'})
         elif (
@@ -1575,9 +2420,25 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
             read_only_support_files.append({**item, 'reason': 'swiftui_tutorial_scope_downranked'})
         else:
             likely_edit_files.append(item)
+    precision_kept, precision_demotions, precision_cap_diagnostics = _apply_precision_caps(raw_prompt, likely_edit_files, files)
+    if precision_demotions:
+        likely_edit_files = precision_kept
+        read_only_support_files.extend(precision_demotions)
     filtered_likely_paths = [str(item.get('path')) for item in likely_edit_files if item.get('path')]
     direct_dependencies, direct_dependents = _dependency_slices(repo_map, filtered_likely_paths)
     related_tests = _related_tests_for_paths(repo_map, filtered_likely_paths, explicit_tests=prompt_tests)
+    related_seen = {str(item.get('path') or '') for item in related_tests}
+    for item in related_hints:
+        path = str(item.get('path') or '')
+        if (
+            related_tests
+            and item.get('source') == 'cross_ecosystem_role_model'
+            and item.get('reason') == f"prompt intent `{infer_prompt_intent(raw_prompt).intent}` requested verification role"
+        ):
+            continue
+        if path and path in files and path not in related_seen:
+            related_tests.append(item)
+            related_seen.add(path)
     filtered_related, removed_related = _filter_routing_paths(
         raw_prompt,
         related_tests,
@@ -1615,6 +2476,7 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         else:
             kept_related.append(item)
     filtered_related = kept_related
+    filtered_related = _rank_related_tests(repo_map, raw_prompt, filtered_likely_paths, filtered_related)
     direct_dependencies, removed_deps = _filter_dependency_edges(direct_dependencies, explicit_paths, raw_prompt, forbidden_paths)
     direct_dependents, removed_dependents = _filter_dependency_edges(direct_dependents, explicit_paths, raw_prompt, forbidden_paths)
     filtered_reasons: dict[str, int] = {}
@@ -1651,6 +2513,8 @@ def task_impact_hints(raw_prompt: str, repo_map: dict[str, Any], *, prompt_forbi
         'removed_sample': (removed_likely + removed_related)[:5],
         'policy': 'Ignored/reference/generated paths are excluded from routing unless explicitly prompt-mentioned.',
     }
+    diagnostics.update(precision_cap_diagnostics)
+    diagnostics['role_model'] = role_diagnostics
     diagnostics.update(source_recovery_diagnostics)
     if source_recovery_diagnostics.get('source_recovery_attempted') and not likely_edit_files:
         diagnostics['why_no_source_candidates'] = diagnostics.get('why_no_source_candidates') or 'no editable source candidates remained after filtering'
@@ -1695,6 +2559,7 @@ def build_repo_map(repo_root: Path, entries: list[dict[str, Any]] | None = None,
             'language': language,
             'kind': entry.get('kind'),
             'bytes': int(entry.get('bytes', 0) or abs_path.stat().st_size),
+            'role_model': classify_path_role(rel).to_dict(),
             'sha256': _file_sha256(abs_path),
             'imports': [],
             'import_details': [],

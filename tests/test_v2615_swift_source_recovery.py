@@ -29,6 +29,9 @@ def _make_goldpine_like_repo(repo: Path) -> None:
     (repo / "GoldpineValley.xcodeproj").mkdir()
     _write(repo / "GoldpineValley" / "Views" / "MainMenuView.swift", "struct MainMenuView { var tutorialOverlayVisible = false }\n")
     _write(repo / "GoldpineValley" / "Views" / "BottomBarView.swift", "struct BottomBarView { var body: String { \"bar\" } }\n")
+    _write(repo / "GoldpineValley" / "Views" / "HomesteadView.swift", "struct HomesteadView { var mapGuidance = \"Tap a place\" }\n")
+    _write(repo / "GoldpineValley" / "Views" / "HomesteadLocationSceneView.swift", "struct HomesteadLocationSceneView { var backToMapHint = \"Map\" }\n")
+    _write(repo / "GoldpineValley" / "Views" / "PannableHomesteadMapView.swift", "struct PannableHomesteadMapView { var zoom = 1 }\n")
     _write(repo / "GoldpineValley" / "Views" / "SharedViewStyles.swift", "struct SharedViewStyles {}\n")
     _write(repo / "GoldpineValley" / "Views" / "FounderSelectView.swift", "struct FounderSelectView { var body: String { \"founder\" } }\n")
     _write(repo / "GoldpineValley" / "Views" / "EventCardView.swift", "struct EventCardView { var body: String { \"event\" } }\n")
@@ -90,11 +93,15 @@ def test_v2615_dirty_planning_art_does_not_dominate_swiftui_source_prompt(tmp_pa
     required_swift = {
         "GoldpineValley/Views/MainMenuView.swift",
         "GoldpineValley/Views/BottomBarView.swift",
+        "GoldpineValley/Views/HomesteadView.swift",
+        "GoldpineValley/Views/HomesteadLocationSceneView.swift",
         "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
     }
     expected_swift = {
         "GoldpineValley/Views/MainMenuView.swift",
         "GoldpineValley/Views/BottomBarView.swift",
+        "GoldpineValley/Views/HomesteadView.swift",
+        "GoldpineValley/Views/HomesteadLocationSceneView.swift",
         "GoldpineValley/Views/SharedViewStyles.swift",
         "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
         "GoldpineValley/Models/TutorialState.swift",

@@ -35,7 +35,7 @@ def _kind(path: Path) -> str:
     return "other"
 
 
-def index_project(repo_root: Path, profile_name: str | None = None) -> dict[str, Any]:
+def index_project(repo_root: Path, profile_name: str | None = None, *, write: bool = True) -> dict[str, Any]:
     cfg = load_config(repo_root)
     caps = resolve_profile(profile_name, cfg)
     ignore = IgnoreMatcher.from_repo(repo_root)
@@ -95,9 +95,10 @@ def index_project(repo_root: Path, profile_name: str | None = None) -> dict[str,
         "skipped": skipped[:1000],
         "entry_count": len(entries),
     }
-    out = premode_dir(repo_root) / "index" / "index.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if write:
+        out = premode_dir(repo_root) / "index" / "index.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return data
 
 

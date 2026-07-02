@@ -30,12 +30,12 @@ def test_v2_packet_manifest_sections_classifier_tool_plan(repo):
     packet = result["packet"]
     assert packet.startswith("PREMODE_COMPILED_PACKET_V2")
     for section in [
-        "## 1. Task",
+        "## 1. CANONICAL USER PROMPT",
         "## 2. Project detection",
         "## 3. Evidence summary",
-        "## 4. Task signals detected",
-        "## 5. Context contract / safety boundaries",
-        "## 6. Suggested verification",
+        "## 4. Prompt signals detected",
+        "## 5. Candidate context / safety boundaries",
+        "## 6. Discovered commands",
         "## 7. Full-text files",
         "## 8. Summarized files",
         "## 9. Manifest-only files",

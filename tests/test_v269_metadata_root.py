@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -88,9 +89,11 @@ def test_v269_lite_packet_compacts_openclaw_dirty_metadata(tmp_path: Path) -> No
     metrics = result["metrics"]
     assert metrics["packet_total_tokens"] <= result["caps"]["hard_packet_token_budget"]
     assert metrics["policy_metadata_tokens"] < 8000
-    assert '"dirty_files_summary"' in packet
+    assert '"dirty_files_summary"' not in packet
     assert '"dirty_files":' not in packet
     assert packet.count("_claw_output/dirty_") <= 3
+    manifest = json.loads((repo / ".premode" / "out" / "last_context_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["git_state"]["dirty_files"]
     assert "SECRET=do-not-leak" not in packet
     assert "PRIVATE KEY do-not-leak" not in packet
     tier_paths = {item.get("path") for tier in result["context_tiers"].values() for item in tier}

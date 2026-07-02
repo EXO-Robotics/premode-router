@@ -6,10 +6,11 @@ from pathlib import Path
 import sys
 
 from . import __version__
-from .paths import find_repo_root
 from .config import init_project
 from .indexer import index_project
 from .compiler import inspect_prompt, compile_prompt
+from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, attach_snippets_to_files
+from .locator import locate_files
 from .codex_exec import CodexOptions, run_codex
 from .doctor import doctor
 from .fixture import run_fixture
@@ -22,10 +23,31 @@ from .mcp_server import serve as mcp_serve
 from .repo_map import build_repo_map, compact_repo_map_summary, estimate_repo_map_json_bytes, limit_repo_map_files, summarize_repo_map
 from .review_patch import review_patch, format_review_report
 from .benchmark import run_benchmark, format_benchmark_report
+from .launch_safety import RootGuardError, resolve_cli_repo
 
 
 def _print_json(obj) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
+
+
+def _guarded_repo(cwd: Path, explicit_repo: str | None = None, *, fail_on_root_escalation: bool = False) -> Path:
+    try:
+        return resolve_cli_repo(cwd, explicit_repo, fail_on_root_escalation=fail_on_root_escalation).repo
+    except RootGuardError as exc:
+        _print_json({"error": str(exc), "root_guard": exc.guard})
+        raise SystemExit(2)
+
+
+def _located_file_json(file, *, snippets: list[dict] | None = None) -> dict:
+    return {
+        "path": file.path,
+        "score": file.score,
+        "confidence": file.confidence,
+        "matched_signals": list(file.matched_signals),
+        "covered_terms": [],
+        "uncovered_terms": [],
+        "snippets": snippets or [],
+    }
 
 
 def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -> dict:
@@ -33,6 +55,19 @@ def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -
     return {
         "status": "compiled",
         "packet_version": result.get("packet_version"),
+        "packet_detail_mode": result.get("packet_detail_mode"),
+        "packet_detail_mode_requested": result.get("packet_detail_mode_requested"),
+        "packet_detail_mode_selected": result.get("packet_detail_mode_selected"),
+        "packet_mode_selection_reasons": result.get("packet_mode_selection_reasons"),
+        "packet_mode_selection_signals": result.get("packet_mode_selection_signals"),
+        "support_edit_surface_risk_strength": result.get("support_edit_surface_risk_strength"),
+        "multi_surface_risk_strength": result.get("multi_surface_risk_strength"),
+        "auto_render_equivalent_to_forced_selected_mode": result.get("auto_render_equivalent_to_forced_selected_mode"),
+        "forced_mode_compared": result.get("forced_mode_compared"),
+        "auto_selected_mode_model_facing_equivalent": result.get("auto_selected_mode_model_facing_equivalent"),
+        "auto_selected_mode_packet_diff_summary": result.get("auto_selected_mode_packet_diff_summary"),
+        "auto_paths_only_model_facing_equivalent": result.get("auto_paths_only_model_facing_equivalent"),
+        "auto_paths_only_packet_diff_summary": result.get("auto_paths_only_packet_diff_summary"),
         "resource_profile": result.get("resource_profile"),
         "context_boundary_mode": result.get("context_boundary_mode"),
         "packet_sha256": result.get("compiled_packet_sha256"),
@@ -61,6 +96,9 @@ def build_parser() -> argparse.ArgumentParser:
     det.add_argument("--json", action="store_true")
     det.add_argument("--explain", action="store_true")
 
+    dbg = sub.add_parser("debug-env")
+    dbg.add_argument("--json", action="store_true")
+
     ip = sub.add_parser("index")
     ip.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
     ip.add_argument("--incremental", action="store_true", help="Accepted for seamless runs; MVP rewrites the lightweight index.")
@@ -69,8 +107,19 @@ def build_parser() -> argparse.ArgumentParser:
     insp.add_argument("prompt")
     insp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
 
+    loc = sub.add_parser("locate")
+    loc.add_argument("prompt")
+    loc.add_argument("--repo", default=None)
+    loc.add_argument("--fail-on-root-escalation", action="store_true")
+    loc.add_argument("--max-files", type=int, default=8)
+    loc.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
+    loc.add_argument("--no-snippets", action="store_true")
+    loc.add_argument("--json", action="store_true")
+
     comp = sub.add_parser("compile")
     comp.add_argument("prompt")
+    comp.add_argument("--repo", default=None, help="Repository to compile. Defaults to the current repo root.")
+    comp.add_argument("--fail-on-root-escalation", action="store_true")
     comp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
     comp.add_argument("--out", default=None)
     comp.add_argument("--json-out", default=None)
@@ -78,9 +127,14 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--show-raw", action="store_true")
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
     comp.add_argument("--packet-version", choices=["v2", "v3"], default=None, help="Compiled packet renderer version. v3 is cache-aware.")
+    comp.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only", help="Packet V3 detail mode.")
+    comp.add_argument("--evidence-snippets", action="store_true", help="Shortcut for --packet-mode evidence-snippets.")
+    comp.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
     comp.add_argument("--cache-optimized", action="store_true", help="Select cache-aware Packet V3 unless --packet-version v2 is explicitly set.")
     comp.add_argument("--context-only", action="store_true", help="Compile candidate context and safety boundaries without strong allowed-edit narrowing.")
     comp.add_argument("--save", action="store_true", help="Save last_packet artifacts under .premode/out/.")
+    comp.add_argument("--no-record", action="store_true", help="Do not write .premode index, audit, metrics, or discovered-command artifacts.")
+    comp.add_argument("--include-packet-debug-metadata", action="store_true", help="Opt in to selector diagnostics in the model-facing packet.")
 
     mp = sub.add_parser("map")
     mp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
@@ -93,6 +147,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     cod = sub.add_parser("codex")
     cod.add_argument("prompt")
+    cod.add_argument("--repo", default=None, help="Repository/worktree to launch from. Explicit paths are respected literally.")
+    cod.add_argument("--fail-on-root-escalation", action="store_true")
     cod.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
     cod.add_argument("--dry-run", action="store_true")
     cod.add_argument("--execute", action="store_true", help="Explicitly execute Codex; default when --dry-run is absent.")
@@ -113,23 +169,29 @@ def build_parser() -> argparse.ArgumentParser:
     cod.add_argument("--no-repo-map", action="store_true", help="Disable repo-map summary and impact hints for the Codex path.")
     cod.add_argument("--packet-version", choices=["v2", "v3"], default=None, help="Compiled packet renderer version for the Codex path.")
     cod.add_argument("--no-cache-optimized", action="store_true", help="Disable the default cache-aware Packet V3 Codex path.")
+    cod.add_argument("--context-only", action="store_true", help="Compile candidate context and safety boundaries without strong allowed-edit narrowing.")
+    cod.add_argument("--no-save", action="store_true", help="Do not write .premode packet, audit, metrics, or default final-output artifacts.")
 
 
     review = sub.add_parser("review-patch")
     review.add_argument("--against", default="main", help="Base ref to compare against. Defaults to main.")
     review.add_argument("--packet", default=None, help="Saved packet JSON path. Defaults to .premode/out/last_packet.json.")
-    review.add_argument("--claims", default=None, help="Optional agent report/claims file to inspect for test evidence.")
+    review.add_argument("--claims", "--claims-file", dest="claims", default=None, help="Optional agent report/claims file to inspect for validation claims.")
     review.add_argument("--json", action="store_true")
     review.add_argument("--out", default=None, help="Write machine-readable review report JSON to this path.")
     review.add_argument("--since-compile", action="store_true", help="Compare against the git HEAD captured when the saved packet was compiled and ignore unchanged preexisting dirty/untracked files.")
 
     bench = sub.add_parser("benchmark")
     bench.add_argument("--repo", default=None, help="Repository to benchmark. Defaults to the current repo root.")
+    bench.add_argument("--fail-on-root-escalation", action="store_true")
     bench.add_argument("--prompts", default=None, help="JSON prompt suite. Accepts a list of strings or {prompts:[...]} with expected_files/expected_tests.")
     bench.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
     bench.add_argument("--no-repo-map", action="store_true", help="Disable repo-map impact hints during benchmark compiles.")
     bench.add_argument("--no-cache-optimized", action="store_true", help="Disable cache-aware Packet V3 benchmark compiles.")
     bench.add_argument("--packet-version", choices=["v2", "v3"], default=None)
+    bench.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only")
+    bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
+    bench.add_argument("--compile-modes", action="store_true", help="Include compile-only raw/v3 paths/v3 snippets/v2 mode comparisons.")
     bench.add_argument("--save-packets", action="store_true", help="Save last_packet artifacts while benchmarking. Off by default unless --include-review is used.")
     bench.add_argument("--include-review", action="store_true", help="Run review-patch after each compile to include pass/warning/blocked counts.")
     bench.add_argument("--against", default="main", help="Base ref for optional review-patch benchmark step.")
@@ -176,7 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    repo = find_repo_root(Path.cwd())
+    repo = _guarded_repo(Path.cwd())
 
     if args.command == "init":
         _print_json(init_project(repo))
@@ -196,26 +258,86 @@ def main(argv: list[str] | None = None) -> int:
         result = detect_projects(repo)
         _print_json(result)
         return 0
+    if args.command == "debug-env":
+        from . import compiler as compiler_module
+        from . import locator as locator_module
+
+        result = {
+            "premode_import_path": str(Path(__file__).resolve()),
+            "version": __version__,
+            "compiler_path": str(Path(compiler_module.__file__).resolve()),
+            "locator_path": str(Path(locator_module.__file__).resolve()),
+            "locator_integration_enabled": hasattr(compiler_module, "locate_files") and hasattr(locator_module, "locate_files"),
+            "dependency_proximity_enabled": hasattr(locator_module, "FileRelation"),
+            "context_constraints_available": False,
+            "package_root": str(Path(__file__).resolve().parents[2]),
+        }
+        try:
+            from . import context_constraints as context_constraints_module
+
+            result["context_constraints_available"] = True
+            result["context_constraints_path"] = str(Path(context_constraints_module.__file__).resolve())
+        except Exception as exc:
+            result["context_constraints_error"] = str(exc)
+        _print_json(result)
+        return 0
     if args.command == "index":
         _print_json(index_project(repo, args.profile))
         return 0
     if args.command == "inspect":
         _print_json(inspect_prompt(repo, args.prompt, args.profile))
         return 0
+    if args.command == "locate":
+        locate_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
+        located = locate_files(locate_repo, args.prompt, max_files=max(1, int(args.max_files or 8)))
+        primary_files = [_located_file_json(file) for file in located.primary_files]
+        support_files = [_located_file_json(file) for file in located.support_files]
+        verification_files = [_located_file_json(file) for file in located.verification_files]
+        if not args.no_snippets:
+            primary_with_snippets, _tokens = attach_snippets_to_files(
+                locate_repo,
+                located.primary_files,
+                prompt=args.prompt,
+                snippet_budget_tokens=args.snippet_budget_tokens,
+                max_files=args.max_files,
+            )
+            snippets_by_path = {item["path"]: item.get("snippets") or [] for item in primary_with_snippets}
+            for item in primary_files:
+                item["snippets"] = snippets_by_path.get(item["path"], [])
+        result = {
+            "prompt": args.prompt,
+            "primary_files": primary_files,
+            "support_files": support_files,
+            "verification_files": verification_files,
+            "confidence": located.confidence,
+            "ambiguity_reasons": list(located.ambiguity_reasons),
+            "search_terms_if_expanding": list(located.uncovered_prompt_terms),
+        }
+        if args.json:
+            _print_json(result)
+        else:
+            print("\n".join([file["path"] for file in primary_files]))
+        return 0
     if args.command == "compile":
+        compile_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         out = Path(args.out) if args.out else None
         json_out = Path(args.json_out) if args.json_out else None
+        packet_mode = "evidence_snippets" if args.evidence_snippets or args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only")
         result = compile_prompt(
-            repo,
+            compile_repo,
             args.prompt,
             args.profile,
             out_path=out,
             json_out_path=json_out,
             use_repo_map=args.use_repo_map,
             packet_version=args.packet_version,
+            packet_detail_mode=packet_mode,
+            snippet_budget_tokens=args.snippet_budget_tokens,
             cache_optimized=args.cache_optimized,
             context_only=args.context_only,
             save=args.save,
+            record_artifacts=not args.no_record,
+            include_packet_debug_metadata=args.include_packet_debug_metadata,
         )
         if args.json:
             _print_json({k: v for k, v in result.items() if k != "packet"})
@@ -262,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(lines))
         return 0
     if args.command == "codex":
+        launch_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         opts = CodexOptions(
             sandbox=args.sandbox,
             approval=args.approval,
@@ -282,9 +405,11 @@ def main(argv: list[str] | None = None) -> int:
             use_repo_map=not args.no_repo_map,
             cache_optimized=not args.no_cache_optimized,
             packet_version=args.packet_version,
-            save=True,
+            context_only=args.context_only,
+            save=not args.no_save,
+            record=not args.no_save,
         )
-        result = run_codex(repo, args.prompt, args.profile, opts)
+        result = run_codex(launch_repo, args.prompt, args.profile, opts)
         _print_json(result)
         return int(result.get("returncode", 0) or 0)
 
@@ -304,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if result.get("error") else 0
 
     if args.command == "benchmark":
-        bench_repo = find_repo_root(Path(args.repo).resolve()) if args.repo else repo
+        bench_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         result = run_benchmark(
             bench_repo,
             prompts_path=Path(args.prompts) if args.prompts else None,
@@ -312,6 +437,9 @@ def main(argv: list[str] | None = None) -> int:
             use_repo_map=not args.no_repo_map,
             cache_optimized=not args.no_cache_optimized,
             packet_version=args.packet_version,
+            packet_detail_mode="evidence_snippets" if args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only"),
+            snippet_budget_tokens=args.snippet_budget_tokens,
+            compile_modes=args.compile_modes,
             save_packets=args.save_packets,
             include_review=args.include_review,
             review_against=args.against,
@@ -381,6 +509,6 @@ def pcodex_main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if "--dry-run" not in argv and "--execute" not in argv:
         argv.append("--execute")
-    if "--output-last-message" not in argv:
+    if "--output-last-message" not in argv and "--no-save" not in argv:
         argv.extend(["--output-last-message", ".premode/out/final.md"])
     return main(["codex", *argv])

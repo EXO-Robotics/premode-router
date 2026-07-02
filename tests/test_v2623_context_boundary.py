@@ -7,6 +7,7 @@ from pathlib import Path
 from premode.cli import build_parser, main
 from premode.compiler import compile_prompt
 from premode.config import init_project
+from premode.codex_exec import CodexOptions, run_codex
 from premode.indexer import index_project
 from premode.review_patch import format_review_report, review_patch
 
@@ -121,6 +122,55 @@ def test_cli_context_only_and_experimental_help(repo: Path, monkeypatch, capsys)
 
     help_text = build_parser().format_help()
     assert "Experimental/deferred surface" in help_text
+
+
+def test_context_only_compile_no_record_avoids_premode_writes(tmp_path: Path) -> None:
+    repo = tmp_path
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+    _git(repo, "add", "src/app.py")
+    _git(repo, "commit", "-m", "baseline")
+
+    result = compile_prompt(
+        repo,
+        "Fix src/app.py without touching Docs or .premode.",
+        "lite",
+        use_repo_map=True,
+        cache_optimized=True,
+        context_only=True,
+        record_artifacts=False,
+    )
+
+    assert result["context_boundary_mode"] == "context_only"
+    assert result["audit_path"] is None
+    assert not (repo / ".premode").exists()
+
+
+def test_codex_context_only_no_save_dry_run_avoids_premode_writes(tmp_path: Path) -> None:
+    repo = tmp_path
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.com")
+    _git(repo, "config", "user.name", "Test User")
+    _git(repo, "add", "src/app.py")
+    _git(repo, "commit", "-m", "baseline")
+
+    dry = run_codex(
+        repo,
+        "Fix src/app.py without touching .premode.",
+        "lite",
+        CodexOptions(dry_run=True, context_only=True, save=False, record=False),
+    )
+
+    assert dry["compile_settings"]["context_only"] is True
+    assert dry["compile_settings"]["save"] is False
+    assert dry["compile_settings"]["record"] is False
+    assert dry["saved_artifacts"] is None
+    assert not (repo / ".premode").exists()
 
 
 def test_release_manifest_excludes_runtime_outputs() -> None:

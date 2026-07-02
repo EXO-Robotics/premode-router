@@ -26,7 +26,7 @@ Codex CLI is the first supported runtime through `pcodex`, but the packet/review
 
 ## Current version
 
-`v0.2.6.23 — Context Compiler Boundary`
+`v0.2.6.24 — Data Packet Boundary`
 
 This build tightens the product boundary:
 
@@ -217,3 +217,7 @@ CHANGELOG.md
 FINAL_PACKAGE_INDEX.md
 CODEX_ONE_SHOT_PROMPT_v2.7.0.md
 ```
+
+## License
+
+This project is proprietary and all rights are reserved. Access to the repository does not grant permission to use, copy, modify, distribute, commercialize, or sublicense the software. Permission must be requested from Blake Grove.

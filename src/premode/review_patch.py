@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import re
@@ -47,8 +48,15 @@ DOC_PATH_PATTERNS = [
 ]
 
 TEST_CLAIM_RE = re.compile(
-    r"(?i)(python\s+-m\s+pytest\b|\bpytest\b|\bnpm\s+test\b|\bpnpm\s+test\b|\byarn\s+test\b|\bbun\s+test\b|\bcargo\s+test\b|\bgo\s+test\b|\bxcodebuild(?:\s+test)?\b|\bswift\s+test\b|tests? passed|test suite passed|xcodebuild succeeded|\bpassed\b)"
+    r"(?i)(python(?:3)?\s+-m\s+pytest\b|python(?:3)?\s+tests?/[^\n.;]+|python(?:3)?\s+-m\s+py_compile\b|git\s+diff\s+--check\b|\bpytest\b|\bnpm\s+test\b|\bpnpm\s+test\b|\byarn\s+test\b|\bbun\s+test\b|\bcargo\s+test\b|\bgo\s+test\b|\bxcodebuild(?:\s+test)?\b|\bswift\s+test\b|\bswiftc\s+-parse\b|tests? passed|test suite passed|xcodebuild succeeded|\bpassed\b)"
 )
+COMMAND_LIKE_CLAIM_RE = re.compile(
+    r"(?im)^\s*(?P<command>(?:python3?|pytest|npm|pnpm|yarn|bun|cargo|go|swift|swiftc|xcodebuild|git)\b[^\n]*?)(?:\s+with\s+(?P<result>[^\n]+))?\s*$"
+)
+SPECIFIC_RESULT_RE = re.compile(
+    r"(?i)(\bpass\b|\b[1-9][0-9]*\s+passed\b|\b[0-9]+/[0-9]+\b.*\bpassed\b|\b0\s+failed\b|\bsucceeded\b|\bsuccess\b|exit code\s*[:=]?\s*0|no changes|clean)"
+)
+VAGUE_VALIDATION_CLAIM_RE = re.compile(r"(?i)^\s*(tests? passed|validated everything|looks good|all good|checks passed)\s*\.?\s*$")
 # Evidence parsing is deliberately numeric where possible. Many real test
 # runners print phrases like "10 passed, 0 failed"; a broad "failed" regex
 # would incorrectly block a passing patch.
@@ -110,6 +118,24 @@ def _dedupe(items: list[str]) -> list[str]:
             out.append(text)
             seen.add(key)
     return out
+
+
+def _path_list(items: Any) -> list[str]:
+    paths: list[str] = []
+    for item in items or []:
+        if isinstance(item, dict):
+            path = item.get("path")
+        elif isinstance(item, str) and item.lstrip().startswith("{"):
+            try:
+                parsed = ast.literal_eval(item)
+            except (SyntaxError, ValueError):
+                parsed = None
+            path = parsed.get("path") if isinstance(parsed, dict) else item
+        else:
+            path = item
+        if path:
+            paths.append(str(path))
+    return _dedupe(paths)
 
 
 def _parse_name_status(text: str) -> list[ChangedFile]:
@@ -220,11 +246,33 @@ def _load_json(path: Path) -> dict[str, Any]:
 def _extract_review_contract(packet: dict[str, Any]) -> dict[str, Any]:
     contract = packet.get("review_contract")
     if isinstance(contract, dict) and contract:
-        return dict(contract)
+        out = dict(contract)
+        out["candidate_edit_files"] = _path_list(out.get("candidate_edit_files") or out.get("allowed_edit_files") or [])
+        out["allowed_edit_files"] = _path_list(out.get("allowed_edit_files") or out.get("candidate_edit_files") or [])
+        out["support_files"] = _path_list(out.get("support_files") or out.get("read_only_support_files") or [])
+        out["read_only_support_files"] = _path_list(out.get("read_only_support_files") or out.get("support_files") or [])
+        out["promoted_support_candidate_files"] = _path_list(out.get("promoted_support_candidate_files") or [])
+        if out["promoted_support_candidate_files"]:
+            out["candidate_edit_files"] = _dedupe(list(out.get("candidate_edit_files") or []) + out["promoted_support_candidate_files"])
+            out["allowed_edit_files"] = _dedupe(list(out.get("allowed_edit_files") or []) + out["promoted_support_candidate_files"])
+        out["verification_files"] = _path_list(out.get("verification_files") or out.get("suggested_tests") or [])
+        out["verification_edit_files"] = _path_list(out.get("verification_edit_files") or [])
+        packet_files = _path_list(out.get("packet_files") or [])
+        out["packet_files"] = packet_files or _dedupe(
+            list(out.get("candidate_edit_files") or [])
+            + list(out.get("support_files") or [])
+            + list(out.get("verification_files") or [])
+        )
+        return out
     boundary = packet.get("patch_boundary") if isinstance(packet.get("patch_boundary"), dict) else {}
     control = boundary.get("control_plane_boundary") if isinstance(boundary.get("control_plane_boundary"), dict) else {}
     metrics = packet.get("metrics") if isinstance(packet.get("metrics"), dict) else {}
-    candidate_files = packet.get("candidate_edit_files") or boundary.get("candidate_edit_files") or boundary.get("allowed_edit_files") or control.get("allowed_source_edits") or []
+    candidate_files = _path_list(packet.get("candidate_edit_files") or boundary.get("candidate_edit_files") or boundary.get("allowed_edit_files") or control.get("allowed_source_edits") or [])
+    promoted_support = _path_list(packet.get("promoted_support_candidate_files") or [])
+    candidate_files = _dedupe(candidate_files + promoted_support)
+    support_files = _path_list(packet.get("support_files") or packet.get("read_only_support_files") or boundary.get("support_files") or boundary.get("read_only_support_files") or boundary.get("read_only_context_files") or [])
+    verification_files = _path_list(packet.get("verification_files") or packet.get("suggested_tests") or packet.get("related_tests") or [])
+    verification_edit_files = _path_list(packet.get("verification_edit_files") or [])
     safety_blocked = (
         packet.get("safety_blocked_files")
         or boundary.get("safety_blocked_files")
@@ -235,6 +283,13 @@ def _extract_review_contract(packet: dict[str, Any]) -> dict[str, Any]:
         "raw_prompt_sha256": packet.get("raw_prompt_sha256"),
         "candidate_edit_files": candidate_files,
         "allowed_edit_files": candidate_files,
+        "support_files": support_files,
+        "read_only_support_files": support_files,
+        "promoted_support_candidate_files": promoted_support,
+        "promotion_reasons": packet.get("promotion_reasons") or {},
+        "verification_files": verification_files,
+        "verification_edit_files": verification_edit_files,
+        "packet_files": _dedupe(list(candidate_files or []) + list(support_files or []) + list(verification_files or [])),
         "allowed_if_justified": (boundary.get("allowed_if_justified") or []) + (control.get("allowed_config_if_justified") or []),
         "safety_blocked_files": safety_blocked,
         "forbidden_without_user_confirmation": safety_blocked,
@@ -288,6 +343,78 @@ def _claim_commands_from_text(text: str) -> list[str]:
     return _dedupe(claims)
 
 
+def _parse_validation_claims(text: str, *, source: str = "claims_file") -> tuple[list[dict[str, Any]], list[str]]:
+    structured = _parse_structured_validation_claims(text, source=source)
+    if structured is not None:
+        return structured
+    evidence: list[dict[str, Any]] = []
+    vague: list[str] = []
+    for raw_line in (text or "").splitlines():
+        line = raw_line.strip().strip("-* ")
+        if not line:
+            continue
+        if VAGUE_VALIDATION_CLAIM_RE.match(line):
+            vague.append(line)
+            continue
+        match = COMMAND_LIKE_CLAIM_RE.match(line)
+        if not match:
+            continue
+        command = (match.group("command") or "").strip()
+        claimed_result = (match.group("result") or "").strip()
+        if " with " in command and not claimed_result:
+            command, claimed_result = command.split(" with ", 1)
+            command = command.strip()
+            claimed_result = claimed_result.strip()
+        command = command.rstrip(".")
+        claimed_result = claimed_result.rstrip(".")
+        if not command:
+            continue
+        evidence.append({
+            "source": source,
+            "command": command,
+            "claimed_result": claimed_result or None,
+            "trusted_as_execution_proof": False,
+        })
+    return evidence, _dedupe(vague)
+
+
+def _parse_structured_validation_claims(text: str, *, source: str = "claims_file") -> tuple[list[dict[str, Any]], list[str]] | None:
+    try:
+        payload = json.loads(text or "")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    raw_claims = payload.get("claims")
+    if not isinstance(raw_claims, list):
+        return None
+    default_source = str(payload.get("source") or source)
+    evidence: list[dict[str, Any]] = []
+    vague: list[str] = []
+    for item in raw_claims:
+        if not isinstance(item, dict):
+            continue
+        command = str(item.get("command") or "").strip().rstrip(".")
+        claimed_result = str(item.get("claimed_result") or "").strip().rstrip(".")
+        if not command:
+            text_claim = claimed_result or str(item.get("claim") or "").strip()
+            if text_claim and VAGUE_VALIDATION_CLAIM_RE.match(text_claim):
+                vague.append(text_claim)
+            continue
+        if VAGUE_VALIDATION_CLAIM_RE.match(command) and not COMMAND_LIKE_CLAIM_RE.match(command):
+            vague.append(command)
+            continue
+        if not COMMAND_LIKE_CLAIM_RE.match(command):
+            continue
+        evidence.append({
+            "source": str(item.get("source") or default_source),
+            "command": command,
+            "claimed_result": claimed_result or None,
+            "trusted_as_execution_proof": bool(item.get("trusted_as_execution_proof") is True),
+        })
+    return evidence, _dedupe(vague)
+
+
 def _evidence_result(text: str) -> str:
     """Return failed|passed|none for a test/log body without false-failing on `0 failed`."""
     body = text or ""
@@ -324,6 +451,8 @@ def _verification(repo_root: Path, contract: dict[str, Any], claims_path: Path |
     expected = _dedupe([str(x) for x in (contract.get("expected_verification") or []) if x])
     packet_sha = str(contract.get("packet_sha256") or "").strip() or None
     claims: list[str] = []
+    validation_evidence: list[dict[str, Any]] = []
+    vague_validation_claims: list[str] = []
     evidence_sources: list[str] = []
     failed_sources: list[str] = []
     unbound_sources: list[str] = []
@@ -331,8 +460,14 @@ def _verification(repo_root: Path, contract: dict[str, Any], claims_path: Path |
     if claims_path:
         claims_abs = claims_path if claims_path.is_absolute() else repo_root / claims_path
         text = _read_text_maybe(claims_abs)
+        parsed_evidence, parsed_vague = _parse_validation_claims(text)
+        validation_evidence.extend(parsed_evidence)
+        vague_validation_claims.extend(parsed_vague)
+        claims.extend([item["command"] for item in parsed_evidence if item.get("command")])
         claims.extend(_claim_commands_from_text(text))
         result = _evidence_result(text)
+        if result == "none" and any(_is_specific_validation_evidence_claim(item) for item in parsed_evidence):
+            result = "passed"
         # A user-supplied claims file is explicit review input, so it can act as
         # evidence even without packet binding. Automatic log discovery below is
         # stricter and requires packet_sha256 binding.
@@ -381,6 +516,8 @@ def _verification(repo_root: Path, contract: dict[str, Any], claims_path: Path |
     return {
         "expected_commands": expected,
         "tests_claimed": claims,
+        "validation_evidence": validation_evidence,
+        "vague_validation_claims": vague_validation_claims,
         "test_evidence_found": bool(evidence_sources) and not failed_sources,
         "test_evidence_sources": evidence_sources,
         "failed_test_evidence_sources": failed_sources,
@@ -388,6 +525,14 @@ def _verification(repo_root: Path, contract: dict[str, Any], claims_path: Path |
         "evidence_binding": "packet_sha256" if packet_sha else "unavailable",
         "verification_status": status,
     }
+
+
+def _is_specific_validation_evidence_claim(item: dict[str, Any]) -> bool:
+    command = str(item.get("command") or "")
+    claimed_result = str(item.get("claimed_result") or "")
+    if not claimed_result or not SPECIFIC_RESULT_RE.search(claimed_result):
+        return False
+    return bool(TEST_CLAIM_RE.search(command))
 
 
 def _file_sha256(repo_root: Path, rel_path: str) -> str | None:
@@ -488,7 +633,16 @@ def _items_to_status(items: list[ChangedFile]) -> list[dict[str, Any]]:
     return [{"status": item.status, "path": item.path, **({"old_path": item.old_path} if item.old_path else {})} for item in items]
 
 def classify_changed_files(changed_paths: list[str], contract: dict[str, Any]) -> dict[str, list[str]]:
-    allowed_patterns = list(contract.get("allowed_edit_files") or [])
+    candidate_patterns = _path_list(contract.get("candidate_edit_files") or contract.get("allowed_edit_files") or [])
+    promoted_patterns = _path_list(contract.get("promoted_support_candidate_files") or [])
+    candidate_patterns = _dedupe(candidate_patterns + promoted_patterns)
+    allowed_patterns = candidate_patterns
+    support_patterns = _path_list(contract.get("support_files") or contract.get("read_only_support_files") or [])
+    verification_patterns = _path_list(contract.get("verification_files") or contract.get("suggested_tests") or [])
+    verification_edit_patterns = _path_list(contract.get("verification_edit_files") or [])
+    packet_patterns = _path_list(contract.get("packet_files") or [])
+    if not packet_patterns:
+        packet_patterns = _dedupe(candidate_patterns + support_patterns + verification_patterns)
     allowed_if_patterns = list(contract.get("allowed_if_justified") or [])
     forbidden_patterns = list(contract.get("forbidden_without_user_confirmation") or [])
     prompt_forbidden_patterns = list(contract.get("prompt_forbidden_files") or [])
@@ -499,6 +653,12 @@ def classify_changed_files(changed_paths: list[str], contract: dict[str, Any]) -
 
     out: dict[str, list[str]] = {
         "allowed_files_changed": [],
+        "candidate_edit_files_changed": [],
+        "promoted_support_candidate_files_changed": [],
+        "verification_edit_files_changed": [],
+        "support_files_changed": [],
+        "packet_non_edit_files_changed": [],
+        "outside_packet_files_changed": [],
         "allowed_if_justified_changed": [],
         "unexpected_files_changed": [],
         "forbidden_files_touched": [],
@@ -528,15 +688,40 @@ def classify_changed_files(changed_paths: list[str], contract: dict[str, Any]) -
         if _matches(path, TEST_PATH_PATTERNS):
             out["tests_changed"].append(path)
 
-        if _matches(path, allowed_patterns):
+        in_candidate = _matches(path, candidate_patterns)
+        in_promoted = _matches(path, promoted_patterns)
+        in_verification_edit = _matches(path, verification_edit_patterns)
+        in_support = _matches(path, support_patterns)
+        in_packet = _matches(path, packet_patterns)
+
+        if in_candidate:
             out["allowed_files_changed"].append(path)
+            out["candidate_edit_files_changed"].append(path)
+        if in_promoted:
+            out["promoted_support_candidate_files_changed"].append(path)
+        if in_verification_edit:
+            out["verification_edit_files_changed"].append(path)
+        if in_candidate or in_verification_edit:
+            continue
+        if in_support:
+            out["support_files_changed"].append(path)
+            out["unexpected_files_changed"].append(path)
+        elif in_packet:
+            out["packet_non_edit_files_changed"].append(path)
+            out["unexpected_files_changed"].append(path)
         elif _matches(path, allowed_if_patterns):
             out["allowed_if_justified_changed"].append(path)
         elif not any(path in out[key] for key in ["forbidden_files_touched", "prompt_forbidden_files_touched", "secret_like_paths_touched", "generated_or_state_mutation"]):
+            out["outside_packet_files_changed"].append(path)
             out["unexpected_files_changed"].append(path)
 
     classified = {k: _dedupe(v) for k, v in out.items()}
     classified["changed_candidate_files"] = list(classified.get("allowed_files_changed") or [])
+    classified["changed_promoted_support_candidate_files"] = list(classified.get("promoted_support_candidate_files_changed") or [])
+    classified["changed_verification_edit_files"] = list(classified.get("verification_edit_files_changed") or [])
+    classified["changed_support_files"] = list(classified.get("support_files_changed") or [])
+    classified["changed_packet_non_edit_files"] = list(classified.get("packet_non_edit_files_changed") or [])
+    classified["changed_outside_packet_files"] = list(classified.get("outside_packet_files_changed") or [])
     classified["changed_unlisted_files"] = list(classified.get("unexpected_files_changed") or [])
     classified["changed_safety_blocked_files"] = _dedupe(
         list(classified.get("forbidden_files_touched") or [])
@@ -563,8 +748,24 @@ def _split_findings(classified: dict[str, list[str]], verification: dict[str, An
         warning.append(f"{path} changed; dependency/build changes require review.")
     for path in classified.get("ci_files_changed", []):
         warning.append(f"{path} changed; CI workflow changes require review.")
+    for path in classified.get("promoted_support_candidate_files_changed", []):
+        info.append(f"{path} changed as a promoted support candidate within the saved context contract.")
+    for path in classified.get("verification_edit_files_changed", []):
+        info.append(f"{path} changed as verification evidence coverage within the saved context contract.")
+    for path in classified.get("support_files_changed", []):
+        warning.append(f"{path} changed in support/reference context rather than candidate edit files.")
+    for path in classified.get("packet_non_edit_files_changed", []):
+        warning.append(f"{path} changed inside the packet context but outside candidate or verification edit files.")
+    for path in classified.get("outside_packet_files_changed", []):
+        warning.append(f"{path} changed outside the saved packet context and outside the saved context contract.")
+    legacy_unexpected = set(
+        classified.get("support_files_changed", [])
+        + classified.get("packet_non_edit_files_changed", [])
+        + classified.get("outside_packet_files_changed", [])
+    )
     for path in classified.get("unexpected_files_changed", []):
-        warning.append(f"{path} changed outside the saved context contract.")
+        if path not in legacy_unexpected:
+            warning.append(f"{path} changed outside the saved context contract.")
     status = verification.get("verification_status")
     if status == "claimed_without_evidence":
         warning.append("Tests were claimed but no supporting evidence was found.")
@@ -729,6 +930,8 @@ def review_patch(
         **classified,
         "scope_compliance": "pass",
         "verification": verification,
+        "validation_evidence": verification.get("validation_evidence") or [],
+        "vague_validation_claims": verification.get("vague_validation_claims") or [],
         "blocking_findings": finding_groups["blocking_findings"],
         "warning_findings": finding_groups["warning_findings"],
         "info_findings": finding_groups["info_findings"],
@@ -762,6 +965,11 @@ def format_review_report(report: dict[str, Any]) -> str:
         f"Changed files: {len(report.get('changed_files') or [])}",
         f"Preexisting ignored: {len(report.get('preexisting_changes') or [])}",
         f"Changed candidate files: {len(report.get('changed_candidate_files') or [])}",
+        f"Changed promoted support candidate files: {len(report.get('changed_promoted_support_candidate_files') or [])}",
+        f"Changed verification edit files: {len(report.get('changed_verification_edit_files') or [])}",
+        f"Changed support files: {len(report.get('changed_support_files') or [])}",
+        f"Changed packet non-edit files: {len(report.get('changed_packet_non_edit_files') or [])}",
+        f"Changed outside-packet files: {len(report.get('changed_outside_packet_files') or [])}",
         f"Changed unlisted files: {len(report.get('changed_unlisted_files') or [])}",
         f"Changed safety-blocked files: {len(report.get('changed_safety_blocked_files') or [])}",
         f"Changed prompt-forbidden files: {len(report.get('changed_prompt_forbidden_files') or [])}",

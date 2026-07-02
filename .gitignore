@@ -1,11 +1,42 @@
+# Python
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.coverage
+htmlcov/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Env/secrets
+.env
+.env.*
+*.pem
+*.key
+*credentials*
+*secret*
+*token*
+
+# Pre-mode generated outputs
 .premode/out/
 .premode/audit/
 .premode/metrics/
 .premode/index/
-.DS_Store
+*.jsonl
+
+# Lab/temp artifacts
+/private/tmp/
+tmp/
+temp/
+worktrees/
+live_logs/
+claims/
+review/
+stdin_snapshots/
+prompt_reconstructions/
+counterfactual_compile/

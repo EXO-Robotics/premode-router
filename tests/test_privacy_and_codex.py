@@ -43,12 +43,12 @@ def test_secret_sentinel_privacy_dry_run(repo):
     assert "raw_prompt_sha256" in audit_text
 
 
-def test_compile_packet_sanitizes_sentinel(repo):
+def test_compile_packet_preserves_canonical_prompt(repo):
     init_project(repo)
     index_project(repo, "lite")
     compiled = compile_prompt(repo, SENTINEL_PROMPT, "lite")
-    assert "SECRET_SENTINEL_RAW_PROMPT_12345" not in compiled["packet"]
-    assert "[REDACTED" in compiled["packet"]
+    assert SENTINEL_PROMPT in compiled["packet"]
+    assert "The exact user prompt below is the canonical task instruction" in compiled["packet"]
 
 
 def test_execute_uses_compiled_packet_stdin(monkeypatch, repo):
@@ -71,5 +71,6 @@ def test_execute_uses_compiled_packet_stdin(monkeypatch, repo):
     assert captured["args"][-1] == "-"
     assert SENTINEL_PROMPT not in captured["args"]
     assert captured["input"] != SENTINEL_PROMPT
-    assert "SECRET_SENTINEL_RAW_PROMPT_12345" not in captured["input"]
+    assert SENTINEL_PROMPT in captured["input"]
+    assert "The exact user prompt below is the canonical task instruction" in captured["input"]
     assert "PREMODE_COMPILED_PACKET_V3" in captured["input"]

@@ -26,18 +26,17 @@ def test_v3_packet_cache_aware_order_and_metrics(repo):
     assert packet.startswith("PREMODE_COMPILED_PACKET_V3")
     assert "## CACHEABLE PREFIX" in packet
     assert "## 1. Packet schema/version" in packet
-    assert "## 3. Stable output contract" in packet
-    assert "## 7. Stable repo map summary" in packet
+    assert "## 2. Stable agent contract" in packet
     assert "## DYNAMIC SUFFIX" in packet
-    assert "## 10. User task" in packet
-    assert packet.index("## 1. Packet schema/version") < packet.index("## 10. User task")
-    assert packet.index("## 7. Stable repo map summary") < packet.index("## 10. User task")
-    assert packet.index("sanitized_user_intent") > packet.index("## DYNAMIC SUFFIX")
+    assert "## 10. CANONICAL USER PROMPT" in packet
+    assert "## 11. Candidate Files" in packet
+    assert "## 12. Do-Not-Edit Paths" in packet
+    assert "## 13. Discovered Commands" in packet
+    assert packet.index("## 1. Packet schema/version") < packet.index("## 10. CANONICAL USER PROMPT")
+    assert "Fix src/worker.py without touching pyproject.toml" in packet
     assert packet.index("raw_prompt_sha256") > packet.index("## DYNAMIC SUFFIX")
-    assert packet[:4096].find("sanitized_user_intent") == -1
-    assert packet[:4096].find("raw_prompt_sha256") == -1
     assert result["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
-    assert result["cacheable_prefix_tokens"] >= 1024
+    assert 0 < result["cacheable_prefix_tokens"] < 1024
     assert result["dynamic_suffix_tokens"] > 0
     assert result["cacheable_prefix_sha256"]
     assert result["dynamic_suffix_sha256"]
@@ -86,7 +85,7 @@ def test_cli_flags_select_v3_and_save(monkeypatch, capsys, repo):
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
-    assert payload["cacheable_prefix_tokens"] >= 1024
+    assert 0 < payload["cacheable_prefix_tokens"] < 1024
     assert (repo / ".premode" / "out" / "last_packet.md").exists()
 
 

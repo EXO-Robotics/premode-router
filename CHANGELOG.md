@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6.24
+
+- Reframed compiled packets as data packets around the exact canonical user prompt.
+- Removed model-facing planner layers from rendered packets while keeping compatibility JSON fields stable.
+- Preserved safety boundaries, candidate context, discovered command evidence, and review-contract drift checks.
+- Bumped package version to `0.2.6.24`.
+
 ## v0.2.6.23
 
 - Tightened the product boundary: Pre-mode is documented as a context compiler/routing formatter, not a local reasoning engine or implementation planner.

@@ -1,22 +1,82 @@
 {
   "prompts": [
     {
-      "name": "focused_bugfix",
-      "prompt": "Fix the failing test with the smallest safe source change.",
-      "expected_files": [],
-      "expected_tests": []
+      "name": "cli_help",
+      "category": "cli_help",
+      "prompt": "Update the benchmark CLI help text for --packet-mode without changing compile behavior.",
+      "expected_files": ["src/premode/cli.py"],
+      "expected_tests": ["tests/test_v267_codex_cli_compat.py"]
     },
     {
-      "name": "docs_quickstart",
-      "prompt": "Update the README quickstart without changing source code.",
-      "expected_files": [],
-      "expected_tests": []
+      "name": "behavior_bug",
+      "category": "behavior_bug",
+      "prompt": "Fix a benchmark report bug where expectation failures are hidden from the summary.",
+      "expected_files": ["src/premode/benchmark.py"],
+      "expected_tests": ["tests/test_v263_benchmark.py"]
     },
     {
-      "name": "scope_guarded_patch",
-      "prompt": "Fix the CLI validation without touching dependency, CI, generated, or secret-like files.",
-      "expected_files": [],
-      "expected_tests": []
+      "name": "docs_only",
+      "category": "docs_only",
+      "prompt": "Update the benchmark guide to document expectation hit-rate warnings without changing runtime source.",
+      "expected_files": ["docs/BENCHMARK.md"],
+      "expected_tests": ["tests/test_v263_benchmark.py"]
+    },
+    {
+      "name": "test_only",
+      "category": "test_only",
+      "prompt": "Add a focused regression test for benchmark expectation validation without changing production code.",
+      "expected_files": ["tests/test_v263_benchmark.py"],
+      "expected_tests": ["tests/test_v263_benchmark.py"]
+    },
+    {
+      "name": "config",
+      "category": "config",
+      "prompt": "Adjust Python package metadata for the benchmark command while keeping source behavior unchanged.",
+      "expected_files": ["pyproject.toml"],
+      "expected_tests": ["tests/test_package_layout.py"]
+    },
+    {
+      "name": "ci_workflow",
+      "category": "ci_workflow",
+      "prompt": "Tighten the local smoke validation workflow so benchmark regressions are caught in CI-style checks.",
+      "expected_files": ["scripts/smoke_test.sh"],
+      "expected_tests": ["tests/test_v266_local_validation.py"]
+    },
+    {
+      "name": "migration_refactor",
+      "category": "migration_refactor",
+      "prompt": "Refactor repo-map benchmark candidate ranking during a migration without changing public CLI flags.",
+      "expected_files": ["src/premode/repo_map.py"],
+      "expected_tests": ["tests/test_v250_repo_map.py"]
+    },
+    {
+      "name": "swiftui_like_fixture",
+      "category": "swiftui_like_fixture",
+      "prompt": "In a SwiftUI-like app, recover source candidates for Views and ViewModels while keeping docs as support context.",
+      "expected_files": ["src/premode/compiler.py", "src/premode/repo_map.py"],
+      "expected_tests": ["tests/test_v2615_swift_source_recovery.py"]
+    },
+    {
+      "name": "robotriage_like_diagnostic_tooling",
+      "category": "robotriage_like_diagnostic_tooling",
+      "prompt": "For a RoboTriage-like diagnostic replay tool, improve log parsing and review-patch evidence reporting without touching private repos.",
+      "expected_files": ["src/premode/log_scanner.py", "src/premode/review_patch.py"],
+      "expected_tests": ["tests/test_v260_review_patch.py"]
+    },
+    {
+      "name": "typo_vague_prompt",
+      "category": "typo_vague_prompt",
+      "prompt": "Fix the benchmak docs typo and add the smallest local validation coverage.",
+      "expected_files": ["README.md"],
+      "expected_tests": ["tests/test_v266_local_validation.py"]
+    },
+    {
+      "name": "docs_heavy_repo_source_prompt",
+      "category": "docs_heavy_repo_prompt",
+      "prompt": "In a docs-heavy SwiftUI-style repo, fix source recovery so Docs files remain support context and are not primary edit files.",
+      "expected_files": ["src/premode/compiler.py", "src/premode/repo_map.py"],
+      "expected_tests": ["tests/test_v2615_swift_source_recovery.py"],
+      "forbidden_primary_files": ["docs/*.md", "README.md"]
     }
   ]
 }

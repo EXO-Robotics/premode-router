@@ -59,6 +59,7 @@ def summarize_savings(repo_root: Path, limit: int = 30) -> dict[str, Any]:
         "runs": len(rows),
         "eligible_readable_repo_tokens": eligible,
         "packet_total_tokens": packet,
+        "full_repo_reduction_percent": savings,
         "estimated_savings_vs_eligible_repo_percent": savings,
         "full_text_tokens": full_text_tokens,
         "summary_tokens": summary_tokens,
@@ -69,5 +70,5 @@ def summarize_savings(repo_root: Path, limit: int = 30) -> dict[str, Any]:
         "redaction_count": redactions,
         "most_common_intent": max(intents.items(), key=lambda kv: kv[1])[0] if intents else None,
         "ledger": str(ledger_path(repo_root)),
-        "note": "Aggregated savings compare packet tokens against eligible readable repository tokens. Use `premode stats --last` for the cleanest per-run view.",
+        "note": "Aggregated full-repo reduction compares packet tokens against eligible readable repository tokens. It is not a live Codex savings measurement. Use `premode stats --last` for the cleanest per-run view.",
     }
