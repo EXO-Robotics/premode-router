@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "premode-plugin-literal-symbol"
+version = "0.1.0"
+description = "Private Pre-mode plugin for the literal-symbol V5 anchor strategy."
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{name = "Pre-mode Router"}]
+license = {text = "Proprietary / All Rights Reserved"}
+dependencies = []
+
+[project.entry-points."premode.plugins"]
+literal_symbol = "premode_plugin_literal_symbol.plugin:get_plugin"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
