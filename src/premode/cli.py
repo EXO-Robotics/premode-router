@@ -24,6 +24,7 @@ from .repo_map import build_repo_map, compact_repo_map_summary, estimate_repo_ma
 from .review_patch import review_patch, format_review_report
 from .benchmark import run_benchmark, format_benchmark_report
 from .launch_safety import RootGuardError, resolve_cli_repo
+from .plugins import PluginAliasError, apply_packet_plugin
 
 
 def _print_json(obj) -> None:
@@ -127,6 +128,7 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--json", action="store_true")
     comp.add_argument("--show-raw", action="store_true")
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
+    comp.add_argument("--plugin", default=None, help="Resolve packet options from an installed Pre-mode plugin alias.")
     comp.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help="Compiled packet renderer version. v5 is ranked context only.")
     v5_variants = ["ranked_paths", "ranked_snippets", "primary_tests_only", "top1_plus_tests", "ranked_paths_plus_anchors", "ranked_paths_selective_snippets", "ranked_paths_no_support", "ranked_paths_tests_first", "ranked_paths_top1", "tool_assisted_backbone", "tool_assisted_backbone_no_task_class", "tool_assisted_backbone_no_relations", "tool_assisted_anchors_internal"]
     anchor_strategies = [
@@ -210,6 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
     bench.add_argument("--no-repo-map", action="store_true", help="Disable repo-map impact hints during benchmark compiles.")
     bench.add_argument("--no-cache-optimized", action="store_true", help="Disable cache-aware Packet V3 benchmark compiles.")
+    bench.add_argument("--plugin", default=None, help="Resolve packet options from an installed Pre-mode plugin alias.")
     bench.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None)
     bench.add_argument("--packet-variant", choices=v5_variants, default=None)
     bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
@@ -258,6 +261,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("mcp-server", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     return p
+
+
+def _apply_packet_plugin_or_exit(args: argparse.Namespace) -> dict[str, str | None] | None:
+    try:
+        packet_version, packet_variant, packet_strategy, resolution = apply_packet_plugin(
+            getattr(args, "plugin", None),
+            packet_version=getattr(args, "packet_version", None),
+            packet_variant=getattr(args, "packet_variant", None),
+            packet_strategy=getattr(args, "packet_strategy", None),
+        )
+    except PluginAliasError as exc:
+        print(f"premode: error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from exc
+    args.packet_version = packet_version
+    args.packet_variant = packet_variant
+    args.packet_strategy = packet_strategy
+    return resolution
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -346,6 +366,7 @@ def main(argv: list[str] | None = None) -> int:
         compile_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         out = Path(args.out) if args.out else None
         json_out = Path(args.json_out) if args.json_out else None
+        plugin_resolution = _apply_packet_plugin_or_exit(args)
         packet_mode = "evidence_snippets" if args.evidence_snippets or args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only")
         result = compile_prompt(
             compile_repo,
@@ -365,6 +386,8 @@ def main(argv: list[str] | None = None) -> int:
             record_artifacts=not args.no_record,
             include_packet_debug_metadata=args.include_packet_debug_metadata,
         )
+        if plugin_resolution:
+            result["plugin_alias_resolution"] = plugin_resolution
         if args.json:
             _print_json({k: v for k, v in result.items() if k != "packet"})
         elif out and json_out and not args.show_raw:
@@ -458,6 +481,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "benchmark":
         bench_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
+        plugin_resolution = _apply_packet_plugin_or_exit(args)
         result = run_benchmark(
             bench_repo,
             prompts_path=Path(args.prompts) if args.prompts else None,
@@ -476,6 +500,13 @@ def main(argv: list[str] | None = None) -> int:
             review_since_compile=args.since_compile,
             out_path=Path(args.out) if args.out else None,
         )
+        if plugin_resolution:
+            result["plugin_alias_resolution"] = plugin_resolution
+            if args.out:
+                out_abs = Path(args.out)
+                if not out_abs.is_absolute():
+                    out_abs = bench_repo / out_abs
+                out_abs.write_text(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
         if args.json:
             _print_json(result)
         else:
