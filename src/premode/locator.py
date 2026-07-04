@@ -24,6 +24,11 @@ SURFACE_HINTS = {
     "dashboard", "documentation", "endpoint", "guide", "html", "readme",
     "route", "screen", "test", "view",
 }
+BOUNDED_SYNONYM_GROUPS = {
+    "auth": frozenset({"auth", "authentication", "authorization", "login", "credential", "token"}),
+    "docs": frozenset({"docs", "documentation", "guide", "quickstart", "usage", "tutorial"}),
+    "config": frozenset({"config", "configuration", "settings", "options", "metadata"}),
+}
 DOMAIN_TERMS = {
     "actuator", "button", "checkout", "config", "csv", "database", "endpoint",
     "behavior", "calculation", "classification", "classify", "compute",
@@ -376,6 +381,28 @@ def _important_terms(evidence: PromptEvidence) -> list[str]:
         and _normalize_term(term) not in NON_LOCATING_FILLER_TERMS
         and not is_scaffold_meta_term(term)
     ])
+
+
+def _prompt_synonym_terms(prompt: PromptEvidence) -> set[str]:
+    terms: set[str] = set()
+    terms.update(_normalize_term(term) for term in prompt.domain_terms)
+    terms.update(_normalize_term(term) for term in prompt.surface_hints)
+    terms.update(_normalize_term(term) for term in prompt.option_value_terms)
+    terms.update(_normalize_term(term) for term in prompt.symbols_or_entities)
+    for flag in prompt.option_flags:
+        terms.update(_split_identifier(flag))
+    for literal in prompt.quoted_literals:
+        terms.update(_split_identifier(literal))
+    return {term for term in terms if term}
+
+
+def _active_synonym_groups(prompt: PromptEvidence) -> dict[str, set[str]]:
+    prompt_terms = _prompt_synonym_terms(prompt)
+    return {
+        group: prompt_terms & set(group_terms)
+        for group, group_terms in BOUNDED_SYNONYM_GROUPS.items()
+        if prompt_terms & set(group_terms)
+    }
 
 
 def _edit_distance_limited(a: str, b: str, limit: int = 2) -> int:
@@ -939,6 +966,13 @@ def _has_high_value_signal(file: LocatedFile) -> bool:
     )
 
 
+def _has_bounded_synonym_identity_evidence(file: LocatedFile) -> bool:
+    return any(
+        signal.startswith(("bounded_synonym_path:", "bounded_synonym_symbol:"))
+        for signal in file.matched_signals
+    )
+
+
 def _content_signal_count(file: LocatedFile) -> int:
     return sum(
         1
@@ -1021,11 +1055,22 @@ def _is_generic_path(path: str) -> bool:
     }
 
 
+def _is_helperish_path(path: str) -> bool:
+    terms = _tokens_from_text(path)
+    return bool(terms & {"helper", "helpers", "util", "utils"})
+
+
+def _docs_synonym_requested(prompt: PromptEvidence) -> bool:
+    active = _active_synonym_groups(prompt).get("docs", set())
+    return bool(active & {"docs", "documentation", "guide", "quickstart", "tutorial"})
+
+
 def _docs_requested(prompt: PromptEvidence) -> bool:
     terms = (set(prompt.surface_hints) | set(prompt.domain_terms)) - set(prompt.negative_terms)
     raw = prompt.raw_prompt.lower()
     return bool(
         {"docs", "documentation", "readme", "troubleshooting", "instructions", "guide", "setup", "install"} & terms
+        or _docs_synonym_requested(prompt)
         or re.search(r"\b(?:getting started|new user|how to run|setup instructions|install instructions|clarify setup)\b", raw)
     )
 
@@ -1037,6 +1082,7 @@ def _docs_artifact_requested(prompt: PromptEvidence) -> bool:
     raw = prompt.raw_prompt.lower()
     return bool(
         {"docs", "documentation", "readme", "troubleshooting", "instructions", "guide", "setup", "install"} & terms
+        or _docs_synonym_requested(prompt)
         or re.search(r"\b(?:getting started|new user|how to run|setup instructions|install instructions|clarify setup)\b", raw)
     )
 
@@ -1062,7 +1108,8 @@ def _tests_forbidden_by_prompt(prompt: PromptEvidence) -> bool:
 
 def _config_requested(prompt: PromptEvidence) -> bool:
     terms = (set(prompt.surface_hints) | set(prompt.domain_terms) | {_normalize_term(symbol) for symbol in prompt.symbols_or_entities}) - set(prompt.negative_terms)
-    return bool({"build", "ci", "config", "console", "entry", "package", "packaging", "point", "script", "workflow"} & terms)
+    config_synonyms = _active_synonym_groups(prompt).get("config", set()) - {"options"}
+    return bool({"build", "ci", "config", "console", "entry", "package", "packaging", "point", "script", "workflow"} & terms or config_synonyms)
 
 
 def _cli_prompt_requested(prompt: PromptEvidence) -> bool:
@@ -1350,6 +1397,52 @@ def _score_option_value_evidence(file: _FileEvidence, prompt: PromptEvidence) ->
     return score, _dedupe(signals), covered, content_hits
 
 
+def _score_bounded_synonym_evidence(file: _FileEvidence, prompt: PromptEvidence) -> tuple[int, list[str], set[str]]:
+    active_groups = _active_synonym_groups(prompt)
+    if not active_groups:
+        return 0, [], set()
+
+    score = 0
+    signals: list[str] = []
+    covered: set[str] = set()
+
+    for group, prompt_terms in sorted(active_groups.items()):
+        if group == "docs":
+            if not _docs_synonym_requested(prompt) or not _is_docs_artifact_path(file):
+                continue
+        elif group == "config":
+            if not _config_requested(prompt) or file.role != "config":
+                continue
+        elif group == "auth":
+            if file.role in {"docs", "test"} or _is_helperish_path(file.path):
+                continue
+
+        group_terms = set(BOUNDED_SYNONYM_GROUPS[group])
+        path_hits = sorted(term for term in group_terms if _has_term(term, file.path_terms))
+        symbol_hits = sorted(term for term in group_terms if _has_term(term, file.symbol_terms))
+        content_hits = sorted(term for term in group_terms if _has_term(term, file.content_terms))
+        if group == "auth" and not (path_hits or symbol_hits):
+            continue
+        if not (path_hits or symbol_hits or content_hits):
+            continue
+
+        if path_hits:
+            score += 70
+            signals.append(f"bounded_synonym_path:{group}:{','.join(path_hits[:4])}")
+        if symbol_hits:
+            score += 64
+            signals.append(f"bounded_synonym_symbol:{group}:{','.join(symbol_hits[:4])}")
+        if content_hits and group in {"docs", "config"}:
+            score += min(54, 22 + (len(content_hits) * 12))
+            signals.append(f"bounded_synonym_content:{group}:{','.join(content_hits[:4])}")
+        elif content_hits and (path_hits or symbol_hits):
+            score += 12
+
+        covered.update(prompt_terms)
+
+    return score, _dedupe(signals), covered
+
+
 def _is_cli_entrypoint(file: _FileEvidence) -> bool:
     text = file.text
     lower_path = file.path.lower()
@@ -1630,6 +1723,12 @@ def _score_file(file: _FileEvidence, prompt: PromptEvidence) -> tuple[int, list[
         signals.extend(swift_signals)
         covered.update(swift_covered)
         content_hit_terms.update(swift_content_hits)
+
+    synonym_score, synonym_signals, synonym_covered = _score_bounded_synonym_evidence(file, prompt)
+    if synonym_score:
+        score += synonym_score
+        signals.extend(synonym_signals)
+        covered.update(synonym_covered)
 
     for term in prompt.domain_terms:
         if _has_term(term, file.content_terms):
@@ -2121,7 +2220,10 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8) -> LocateR
     support: list[LocatedFile] = []
     cli_message_prompt = _cli_prompt_requested(evidence) and _message_prompt_requested(evidence)
     for file in files:
-        primary_evidence = _has_transportable_content_evidence(file) and not _is_surface_only(file)
+        primary_evidence = (
+            _has_transportable_content_evidence(file)
+            or _has_bounded_synonym_identity_evidence(file)
+        ) and not _is_surface_only(file)
         requested_role_evidence = _has_direct_prompt_evidence(file) and not _is_surface_only(file)
         near_top = file.score >= max(files[0].score * 0.72, files[0].score - 120)
         if file.role == "test" and _tests_requested(evidence):

@@ -158,3 +158,79 @@ def test_decision_ledger_explains_selected_and_rejected_expected_files(tmp_path:
     assert records["src/app.py"]["candidate"] is True
     assert records["generated/cache.py"]["why_rejected"] is not None
     assert records["generated/cache.py"]["skipped"] is True
+
+
+def test_bounded_auth_synonym_finds_auth_path_without_unrelated_helper(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "helpers").mkdir()
+    (repo / "src" / "login.py").write_text("def handle_session():\n    return 'ok'\n", encoding="utf-8")
+    (repo / "src" / "helpers" / "token_helper.py").write_text("def issue():\n    return 'token'\n", encoding="utf-8")
+    _index(repo)
+
+    located = locate_files(repo, "Fix auth.", max_files=5)
+
+    primary = [item.path for item in located.primary_files]
+    all_selected = primary + [item.path for item in located.support_files] + [item.path for item in located.verification_files]
+    assert primary == ["src/login.py"]
+    assert "src/helpers/token_helper.py" not in all_selected
+
+
+def test_docs_synonym_does_not_promote_runtime_source(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "docs").mkdir()
+    (repo / "src").mkdir()
+    (repo / "docs" / "guide.md").write_text("# Guide\n\n## Usage\nold\n", encoding="utf-8")
+    (repo / "src" / "runtime_usage.py").write_text(
+        "def render_tutorial_usage():\n    return 'runtime usage tutorial'\n",
+        encoding="utf-8",
+    )
+    _index(repo)
+
+    located = locate_files(repo, "Update the tutorial guide.", max_files=5)
+
+    primary = [item.path for item in located.primary_files]
+    assert "docs/guide.md" in primary
+    assert "src/runtime_usage.py" not in primary
+
+
+def test_config_synonym_does_not_promote_benchmark_harness_without_request(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "benchmarks").mkdir()
+    (repo / "pyproject.toml").write_text("[tool.demo]\nmetadata = 'old'\n", encoding="utf-8")
+    (repo / "benchmarks" / "config_harness.py").write_text(
+        "def benchmark_config_metadata():\n    return {'metadata': 'old', 'settings': True}\n",
+        encoding="utf-8",
+    )
+    _index(repo)
+
+    located = locate_files(repo, "Update configuration metadata.", max_files=5)
+
+    primary = [item.path for item in located.primary_files]
+    assert primary == ["pyproject.toml"]
+    assert "benchmarks/config_harness.py" not in primary
+    harness = next(
+        (
+            item
+            for item in [*located.support_files, *located.verification_files]
+            if item.path == "benchmarks/config_harness.py"
+        ),
+        None,
+    )
+    assert harness is None or not any(signal.startswith("bounded_synonym_") for signal in harness.matched_signals)
+
+
+def test_bounded_synonym_helper_suppression_still_works(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    (repo / "src").mkdir()
+    (repo / "src" / "helpers").mkdir()
+    (repo / "src" / "login.py").write_text("def sign_in():\n    return True\n", encoding="utf-8")
+    (repo / "src" / "helpers" / "login_helper.py").write_text("def sign_in():\n    return True\n", encoding="utf-8")
+    _index(repo)
+
+    located = locate_files(repo, "Fix authentication.", max_files=5)
+
+    primary = [item.path for item in located.primary_files]
+    all_selected = primary + [item.path for item in located.support_files] + [item.path for item in located.verification_files]
+    assert primary == ["src/login.py"]
+    assert "src/helpers/login_helper.py" not in all_selected

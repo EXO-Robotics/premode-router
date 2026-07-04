@@ -64,6 +64,36 @@ def test_role_model_classifies_cross_ecosystem_paths() -> None:
     assert manifest.role == "config"
     assert manifest.manifest_likelihood == "high"
 
+    for path in (
+        "packages/web/src/App.vue",
+        "packages/web/src/App.svelte",
+        "packages/web/src/pages/home.astro",
+    ):
+        sfc = classify_path_role(path)
+        assert sfc.ecosystem == "node"
+        assert sfc.role == "source"
+        assert sfc.source_root_kind == "packages_src"
+
+    docs = classify_path_role("docs/guide.md")
+    assert docs.role == "docs"
+    assert docs.is_docs is True
+
+    config = classify_path_role("packages/web/package.json")
+    assert config.role == "config"
+    assert config.package_rootness == "package_root"
+
+    workflow = classify_path_role(".github/workflows/test.yml")
+    assert workflow.role == "workflow"
+    assert workflow.workflow_likelihood == "high"
+
+    generated = classify_path_role("packages/web/dist/App.vue")
+    assert generated.role == "generated"
+    assert generated.is_generated_or_vendor is True
+
+    example = classify_path_role("examples/basic/src/App.svelte")
+    assert example.role == "example"
+    assert example.generated_or_vendor_status == "example_or_fixture"
+
 
 def test_prompt_intent_honors_negative_clauses() -> None:
     docs = infer_prompt_intent("Update the README usage guide without changing runtime source.")

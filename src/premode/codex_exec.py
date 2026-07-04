@@ -13,6 +13,7 @@ from .compiler import compile_prompt
 from .config import premode_dir
 from .audit import sha256_text, write_audit
 from .launch_safety import write_external_payload_manifest
+from .live_ledger import normalize_token_usage
 from .metrics import append_metric
 
 
@@ -37,6 +38,8 @@ class CodexOptions:
     use_repo_map: bool = True
     cache_optimized: bool = True
     packet_version: str | None = None
+    packet_variant: str | None = None
+    packet_strategy: str | None = None
     save: bool = True
     context_only: bool = False
     record: bool = True
@@ -244,6 +247,8 @@ def run_codex(
         use_repo_map=options.use_repo_map,
         cache_optimized=options.cache_optimized,
         packet_version=options.packet_version,
+        packet_variant=options.packet_variant,
+        packet_strategy=options.packet_strategy,
         save=options.save,
         context_only=options.context_only,
         record_artifacts=options.record,
@@ -394,6 +399,8 @@ def run_codex(
 
 def _extract_usage_from_jsonl(text: str) -> dict[str, Any] | None:
     usage: dict[str, Any] = {}
+    raw_usage_events: list[dict[str, Any]] = []
+    schema_sources: set[str] = set()
     for line in (text or "").splitlines():
         try:
             obj = json.loads(line)
@@ -401,5 +408,56 @@ def _extract_usage_from_jsonl(text: str) -> dict[str, Any] | None:
             continue
         candidate = obj.get("usage") if isinstance(obj, dict) else None
         if isinstance(candidate, dict):
+            if len(raw_usage_events) < 20:
+                raw_usage_events.append(obj)
+            schema_sources.add(str(obj.get("type") or "usage"))
             usage.update(candidate)
-    return usage or None
+    if not usage:
+        return None
+    semantics_confirmed = _usage_schema_semantics_confirmed(raw_usage_events)
+    normalized = normalize_token_usage(
+        usage,
+        input_tokens_are_total=semantics_confirmed,
+        cached_input_tokens_are_subset=semantics_confirmed,
+        token_schema_source=",".join(sorted(schema_sources)) if schema_sources else None,
+    )
+    return {
+        **usage,
+        "normalized_tokens": normalized,
+        "input_tokens_total": normalized.get("input_tokens"),
+        "uncached_input_tokens": normalized.get("uncached_input_tokens"),
+        "derived_uncached_input_tokens": normalized.get("derived_uncached_input_tokens"),
+        "cache_adjusted_input_tokens": normalized.get("cache_adjusted_input_tokens"),
+        "token_derivation_status": normalized.get("token_derivation_status"),
+        "token_schema_source": normalized.get("token_schema_source"),
+        "token_derivation_notes": normalized.get("token_derivation_notes"),
+        "raw_token_fields": normalized.get("raw_token_fields"),
+        "raw_usage_events_sample": raw_usage_events,
+        "raw_usage_events_truncated": False,
+        "usage_event_count": len(raw_usage_events),
+        "usage_parse_warnings": [],
+    }
+
+
+def _usage_schema_semantics_confirmed(events: list[dict[str, Any]]) -> bool:
+    if not events:
+        return False
+    saw_total_and_cached = False
+    for event in events:
+        usage = event.get("usage") if isinstance(event, dict) else None
+        if not isinstance(usage, dict):
+            continue
+        total = usage.get("input_tokens") or usage.get("input_tokens_total")
+        cached = usage.get("cached_input_tokens") or usage.get("input_tokens_cached")
+        try:
+            if total is None or cached is None:
+                continue
+            if int(cached) > int(total):
+                return False
+        except (TypeError, ValueError):
+            return False
+        event_type = str(event.get("type") or "")
+        if event_type and not event_type.endswith("completed") and event_type not in {"turn.completed", "response.completed"}:
+            return False
+        saw_total_and_cached = True
+    return saw_total_and_cached

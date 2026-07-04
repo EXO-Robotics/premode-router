@@ -8,7 +8,7 @@ import re
 SOURCE_EXTENSIONS = {
     ".py", ".swift", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go",
     ".java", ".kt", ".ex", ".exs", ".php", ".rb", ".tf", ".c", ".cpp", ".h",
-    ".hpp", ".cs", ".zig", ".hs", ".dart",
+    ".hpp", ".cs", ".zig", ".hs", ".dart", ".vue", ".svelte", ".astro",
 }
 DOC_EXTENSIONS = {".md", ".rst", ".txt", ".adoc", ".mdx"}
 PACKAGE_MANIFEST_NAMES = {
@@ -88,7 +88,7 @@ def _ecosystem(path: str) -> str:
     suffix = _suffix(path)
     if name in {"pyproject.toml", "setup.py", "setup.cfg"} or suffix == ".py":
         return "python"
-    if name == "package.json" or suffix in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}:
+    if name == "package.json" or suffix in {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".vue", ".svelte", ".astro"}:
         return "node"
     if name == "cargo.toml" or suffix == ".rs":
         return "rust"
@@ -201,8 +201,8 @@ def classify_path_role(path: str) -> PathRole:
     if name.startswith("readme"):
         docs_specificity = "readme"
     elif (
-        any(part in {"usage", "guide", "guides", "tutorial", "tutorials", "quickstart", "getting-started", "getting_started", "install", "installation", "introduction", "intro", "basics"} for part in lowered)
-        or any(term in lower for term in ("usage", "guide", "tutorial", "quickstart", "getting-started", "getting_started", "installation", "introduction", "basics"))
+        any(part in {"usage", "guide", "guides", "tutorial", "tutorials", "quickstart", "getting-started", "getting_started", "install", "installation", "introduction", "intro", "basics", "troubleshooting", "troubleshoot", "faq", "how-to", "how_to", "howto"} for part in lowered)
+        or any(term in lower for term in ("usage", "guide", "tutorial", "quickstart", "getting-started", "getting_started", "installation", "introduction", "basics", "troubleshooting", "troubleshoot", "faq", "how-to", "how_to", "howto"))
     ):
         docs_specificity = "specific"
     elif is_docs:
@@ -261,7 +261,7 @@ def infer_prompt_intent(raw_prompt: str) -> PromptIntent:
         negative_roles.append("docs")
 
     test_edit = bool(re.search(r"\b(add|write|create|update)\b[^\n.;]{0,80}\b(regression\s+)?(tests?|coverage)\b", text))
-    docs = bool(re.search(r"\b(readme|docs?|guide|quickstart|usage|tutorial|handbook)\b", text))
+    docs = bool(re.search(r"\b(readme|docs?|documentation|guide|quickstart|usage|tutorial|handbook|troubleshoot(?:ing)?|faq|how-to|how_to|howto)\b", text))
     config = bool(re.search(r"\b(package|packaging|project)\s+metadata\b|\bmanifest\b|\bpyproject\b|\bpackage\.json\b|\bcargo\.toml\b|\bgo\.mod\b|\bpackage\.swift\b|\bpubspec\b|\bconfiguration\b", text))
     if "config" in negative_roles:
         config = False

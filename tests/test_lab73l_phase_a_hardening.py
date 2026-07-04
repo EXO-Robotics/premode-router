@@ -142,7 +142,10 @@ def test_command_ledger_extracts_reads_memory_and_xcode_actuals_from_argv() -> N
 
     ledger = command_ledger_from_events(events)
 
-    assert ledger["explicit_file_reads"] == ["src/app.py", "src/view.py", "README.md"]
+    assert ledger["explicit_file_reads"] == ["src/app.py", "src/view.py"]
+    assert "README.md" not in ledger["explicit_file_reads"]
+    assert ledger["search_hits"] == ["src/app.py"]
+    assert ledger["search_commands"] == 2
     assert not any("MEMORY.md" in path for path in ledger["explicit_file_reads"])
     assert ledger["memory_command_count"] == 1
     assert ledger["memory_search_commands"]

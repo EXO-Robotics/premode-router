@@ -135,12 +135,19 @@ def test_metrics_naming_and_compile_mode_comparison(repo: Path) -> None:
 
 
 def test_live_token_ledger_nulls_and_cache_adjustment() -> None:
-    ledger = normalize_token_ledger({"input_tokens": 1000, "cached_input_tokens": 600, "output_tokens": 70})
+    ledger = normalize_token_ledger(
+        {"input_tokens": 1000, "cached_input_tokens": 600, "output_tokens": 70},
+        input_tokens_are_total=True,
+        cached_input_tokens_are_subset=True,
+        token_schema_source="turn.completed",
+    )
     assert ledger["input_tokens_total"] == 1000
-    assert ledger["input_tokens_uncached"] == 400
+    assert ledger["input_tokens_uncached"] is None
+    assert ledger["derived_uncached_input_tokens"] == 400
     assert ledger["input_tokens_cached"] == 600
     assert ledger["cache_adjusted_input_tokens"] == 460
     assert ledger["output_tokens"] == 70
+    assert ledger["token_derivation_status"] == "derived"
 
     missing = normalize_live_metrics({})
     assert missing["token_ledger"]["input_tokens_total"] is None

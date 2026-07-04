@@ -86,6 +86,116 @@ def test_docs_config_still_wins_for_docs_build_prompt(tmp_path: Path) -> None:
     assert "docs/conf.py" in _paths(result["candidate_edit_files"])
 
 
+def test_troubleshooting_docs_beat_readme_for_troubleshooting_prompt(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / "README.md", "General usage overview.\n")
+    _write(repo / "docs" / "troubleshooting.md", "Troubleshooting steps.\n")
+    _write(repo / "docs" / "guide.md", "General guide.\n")
+    _write(repo / "src" / "app.py", "def run(): return True\n")
+    _index(repo)
+
+    result = compile_prompt(
+        repo,
+        "Update the troubleshooting docs without changing runtime source.",
+        "lite",
+        use_repo_map=True,
+        record_artifacts=False,
+    )
+
+    candidates = _paths(result["candidate_edit_files"])
+    assert candidates == ["docs/troubleshooting.md"]
+    assert "README.md" not in candidates
+    assert "src/app.py" not in candidates
+
+
+def test_faq_docs_beat_issue_template_and_runtime_source(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / "README.md", "Overview.\n")
+    _write(repo / "docs" / "faq.md", "FAQ.\n")
+    _write(repo / ".github" / "ISSUE_TEMPLATE" / "bug_report.md", "FAQ issue template.\n")
+    _write(repo / "src" / "faq.py", "def answer(): return True\n")
+    _index(repo)
+
+    result = compile_prompt(
+        repo,
+        "Update the FAQ docs without changing runtime source.",
+        "lite",
+        use_repo_map=True,
+        record_artifacts=False,
+    )
+
+    candidates = _paths(result["candidate_edit_files"])
+    assert candidates == ["docs/faq.md"]
+    assert ".github/ISSUE_TEMPLATE/bug_report.md" not in candidates
+    assert "src/faq.py" not in candidates
+
+
+def test_how_to_docs_beat_unrelated_docs(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / "README.md", "Overview.\n")
+    _write(repo / "docs" / "how-to" / "deploy.md", "How-to deploy.\n")
+    _write(repo / "docs" / "architecture.md", "Architecture notes.\n")
+    _index(repo)
+
+    result = compile_prompt(
+        repo,
+        "Update the how-to documentation for deploy without changing source.",
+        "lite",
+        use_repo_map=True,
+        record_artifacts=False,
+    )
+
+    candidates = _paths(result["candidate_edit_files"])
+    assert candidates == ["docs/how-to/deploy.md"]
+    assert "docs/architecture.md" not in candidates
+
+
+def test_governance_docs_remain_demoted_unless_explicitly_requested(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / "README.md", "Overview.\n")
+    _write(repo / "docs" / "faq.md", "FAQ.\n")
+    _write(repo / "CODE_OF_CONDUCT.md", "Conduct policy.\n")
+    _write(repo / "SECURITY.md", "Security policy.\n")
+    _write(repo / "CONTRIBUTING.md", "Contribution policy.\n")
+    _index(repo)
+
+    result = compile_prompt(
+        repo,
+        "Update the FAQ docs without changing source.",
+        "lite",
+        use_repo_map=True,
+        record_artifacts=False,
+    )
+
+    candidates = _paths(result["candidate_edit_files"])
+    assert candidates == ["docs/faq.md"]
+    assert "CODE_OF_CONDUCT.md" not in candidates
+    assert "SECURITY.md" not in candidates
+    assert "CONTRIBUTING.md" not in candidates
+
+
+def test_docs_config_remains_demoted_without_docs_build_prompt(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _write(repo / "README.md", "Overview.\n")
+    _write(repo / "docs" / "faq.md", "FAQ.\n")
+    _write(repo / "docs" / "conf.py", "project = 'demo'\n")
+    _write(repo / "docs" / ".vitepress" / "config.ts", "export default {}\n")
+    _index(repo)
+
+    result = compile_prompt(
+        repo,
+        "Update the FAQ docs without changing source.",
+        "lite",
+        use_repo_map=True,
+        record_artifacts=False,
+    )
+
+    candidates = _paths(result["candidate_edit_files"])
+    assert candidates == ["docs/faq.md"]
+    assert "docs/conf.py" not in candidates
+    assert "docs/.vitepress/config.ts" not in candidates
+
+
 def test_related_tests_include_resolution_reason_for_same_basename(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _write(repo / "packages" / "tool" / "src" / "runner.ts", "export function runner() { return true }\n")

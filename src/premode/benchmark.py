@@ -340,29 +340,86 @@ def _compile_mode_report(
             'dynamic_suffix_hash': None,
             'full_repo_reduction_percent': None,
         }
-    packet_version = 'v2' if mode == 'v2_full_context_if_available' else 'v3'
-    detail_mode = 'evidence_snippets' if mode == 'v3_evidence_snippets' else 'paths_only'
+    if mode == 'v2_full_context_if_available':
+        packet_version = 'v2'
+    elif mode in {'v4_context_only_paths', 'v4_context_only_snippets'}:
+        packet_version = 'v4'
+    elif mode.startswith('v5_'):
+        packet_version = 'v5'
+    else:
+        packet_version = 'v3'
+    variant = None
+    strategy = None
+    if mode == 'v5_ranked_paths':
+        variant = 'ranked_paths'
+    elif mode == 'v5_ranked_snippets':
+        variant = 'ranked_snippets'
+    elif mode == 'v5_primary_tests_only':
+        variant = 'primary_tests_only'
+    elif mode == 'v5_top1_plus_tests':
+        variant = 'top1_plus_tests'
+    elif mode == 'v5_ranked_paths_plus_anchors':
+        variant = 'ranked_paths_plus_anchors'
+    elif mode == 'v5_ranked_paths_selective_snippets':
+        variant = 'ranked_paths_selective_snippets'
+    elif mode == 'v5_ranked_paths_no_support':
+        variant = 'ranked_paths_no_support'
+    elif mode == 'v5_ranked_paths_tests_first':
+        variant = 'ranked_paths_tests_first'
+    elif mode == 'v5_ranked_paths_top1':
+        variant = 'ranked_paths_top1'
+    elif mode == 'v5_tool_assisted_backbone':
+        variant = 'tool_assisted_backbone'
+    elif mode == 'v5_tool_assisted_backbone_no_task_class':
+        variant = 'tool_assisted_backbone_no_task_class'
+    elif mode == 'v5_tool_assisted_backbone_no_relations':
+        variant = 'tool_assisted_backbone_no_relations'
+    elif mode == 'v5_tool_assisted_anchors_internal':
+        variant = 'tool_assisted_anchors_internal'
+    elif mode.startswith('v5_tool_assisted_anchors_internal_'):
+        variant = 'tool_assisted_anchors_internal'
+        strategy = mode.removeprefix('v5_tool_assisted_anchors_internal_')
+    detail_mode = 'evidence_snippets' if mode in {'v3_evidence_snippets', 'v4_context_only_snippets'} else 'paths_only'
     result = compile_prompt(
         repo_root,
         prompt,
         profile,
         use_repo_map=use_repo_map,
         packet_version=packet_version,
+        packet_variant=variant,
+        packet_strategy=strategy,
         packet_detail_mode=detail_mode,
         snippet_budget_tokens=snippet_budget_tokens,
-        cache_optimized=(packet_version == 'v3'),
+        cache_optimized=(packet_version in {'v3', 'v4', 'v5'}),
         record_artifacts=False,
     )
     metrics = result.get('metrics') or {}
     return {
         'mode': mode,
         'packet_version': result.get('packet_version'),
+        'packet_variant': result.get('packet_variant'),
+        'packet_strategy': metrics.get('packet_strategy') or metrics.get('strategy_selected'),
         'packet_detail_mode': result.get('packet_detail_mode'),
         'packet_total_tokens': metrics.get('packet_total_tokens'),
         'model_facing_evidence_tokens': metrics.get('model_facing_evidence_tokens'),
         'candidate_files': _list_paths(result.get('candidate_edit_files')),
         'support_files': _list_paths(result.get('read_only_support_files')),
         'verification_files': _list_paths(result.get('related_tests') or result.get('suggested_tests')),
+        'model_facing_leakage': (result.get('model_facing_leakage_check') or {}).get('model_facing_diagnostic_leakage'),
+        'file_block_count': metrics.get('file_block_count'),
+        'snippet_token_count': metrics.get('snippet_token_count'),
+        'anchor_count': metrics.get('anchor_count'),
+        'anchor_type_mix': metrics.get('anchor_type_mix'),
+        'task_class': metrics.get('task_class'),
+        'support_relation_count': metrics.get('support_relation_count'),
+        'discovery_wall_ms': metrics.get('discovery_wall_ms'),
+        'files_scanned_count': metrics.get('files_scanned_count'),
+        'lines_scanned_count': metrics.get('lines_scanned_count'),
+        'anchors_generated_count': metrics.get('anchors_generated_count'),
+        'anchors_selected_count': metrics.get('anchors_selected_count'),
+        'ranking_adjustment_count': metrics.get('ranking_adjustment_count'),
+        'relations_generated_count': metrics.get('relations_generated_count'),
+        'relations_selected_count': metrics.get('relations_selected_count'),
         'stable_prefix_hash': result.get('cacheable_prefix_sha256'),
         'dynamic_suffix_hash': result.get('dynamic_suffix_sha256'),
         'full_repo_reduction_percent': metrics.get('full_repo_reduction_percent'),
@@ -377,7 +434,41 @@ def compile_mode_comparison(
     use_repo_map: bool = True,
     snippet_budget_tokens: int = 2000,
 ) -> list[dict[str, Any]]:
-    modes = ['standard_raw_prompt', 'v3_paths_only', 'v3_evidence_snippets', 'v2_full_context_if_available']
+    modes = [
+        'standard_raw_prompt',
+        'v3_paths_only',
+        'v3_evidence_snippets',
+        'v4_context_only_paths',
+        'v4_context_only_snippets',
+        'v5_ranked_paths',
+        'v5_ranked_snippets',
+        'v5_primary_tests_only',
+        'v5_top1_plus_tests',
+        'v5_ranked_paths_plus_anchors',
+        'v5_ranked_paths_selective_snippets',
+        'v5_ranked_paths_no_support',
+        'v5_ranked_paths_tests_first',
+        'v5_ranked_paths_top1',
+        'v5_tool_assisted_backbone',
+        'v5_tool_assisted_backbone_no_task_class',
+        'v5_tool_assisted_backbone_no_relations',
+        'v5_tool_assisted_anchors_internal',
+        'v5_tool_assisted_anchors_internal_literal_symbol',
+        'v5_tool_assisted_anchors_internal_literal_symbol_test_names',
+        'v5_tool_assisted_anchors_internal_literal_symbol_config',
+        'v5_tool_assisted_anchors_internal_literal_symbol_config_gated',
+        'v5_tool_assisted_anchors_internal_literal_symbol_docs',
+        'v5_tool_assisted_anchors_internal_literal_symbol_docs_heading_gated',
+        'v5_tool_assisted_anchors_internal_literal_symbol_cli_route',
+        'v5_tool_assisted_anchors_internal_literal_symbol_import_boost',
+        'v5_tool_assisted_anchors_internal_literal_symbol_import_rank_json_only',
+        'v5_tool_assisted_anchors_internal_literal_symbol_collision_filter',
+        'v5_tool_assisted_anchors_internal_literal_symbol_policy_by_prompt_type',
+        'v5_tool_assisted_anchors_internal_tests_first_anchoring',
+        'v5_tool_assisted_anchors_internal_top1_primary',
+        'v5_tool_assisted_anchors_internal_policy_by_prompt_type',
+        'v2_full_context_if_available',
+    ]
     reports: list[dict[str, Any]] = []
     for mode in modes:
         try:
@@ -404,6 +495,8 @@ def _case_report(
     use_repo_map: bool,
     cache_optimized: bool,
     packet_version: str | None,
+    packet_variant: str | None = None,
+    packet_strategy: str | None = None,
     packet_detail_mode: str = 'paths_only',
     snippet_budget_tokens: int = 2000,
     save_packets: bool = False,
@@ -418,6 +511,8 @@ def _case_report(
         use_repo_map=use_repo_map,
         cache_optimized=cache_optimized,
         packet_version=packet_version,
+        packet_variant=packet_variant,
+        packet_strategy=packet_strategy,
         packet_detail_mode=packet_detail_mode,
         snippet_budget_tokens=snippet_budget_tokens,
         save=save_packets or include_review,
@@ -501,6 +596,8 @@ def _case_report(
         'name': str(case.get('name') or 'prompt'),
         'prompt': str(case['prompt']),
         'packet_version': result.get('packet_version'),
+        'packet_variant': result.get('packet_variant'),
+        'packet_strategy': metrics.get('packet_strategy') or metrics.get('strategy_selected'),
         'resource_profile': result.get('resource_profile'),
         'packet_mode': result.get('packet_mode'),
         'packet_detail_mode': result.get('packet_detail_mode'),
@@ -510,6 +607,25 @@ def _case_report(
         'full_repo_reduction_percent': metrics.get('full_repo_reduction_percent'),
         'estimated_savings_vs_eligible_repo_percent': metrics.get('estimated_savings_vs_eligible_repo_percent'),
         'model_facing_evidence_tokens': metrics.get('model_facing_evidence_tokens'),
+        'model_facing_diagnostic_leakage': metrics.get('model_facing_diagnostic_leakage'),
+        'file_block_count': metrics.get('file_block_count'),
+        'snippet_token_count': metrics.get('snippet_token_count'),
+        'anchor_count': metrics.get('anchor_count'),
+        'anchor_type_mix': metrics.get('anchor_type_mix'),
+        'task_class': metrics.get('task_class'),
+        'support_relation_count': metrics.get('support_relation_count'),
+        'discovery_wall_ms': metrics.get('discovery_wall_ms'),
+        'files_scanned_count': metrics.get('files_scanned_count'),
+        'lines_scanned_count': metrics.get('lines_scanned_count'),
+        'bytes_scanned_count': metrics.get('bytes_scanned_count'),
+        'anchors_generated_count': metrics.get('anchors_generated_count'),
+        'anchors_selected_count': metrics.get('anchors_selected_count'),
+        'ranking_adjustment_count': metrics.get('ranking_adjustment_count'),
+        'relations_generated_count': metrics.get('relations_generated_count'),
+        'relations_selected_count': metrics.get('relations_selected_count'),
+        'anchor_filter_reject_count': metrics.get('anchor_filter_reject_count'),
+        'discovery_error_count': metrics.get('discovery_error_count'),
+        'support_count': metrics.get('support_count'),
         'paths_only_packet_tokens': metrics.get('paths_only_packet_tokens'),
         'evidence_snippet_packet_tokens': metrics.get('evidence_snippet_packet_tokens'),
         'selected_context_tokens': metrics.get('selected_context_tokens'),
@@ -720,6 +836,8 @@ def run_benchmark(
     use_repo_map: bool = True,
     cache_optimized: bool = True,
     packet_version: str | None = None,
+    packet_variant: str | None = None,
+    packet_strategy: str | None = None,
     packet_detail_mode: str = 'paths_only',
     snippet_budget_tokens: int = 2000,
     compile_modes: bool = False,
@@ -741,6 +859,8 @@ def run_benchmark(
                 use_repo_map=use_repo_map,
                 cache_optimized=cache_optimized,
                 packet_version=packet_version,
+                packet_variant=packet_variant,
+                packet_strategy=packet_strategy,
                 packet_detail_mode=packet_detail_mode,
                 snippet_budget_tokens=snippet_budget_tokens,
                 save_packets=save_packets,
@@ -781,6 +901,8 @@ def run_benchmark(
         'use_repo_map': bool(use_repo_map),
         'cache_optimized': bool(cache_optimized),
         'packet_version_requested': packet_version,
+        'packet_variant_requested': packet_variant,
+        'packet_strategy_requested': packet_strategy,
         'packet_detail_mode_requested': packet_detail_mode,
         'compile_modes': bool(compile_modes),
         'snippet_budget_tokens': snippet_budget_tokens,

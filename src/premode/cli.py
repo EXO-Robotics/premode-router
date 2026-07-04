@@ -55,6 +55,7 @@ def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -
     return {
         "status": "compiled",
         "packet_version": result.get("packet_version"),
+        "packet_variant": result.get("packet_variant"),
         "packet_detail_mode": result.get("packet_detail_mode"),
         "packet_detail_mode_requested": result.get("packet_detail_mode_requested"),
         "packet_detail_mode_selected": result.get("packet_detail_mode_selected"),
@@ -126,7 +127,26 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--json", action="store_true")
     comp.add_argument("--show-raw", action="store_true")
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
-    comp.add_argument("--packet-version", choices=["v2", "v3"], default=None, help="Compiled packet renderer version. v3 is cache-aware.")
+    comp.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help="Compiled packet renderer version. v5 is ranked context only.")
+    v5_variants = ["ranked_paths", "ranked_snippets", "primary_tests_only", "top1_plus_tests", "ranked_paths_plus_anchors", "ranked_paths_selective_snippets", "ranked_paths_no_support", "ranked_paths_tests_first", "ranked_paths_top1", "tool_assisted_backbone", "tool_assisted_backbone_no_task_class", "tool_assisted_backbone_no_relations", "tool_assisted_anchors_internal"]
+    anchor_strategies = [
+        "literal_symbol",
+        "literal_symbol_test_names",
+        "literal_symbol_config",
+        "literal_symbol_config_gated",
+        "literal_symbol_docs",
+        "literal_symbol_docs_heading_gated",
+        "literal_symbol_cli_route",
+        "literal_symbol_import_boost",
+        "literal_symbol_import_rank_json_only",
+        "literal_symbol_collision_filter",
+        "literal_symbol_policy_by_prompt_type",
+        "tests_first_anchoring",
+        "top1_primary",
+        "policy_by_prompt_type",
+    ]
+    comp.add_argument("--packet-variant", choices=v5_variants, default=None, help="Packet V5 variant. Defaults to ranked_snippets.")
+    comp.add_argument("--packet-strategy", choices=anchor_strategies, default=None, help="Internal V5 anchor strategy for tool_assisted_anchors_internal.")
     comp.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only", help="Packet V3 detail mode.")
     comp.add_argument("--evidence-snippets", action="store_true", help="Shortcut for --packet-mode evidence-snippets.")
     comp.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
@@ -167,7 +187,9 @@ def build_parser() -> argparse.ArgumentParser:
     cod.add_argument("--model", default=None)
     cod.add_argument("--oss", action="store_true")
     cod.add_argument("--no-repo-map", action="store_true", help="Disable repo-map summary and impact hints for the Codex path.")
-    cod.add_argument("--packet-version", choices=["v2", "v3"], default=None, help="Compiled packet renderer version for the Codex path.")
+    cod.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help="Compiled packet renderer version for the Codex path.")
+    cod.add_argument("--packet-variant", choices=v5_variants, default=None, help="Packet V5 variant for the Codex path.")
+    cod.add_argument("--packet-strategy", choices=anchor_strategies, default=None, help="Internal V5 anchor strategy for tool_assisted_anchors_internal.")
     cod.add_argument("--no-cache-optimized", action="store_true", help="Disable the default cache-aware Packet V3 Codex path.")
     cod.add_argument("--context-only", action="store_true", help="Compile candidate context and safety boundaries without strong allowed-edit narrowing.")
     cod.add_argument("--no-save", action="store_true", help="Do not write .premode packet, audit, metrics, or default final-output artifacts.")
@@ -188,7 +210,9 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
     bench.add_argument("--no-repo-map", action="store_true", help="Disable repo-map impact hints during benchmark compiles.")
     bench.add_argument("--no-cache-optimized", action="store_true", help="Disable cache-aware Packet V3 benchmark compiles.")
-    bench.add_argument("--packet-version", choices=["v2", "v3"], default=None)
+    bench.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None)
+    bench.add_argument("--packet-variant", choices=v5_variants, default=None)
+    bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
     bench.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only")
     bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
     bench.add_argument("--compile-modes", action="store_true", help="Include compile-only raw/v3 paths/v3 snippets/v2 mode comparisons.")
@@ -331,6 +355,8 @@ def main(argv: list[str] | None = None) -> int:
             json_out_path=json_out,
             use_repo_map=args.use_repo_map,
             packet_version=args.packet_version,
+            packet_variant=args.packet_variant,
+            packet_strategy=args.packet_strategy,
             packet_detail_mode=packet_mode,
             snippet_budget_tokens=args.snippet_budget_tokens,
             cache_optimized=args.cache_optimized,
@@ -405,6 +431,8 @@ def main(argv: list[str] | None = None) -> int:
             use_repo_map=not args.no_repo_map,
             cache_optimized=not args.no_cache_optimized,
             packet_version=args.packet_version,
+            packet_variant=args.packet_variant,
+            packet_strategy=args.packet_strategy,
             context_only=args.context_only,
             save=not args.no_save,
             record=not args.no_save,
@@ -437,6 +465,8 @@ def main(argv: list[str] | None = None) -> int:
             use_repo_map=not args.no_repo_map,
             cache_optimized=not args.no_cache_optimized,
             packet_version=args.packet_version,
+            packet_variant=args.packet_variant,
+            packet_strategy=args.packet_strategy,
             packet_detail_mode="evidence_snippets" if args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only"),
             snippet_budget_tokens=args.snippet_budget_tokens,
             compile_modes=args.compile_modes,
