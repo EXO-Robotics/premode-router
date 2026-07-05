@@ -22,6 +22,29 @@ Prefer flat subagent fan-out over nested delegation:
 
 Do not use subagents for tiny single-file edits, narrow commands, or parallel write-heavy work that would create conflicts.
 
+## pCodex Routing
+
+When working in this repo, use pCodex for local Codex routing where available.
+
+Primary commands:
+
+- `.venv/bin/pcodex doctor`
+- `.venv/bin/pcodex status`
+- `.venv/bin/pcodex on`
+- `.venv/bin/pcodex off`
+- `.venv/bin/pcodex run --dry-run "<task>"`
+- `.venv/bin/premode compile --plugin literal_symbol`
+
+When creating a local subagent or delegated-agent prompt:
+
+1. First write the exact raw subagent prompt Codex intends to send.
+2. Route that exact Codex-created subagent prompt through pCodex before dispatch, using `transform_subagent_prompt` or the equivalent pCodex CLI/API.
+3. Use `literal_symbol` unless the user explicitly configures a different supported algorithm.
+4. Send the transformed prompt to the subagent.
+5. If pCodex is disabled or transformation fails, send the raw prompt unchanged and report the fallback out of band.
+
+This is an instruction-level routing contract and adapter-ready local behavior guidance. Do not claim it controls hosted/internal Codex subagents unless an official hook or local source patch is present and tested. Do not patch hosted Codex/Web UI. Do not print secrets, full environment dumps, diagnostics, TASK_CLASS, SUPPORT_RELATIONS, snippets, confidence, validation guidance, command suggestions, review metadata, or do-not-edit language into model-facing subagent prompts.
+
 ## Core Product Boundary
 
 - Preserve the exact user prompt canonically. Do not rewrite or replace the prompt in model-facing packets.
