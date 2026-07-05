@@ -388,6 +388,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("status")
     sub.add_parser("on")
     sub.add_parser("off")
+    sub.add_parser("mcp-server")
     comp = sub.add_parser("compile")
     comp.add_argument("prompt")
     comp.add_argument("--repo", default=None)
@@ -422,6 +423,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "off":
         print(json.dumps(set_enabled(repo_root, False), indent=2, sort_keys=True))
         return 0
+    if args.command == "mcp-server":
+        from . import pcodex_mcp_server
+
+        return pcodex_mcp_server.serve()
     if args.command == "compile":
         if args.dry_run:
             try:

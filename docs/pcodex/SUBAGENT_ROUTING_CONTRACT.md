@@ -37,6 +37,30 @@ Required behavior:
 4. Keep routing metadata, diagnostics, and failures out of the model-facing prompt.
 5. If pCodex is disabled or transformation fails, return the raw prompt unchanged and report fallback metadata out of band.
 
+## MCP/Tool Transform Candidate
+
+pCodex can expose the same transform contract as a local tool-compatible adapter:
+
+```python
+pcodex_transform_subagent_prompt_tool(subagent_prompt, project_root=None)
+```
+
+The tool adapter is designed for `spawnAgent` and `collabAgentToolCall`-style payloads. It extracts the Codex-created prompt, calls `transform_subagent_prompt`, returns the transformed prompt in the original prompt field, preserves unknown payload fields, and adds pCodex routing metadata out of band.
+
+This remains a candidate workflow until Codex is configured or confirmed to call the tool before dispatch. It does not prove hosted/internal Codex interception.
+
+## pCodex MCP/Tool Server Candidate
+
+pCodex can expose the transform adapter through a dependency-free stdio server candidate:
+
+```bash
+pcodex mcp-server
+```
+
+The intended local tool name is `pcodex_transform_subagent_prompt`. The server candidate accepts JSON tool calls, delegates to `pcodex_transform_subagent_prompt_tool`, and returns transformed prompt text plus out-of-band metadata. It does not open a network listener and does not dump environment variables or secrets.
+
+Installed Codex can register local stdio MCP servers with `codex mcp add`, but pre-dispatch enforcement is not proven unless Codex is configured or confirmed to call this tool before `spawnAgent` dispatch. AGENTS.md and skill instructions remain the instruction-level routing layer.
+
 ## Instruction Behavior
 
 Repo instructions and the pCodex skill tell Codex: when creating a local subagent prompt, route the Codex-created prompt through pCodex before dispatch. This is instruction-level behavior guidance, not a hard guarantee for hosted/internal Codex subagents.
@@ -47,6 +71,9 @@ Current tests cover:
 
 - pCodex env/config propagation
 - `transform_subagent_prompt`
+- local tool-compatible prompt transformation
+- `spawnAgent` and `collabAgentToolCall`-style payload adapters
+- stdio tool-server request handling
 - disabled/failure fallback
 - fake dispatcher receiving the transformed prompt
 - instruction-file wording and claim boundaries
