@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -46,6 +47,7 @@ class CodexOptions:
     lane: str = "codex"
     repo_is_private: bool = False
     private_paths_forbidden: bool = False
+    child_env: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -334,8 +336,9 @@ def run_codex(
             })
         return blocked
 
+    child_process_env = {**os.environ, **options.child_env} if options.child_env else None
     if options.watch:
-        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, cwd=invocation.cwd)
+        proc = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, cwd=invocation.cwd, env=child_process_env)
         assert proc.stdin is not None
         proc.stdin.write(packet)
         proc.stdin.close()
@@ -362,7 +365,8 @@ def run_codex(
         stdout = "".join(stdout_parts)
         stderr = "".join(stderr_parts)
     else:
-        completed = subprocess.run(args, input=packet, text=True, capture_output=True, check=False, cwd=invocation.cwd)
+        run_kwargs = {"env": child_process_env} if child_process_env is not None else {}
+        completed = subprocess.run(args, input=packet, text=True, capture_output=True, check=False, cwd=invocation.cwd, **run_kwargs)
         returncode = completed.returncode
         stdout = completed.stdout
         stderr = completed.stderr

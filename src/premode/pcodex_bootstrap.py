@@ -24,6 +24,10 @@ PCODEX_PACKET_STRATEGY = "literal_symbol"
 PCODEX_FALLBACK_VARIANT = "ranked_paths_plus_anchors"
 CONFIG_ENV = "PCODEX_ENABLED"
 CONFIG_PATH_ENV = "PCODEX_CONFIG"
+CONFIG_PATH_ALIAS_ENV = "PCODEX_CONFIG_PATH"
+ALGORITHM_ENV = "PCODEX_ALGORITHM"
+PROJECT_ROOT_ENV = "PCODEX_PROJECT_ROOT"
+PACKET_STRATEGY_ENV = "PCODEX_PACKET_STRATEGY"
 
 
 @dataclass(frozen=True)
@@ -63,6 +67,13 @@ def _parse_bool(value: Any) -> bool | None:
     return None
 
 
+def _parse_algorithm(value: Any) -> str | None:
+    if value is None:
+        return PCODEX_PACKET_STRATEGY
+    text = str(value).strip()
+    return text if text == PCODEX_PACKET_STRATEGY else None
+
+
 def _read_config(path: Path) -> dict[str, Any]:
     try:
         with path.open("rb") as handle:
@@ -78,24 +89,36 @@ def _read_config(path: Path) -> dict[str, Any]:
 def resolve_config(cwd: Path | None = None, env: dict[str, str] | None = None) -> PcodexConfig:
     env = dict(os.environ if env is None else env)
     cwd = Path.cwd() if cwd is None else cwd
-    env_value = _parse_bool(env.get(CONFIG_ENV))
+    env_algorithm = _parse_algorithm(env.get(ALGORITHM_ENV))
+    if env_algorithm is None:
+        return PcodexConfig(enabled=False, source=f"{ALGORITHM_ENV}:invalid", path=None)
+
+    env_raw_value = env.get(CONFIG_ENV)
+    env_value = _parse_bool(env_raw_value)
+    if env_raw_value is not None and env_value is None:
+        return PcodexConfig(enabled=False, source=f"{CONFIG_ENV}:invalid", path=None, algorithm=env_algorithm)
     if env_value is not None:
-        return PcodexConfig(enabled=env_value, source=CONFIG_ENV, path=None)
+        return PcodexConfig(enabled=env_value, source=CONFIG_ENV, path=None, algorithm=env_algorithm)
 
     paths: list[tuple[str, Path]] = []
-    if env.get(CONFIG_PATH_ENV):
-        paths.append((CONFIG_PATH_ENV, Path(env[CONFIG_PATH_ENV]).expanduser()))
+    config_path_value = env.get(CONFIG_PATH_ENV) or env.get(CONFIG_PATH_ALIAS_ENV)
+    if config_path_value:
+        source = CONFIG_PATH_ENV if env.get(CONFIG_PATH_ENV) else CONFIG_PATH_ALIAS_ENV
+        paths.append((source, Path(config_path_value).expanduser()))
     repo_root = _repo_root(cwd)
     paths.extend([("repo", _repo_config_path(repo_root)), ("user", _user_config_path())])
     for source, path in paths:
         data = _read_config(path)
         enabled = _parse_bool(data.get("enabled"))
+        algorithm = _parse_algorithm(data.get("algorithm"))
+        if algorithm is None:
+            return PcodexConfig(enabled=False, source=f"{source}:invalid", path=str(path))
         if enabled is not None:
             return PcodexConfig(
                 enabled=enabled,
                 source=source,
                 path=str(path),
-                algorithm=str(data.get("algorithm") or PCODEX_PACKET_STRATEGY),
+                algorithm=algorithm,
             )
         if path.exists():
             return PcodexConfig(enabled=False, source=f"{source}:invalid", path=str(path))
@@ -248,6 +271,20 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     }
 
 
+def child_env_for(repo_root: Path, config: PcodexConfig | None = None) -> dict[str, str]:
+    config = resolve_config(repo_root) if config is None else config
+    env = {
+        CONFIG_ENV: "1" if config.enabled else "0",
+        ALGORITHM_ENV: PCODEX_PACKET_STRATEGY,
+        PACKET_STRATEGY_ENV: PCODEX_PACKET_STRATEGY,
+        PROJECT_ROOT_ENV: str(repo_root.resolve()),
+    }
+    if config.path and config.source in {"repo", CONFIG_PATH_ENV, CONFIG_PATH_ALIAS_ENV}:
+        env[CONFIG_PATH_ENV] = config.path
+        env[CONFIG_PATH_ALIAS_ENV] = config.path
+    return env
+
+
 def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
@@ -282,11 +319,14 @@ def _write_temp_packet(packet: str) -> str:
 
 def run_dry_run(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
     config = resolve_config(repo_root)
+    child_env = child_env_for(repo_root, config)
     base = {
         "status": "dry_run",
         "enabled": config.enabled,
         "config_source": config.source,
         "algorithm": PCODEX_PACKET_STRATEGY,
+        "child_env": child_env,
+        "child_env_keys": sorted(child_env),
         "raw_task_preview": redact_text(prompt),
         "codex_launch": "not_executed",
     }
@@ -315,6 +355,8 @@ def run_dry_run(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
 
 
 def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
+    config = resolve_config(repo_root)
+    child_env = child_env_for(repo_root, config)
     return run_codex(
         repo_root,
         prompt,
@@ -326,13 +368,15 @@ def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
             packet_variant=PCODEX_PACKET_VARIANT,
             packet_strategy=PCODEX_PACKET_STRATEGY,
             lane="pcodex",
+            child_env=child_env,
         ),
     )
 
 
 def run_disabled(repo_root: Path, prompt: str) -> dict[str, Any]:
-    completed = subprocess.run(["codex", "exec", "-"], input=prompt, text=True, capture_output=True, check=False, cwd=repo_root)
-    return {"returncode": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr, "enabled": False}
+    child_env = child_env_for(repo_root, resolve_config(repo_root))
+    completed = subprocess.run(["codex", "exec", "-"], input=prompt, text=True, capture_output=True, check=False, cwd=repo_root, env={**os.environ, **child_env})
+    return {"returncode": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr, "enabled": False, "child_env": child_env}
 
 
 def _parser() -> argparse.ArgumentParser:
