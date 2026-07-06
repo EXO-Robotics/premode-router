@@ -154,6 +154,16 @@ def _command_available(name: str) -> bool:
     return sibling.exists() and os.access(sibling, os.X_OK)
 
 
+def _command_path(name: str) -> str | None:
+    found = shutil.which(name)
+    if found:
+        return found
+    sibling = Path(sys.executable).with_name(name)
+    if sibling.exists() and os.access(sibling, os.X_OK):
+        return str(sibling)
+    return None
+
+
 def plugin_alias_available() -> bool:
     try:
         resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
@@ -293,6 +303,7 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "status": "ok",
         "repo_root": str(repo_root),
         "premode_executable_available": _command_available("premode"),
+        "pcodex_executable_available": _command_available("pcodex"),
         "codex_executable_available": _command_available("codex"),
         "plugin_alias_available": plugin_alias_available(),
         "available_plugin_aliases": available_plugin_aliases(),
@@ -301,6 +312,201 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "config": config.__dict__,
         "algorithm": PCODEX_PACKET_STRATEGY,
         "secrets_printed": False,
+    }
+
+
+def run_one_step_tune(repo_root: Path, *, out_dir: Path | None = None) -> dict[str, Any]:
+    from .tuning import validate_tuning_artifacts, verify_tuning_profile, write_tuning_artifacts
+
+    generation = write_tuning_artifacts(repo_root, out_dir=out_dir)
+    validation = validate_tuning_artifacts(repo_root, out_dir=out_dir)
+    verification = verify_tuning_profile(repo_root, out_dir=out_dir)
+    verdict = str(verification.get("verdict") or "FAIL")
+    if verdict == "PASS":
+        status = "tuning_ready"
+        next_step = "pcodex setup or pcodex tuned"
+    elif verdict == "NEEDS_ADJUSTMENT":
+        status = "needs_adjustment"
+        next_step = "keep general literal_symbol mode and inspect VERIFY_REPORT.md"
+    else:
+        status = "failed"
+        next_step = "keep general literal_symbol mode and repair tuning artifacts"
+    return {
+        "status": status,
+        "repo_root": str(repo_root),
+        "out_dir": str(out_dir or (repo_root / ".premode" / "tuning")),
+        "generation_status": generation.get("status"),
+        "validation_status": "PASS" if validation.get("status") == "pass" else "FAIL",
+        "validation_failures": validation.get("failures", []),
+        "verdict": verdict,
+        "profile_validation_status": verification.get("profile_validation_status"),
+        "evaluation_prompt_count": verification.get("evaluation_prompt_count"),
+        "notes": verification.get("notes", []),
+        "artifacts": {
+            "repo_profile": str((out_dir or (repo_root / ".premode" / "tuning")) / "repo_profile.json"),
+            "VALIDATION": str((out_dir or (repo_root / ".premode" / "tuning")) / "VALIDATION.json"),
+            "VERIFY_RESULTS": str((out_dir or (repo_root / ".premode" / "tuning")) / "VERIFY_RESULTS.json"),
+            "VERIFY_REPORT": str((out_dir or (repo_root / ".premode" / "tuning")) / "VERIFY_REPORT.md"),
+        },
+        "safety_summary": {
+            "local_only": True,
+            "source_edits": False,
+            "model_facing_packet_expansion": False,
+            "live_codex_tasks": False,
+            "real_codex_config_mutation": False,
+        },
+        "next": next_step,
+        "generation": generation,
+        "validation": validation,
+        "verification": verification,
+    }
+
+
+def _one_step_tune_exit_code(result: dict[str, Any]) -> int:
+    verdict = result.get("verdict")
+    if verdict in {"PASS", "NEEDS_ADJUSTMENT"}:
+        return 0
+    return 2
+
+
+def _isolated_codex_home(repo_root: Path) -> Path:
+    return repo_root / ".premode" / "pcodex_codex_home"
+
+
+def _run_codex_mcp_command(args: list[str], *, codex_home: Path | None = None) -> dict[str, Any]:
+    env = os.environ.copy()
+    if codex_home is not None:
+        codex_home.mkdir(parents=True, exist_ok=True)
+        env["CODEX_HOME"] = str(codex_home)
+    completed = subprocess.run(
+        ["codex", "mcp", *args],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=env,
+    )
+    return {
+        "args": ["codex", "mcp", *args],
+        "returncode": completed.returncode,
+        "stdout": redact_text(completed.stdout, limit=1200),
+        "stderr": redact_text(completed.stderr, limit=1200),
+    }
+
+
+def register_mcp_for_setup(
+    repo_root: Path,
+    *,
+    no_mcp: bool = False,
+    isolated: bool = True,
+    real_codex_registration: bool = False,
+) -> dict[str, Any]:
+    if no_mcp:
+        return {"status": "skipped", "reason": "no_mcp", "registered": False, "config_scope": "none"}
+    if not _command_available("codex"):
+        return {"status": "skipped", "reason": "codex_cli_missing", "registered": False, "config_scope": "none"}
+    if real_codex_registration:
+        codex_home = None
+        config_scope = "real"
+        warning = "This mutates real local Codex MCP config because --real-codex-registration was explicitly provided."
+    else:
+        codex_home = _isolated_codex_home(repo_root) if isolated else _isolated_codex_home(repo_root)
+        config_scope = "isolated"
+        warning = None
+    pcodex_command = _command_path("pcodex") or "pcodex"
+    add_result = _run_codex_mcp_command(["add", "pcodex", "--", pcodex_command, "mcp-server"], codex_home=codex_home)
+    list_result = _run_codex_mcp_command(["list"], codex_home=codex_home)
+    registered = add_result["returncode"] == 0
+    status_value = "registered" if registered else "failed"
+    return {
+        "status": status_value,
+        "registered": registered,
+        "config_scope": config_scope,
+        "codex_home": str(codex_home) if codex_home is not None else None,
+        "warning": warning,
+        "command": add_result,
+        "list": list_result,
+        "rollback": "codex mcp remove pcodex",
+        "fatal": False,
+    }
+
+
+def setup(
+    cwd: Path | None = None,
+    *,
+    skip_tune: bool = False,
+    no_mcp: bool = False,
+    isolated: bool = True,
+    real_codex_registration: bool = False,
+    tune_runner: Any | None = None,
+    mcp_registrar: Any | None = None,
+) -> dict[str, Any]:
+    cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    doctor_result = doctor(repo_root)
+    checks = {
+        "premode_available": bool(doctor_result.get("premode_executable_available")),
+        "pcodex_available": bool(doctor_result.get("pcodex_executable_available")),
+        "literal_symbol_plugin_available": bool(doctor_result.get("plugin_alias_available")),
+        "codex_available": bool(doctor_result.get("codex_executable_available")),
+    }
+    blocking = [name for name in ("premode_available", "literal_symbol_plugin_available") if not checks[name]]
+    if blocking:
+        mode_result = set_enabled(repo_root, True)
+        return {
+            "setup_status": "failed",
+            "repo_root": str(repo_root),
+            "checks": checks,
+            "blocking_checks": blocking,
+            "doctor": doctor_result,
+            "mode": mode_result.get("mode"),
+            "tuning_verdict": "SKIPPED",
+            "mcp_status": "not_attempted",
+            "fallback": "using general literal_symbol",
+            "next_steps": ["repair local pCodex prerequisites", "rerun pcodex setup"],
+            "codex_launch": "not_executed",
+        }
+    tune_result: dict[str, Any] | None = None
+    tuning_verdict = "SKIPPED"
+    if not skip_tune:
+        runner = tune_runner or run_one_step_tune
+        try:
+            tune_result = runner(repo_root)
+            tuning_verdict = str(tune_result.get("verdict") or "FAIL")
+        except Exception as exc:
+            tune_result = {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+            tuning_verdict = "FAIL"
+    if tuning_verdict == "PASS":
+        try:
+            mode_result = set_tuned(repo_root)
+        except PcodexStateError as exc:
+            mode_result = set_enabled(repo_root, True)
+            tuning_verdict = "FAIL"
+            tune_result = {**(tune_result or {}), "mode_error": str(exc)}
+    else:
+        mode_result = set_enabled(repo_root, True)
+    registrar = mcp_registrar or register_mcp_for_setup
+    mcp_result = registrar(
+        repo_root,
+        no_mcp=no_mcp,
+        isolated=isolated,
+        real_codex_registration=real_codex_registration,
+    )
+    mode = str(mode_result.get("mode") or "on")
+    fallback = "general mode available" if mode == "tuned" else "using general literal_symbol"
+    return {
+        "setup_status": "complete",
+        "repo_root": str(repo_root),
+        "checks": checks,
+        "blocking_checks": [],
+        "doctor": doctor_result,
+        "mode": mode,
+        "tuning_verdict": tuning_verdict,
+        "tune": tune_result,
+        "mcp": mcp_result,
+        "mcp_status": _format_mcp_status(mcp_result),
+        "fallback": fallback,
+        "next_steps": ["pcodex status", "pcodex run --dry-run \"Hypothetical dummy task: inspect login flow. Do not modify files.\""],
+        "codex_launch": "not_executed",
     }
 
 
@@ -323,6 +529,19 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "codex_available": _command_available("codex"),
         "plugin_alias_available": plugin_alias_available(),
     }
+
+
+def _format_mcp_status(mcp_result: dict[str, Any]) -> str:
+    status_value = str(mcp_result.get("status") or "unknown")
+    scope = str(mcp_result.get("config_scope") or "none")
+    if status_value == "registered":
+        return f"registered in {scope} config"
+    if status_value == "skipped":
+        reason = mcp_result.get("reason")
+        return f"skipped ({reason})" if reason else "skipped"
+    if status_value == "failed":
+        return f"registration failed in {scope} config"
+    return status_value
 
 
 def child_env_for(repo_root: Path, config: PcodexConfig | None = None) -> dict[str, str]:
@@ -420,6 +639,30 @@ def format_status(payload: dict[str, Any]) -> str:
             lines.append(f"tuning_profile_error: {payload.get('tuning_profile_error')}")
     if payload.get("state_status") != "loaded":
         lines.append(f"state_status: {payload.get('state_status')}")
+    return "\n".join(lines)
+
+
+def format_setup_dashboard(payload: dict[str, Any], *, verbose: bool = False) -> str:
+    lines = [
+        "pCodex setup complete." if payload.get("setup_status") == "complete" else "pCodex setup failed.",
+        f"Mode: {payload.get('mode')}",
+        f"Tuning: {payload.get('tuning_verdict')}",
+        f"MCP: {payload.get('mcp_status')}",
+        f"Fallback: {payload.get('fallback')}",
+    ]
+    if verbose:
+        checks = payload.get("checks") if isinstance(payload.get("checks"), dict) else {}
+        lines.append("Checks:")
+        for key in sorted(checks):
+            lines.append(f"  {key}: {str(checks[key]).lower()}")
+        next_steps = payload.get("next_steps") if isinstance(payload.get("next_steps"), list) else []
+        if next_steps:
+            lines.append("Next steps:")
+            lines.extend(f"  {step}" for step in next_steps)
+        mcp = payload.get("mcp") if isinstance(payload.get("mcp"), dict) else {}
+        warning = mcp.get("warning")
+        if warning:
+            lines.append(f"Warning: {warning}")
     return "\n".join(lines)
 
 
@@ -526,6 +769,14 @@ def _parser() -> argparse.ArgumentParser:
     status_parser = sub.add_parser("status")
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable pCodex mode state.")
     status_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    setup_parser = sub.add_parser("setup")
+    setup_parser.add_argument("--skip-tune", action="store_true", help="Skip tune/validate/verify and enable general mode.")
+    setup_parser.add_argument("--no-mcp", action="store_true", help="Skip Codex MCP registration.")
+    setup_parser.add_argument("--isolated", action="store_true", help="Use isolated Codex config for MCP registration. This is the default.")
+    setup_parser.add_argument("--real-codex-registration", action="store_true", help="Explicitly mutate real local Codex MCP config.")
+    setup_parser.add_argument("--verbose", action="store_true", help="Print detailed setup checks.")
+    setup_parser.add_argument("--json", action="store_true", help="Print machine-readable setup result.")
+    setup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     on = sub.add_parser("on")
     on.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     off = sub.add_parser("off")
@@ -535,7 +786,7 @@ def _parser() -> argparse.ArgumentParser:
     tuned.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     tune = sub.add_parser("tune")
     tune_group = tune.add_mutually_exclusive_group()
-    tune_group.add_argument("--static-only", action="store_true", help="Generate static local tuning artifacts. This is the default.")
+    tune_group.add_argument("--static-only", action="store_true", help="Generate static local tuning artifacts only.")
     tune_group.add_argument("--validate", action="store_true", help="Validate existing .premode/tuning artifacts without regenerating them.")
     tune_group.add_argument("--verify", action="store_true", help="Verify static tuning profile quality with compile-only local selection.")
     tune.add_argument("--repo-root", default=None, help="Repository root to tune. Defaults to the current repo.")
@@ -574,6 +825,24 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(format_status(payload))
         return 0
+    if args.command == "setup":
+        payload = setup(
+            repo_root,
+            skip_tune=args.skip_tune,
+            no_mcp=args.no_mcp,
+            isolated=True,
+            real_codex_registration=args.real_codex_registration,
+        )
+        if args.real_codex_registration and not args.json:
+            mcp = payload.get("mcp") if isinstance(payload.get("mcp"), dict) else {}
+            warning = mcp.get("warning")
+            if warning:
+                print(f"Warning: {warning}", file=sys.stderr)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_setup_dashboard(payload, verbose=args.verbose))
+        return 0 if payload.get("setup_status") == "complete" else 2
     if args.command == "on":
         print(json.dumps(set_enabled(repo_root, True), indent=2, sort_keys=True))
         return 0
@@ -599,12 +868,16 @@ def main(argv: list[str] | None = None) -> int:
                 result = validate_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
                 print(json.dumps(result, indent=2, sort_keys=True))
                 return 0 if result.get("status") == "pass" else 1
-            result = write_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
+            if args.static_only:
+                result = write_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result.get("validation_status") == "pass" else 1
+            result = run_one_step_tune(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
         except ValueError as exc:
             print(json.dumps({"status": "error", "error": str(exc)}, indent=2, sort_keys=True))
             return 2
         print(json.dumps(result, indent=2, sort_keys=True))
-        return 0 if result.get("validation_status") == "pass" else 1
+        return _one_step_tune_exit_code(result)
     if args.command == "mcp-server":
         from . import pcodex_mcp_server
 

@@ -578,7 +578,7 @@ if __name__ == "__main__":
 
 def pcodex_main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    bootstrap_commands = {"install", "doctor", "status", "on", "off", "tuned", "tune", "mcp-server", "compile", "run"}
+    bootstrap_commands = {"install", "doctor", "status", "setup", "on", "off", "tuned", "tune", "mcp-server", "compile", "run"}
     if argv and argv[0] in bootstrap_commands:
         from .pcodex_bootstrap import main as pcodex_bootstrap_main
 
