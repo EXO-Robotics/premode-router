@@ -32,11 +32,24 @@ TOOL_OUTPUT_SCHEMA: dict[str, Any] = {
         "transformed_prompt": {"type": "string"},
         "enabled": {"type": "boolean"},
         "algorithm": {"const": pcodex.PCODEX_PACKET_STRATEGY},
+        "mode": {"type": ["string", "null"]},
+        "transform_applied": {"type": "boolean"},
+        "tuning_profile": {"type": ["string", "null"]},
         "used_fallback": {"type": "boolean"},
         "error": {"type": ["string", "null"]},
         "metadata": {"type": "object", "additionalProperties": True},
     },
-    "required": ["transformed_prompt", "enabled", "algorithm", "used_fallback", "error", "metadata"],
+    "required": [
+        "transformed_prompt",
+        "enabled",
+        "algorithm",
+        "mode",
+        "transform_applied",
+        "tuning_profile",
+        "used_fallback",
+        "error",
+        "metadata",
+    ],
     "additionalProperties": False,
 }
 
@@ -49,12 +62,18 @@ class PcodexToolResult:
     used_fallback: bool
     error: str | None
     metadata: Mapping[str, object]
+    mode: str | None = None
+    transform_applied: bool = False
+    tuning_profile: str | None = None
 
     def as_dict(self) -> dict[str, object]:
         return {
             "transformed_prompt": self.transformed_prompt,
             "enabled": self.enabled,
             "algorithm": self.algorithm,
+            "mode": self.mode,
+            "transform_applied": self.transform_applied,
+            "tuning_profile": self.tuning_profile,
             "used_fallback": self.used_fallback,
             "error": self.error,
             "metadata": dict(self.metadata),
@@ -88,12 +107,18 @@ def pcodex_transform_subagent_prompt_tool(
             transformed_prompt=str(subagent_prompt or ""),
             enabled=False,
             algorithm=pcodex.PCODEX_PACKET_STRATEGY,
+            mode=None,
+            transform_applied=False,
+            tuning_profile=None,
             used_fallback=False,
             error="subagent_prompt is required",
             metadata={
                 "status": "invalid_input_raw_prompt",
                 "packet_path": None,
                 "input_prompt_preserved": True,
+                "mode": None,
+                "transform_applied": False,
+                "tuning_profile": None,
                 "model_facing_sections": MODEL_FACING_SECTIONS,
             },
         )
@@ -115,6 +140,9 @@ def pcodex_transform_subagent_prompt_tool(
         "status": result.metadata.get("status"),
         "route": result.route,
         "dry_run": bool(dry_run),
+        "mode": result.mode,
+        "transform_applied": result.transform_applied,
+        "tuning_profile": result.tuning_profile,
     }
     if result.error:
         metadata["error_status"] = result.metadata.get("status")
@@ -122,6 +150,9 @@ def pcodex_transform_subagent_prompt_tool(
         transformed_prompt=result.prompt,
         enabled=result.enabled,
         algorithm=result.algorithm,
+        mode=result.mode,
+        transform_applied=result.transform_applied,
+        tuning_profile=result.tuning_profile,
         used_fallback=result.used_fallback,
         error=result.error,
         metadata=metadata,
@@ -134,6 +165,9 @@ def _metadata_for_result(result: PcodexToolResult, *, status: str = "transformed
         "status": status,
         "enabled": result.enabled,
         "algorithm": result.algorithm,
+        "mode": result.mode,
+        "transform_applied": result.transform_applied,
+        "tuning_profile": result.tuning_profile,
         "used_fallback": result.used_fallback,
         "error": result.error,
         "metadata": dict(result.metadata),

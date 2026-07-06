@@ -9,7 +9,7 @@ from typing import Any
 from . import pcodex_bootstrap as pcodex
 
 
-CompileRunner = Callable[[Path, str, str | None], dict[str, Any]]
+CompileRunner = Callable[..., dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -17,6 +17,9 @@ class SubagentTransformResult:
     prompt: str
     enabled: bool
     algorithm: str = pcodex.PCODEX_PACKET_STRATEGY
+    mode: str | None = None
+    transform_applied: bool = False
+    tuning_profile: str | None = None
     packet_path: str | None = None
     used_fallback: bool = False
     error: str | None = None
@@ -45,27 +48,62 @@ def transform_subagent_prompt(
     compile_runner: CompileRunner | None = None,
     profile: str | None = "lite",
 ) -> SubagentTransformResult:
-    config = pcodex.resolve_config(project_root)
+    mode_state = pcodex.resolve_mode_state(project_root, validate_tuned=True, require_runnable=False)
+    mode = str(mode_state.get("mode") or "on")
+    tuning_profile = str(mode_state["tuning_profile"]) if mode == "tuned" and mode_state.get("tuning_profile") else None
     base_metadata: dict[str, Any] = {
         "parent_prompt_present": parent_prompt is not None,
         "spawn_metadata_keys": sorted((spawn_metadata or {}).keys()),
         "dry_run": dry_run,
-        "config_source": config.source,
+        "config_source": "pcodex_state",
+        "state_status": mode_state.get("state_status"),
+        "state_error": mode_state.get("state_error"),
+        "mode": mode,
+        "transform_applied": False,
+        "tuning_profile": tuning_profile,
     }
-    if not config.enabled:
+    if mode_state.get("state_status") == "invalid_default":
+        error = str(mode_state.get("state_error") or "Invalid pCodex mode state")
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=False,
+            mode=mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
+            error=error,
+            metadata={**base_metadata, "status": "invalid_state_raw_prompt", "error": error},
+        )
+    if mode == "tuned" and mode_state.get("tuning_profile_valid") is False:
+        error = str(mode_state.get("tuning_profile_error") or "Invalid pCodex tuning profile")
+        return SubagentTransformResult(
+            prompt=subagent_prompt,
+            enabled=True,
+            mode=mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
+            error=error,
+            metadata={**base_metadata, "status": "tuned_profile_invalid_raw_prompt", "error": error},
+        )
+    if mode == "off":
+        return SubagentTransformResult(
+            prompt=subagent_prompt,
+            enabled=False,
+            mode=mode,
+            transform_applied=False,
+            tuning_profile=None,
             metadata={**base_metadata, "status": "disabled_raw_prompt"},
         )
 
     runner = compile_runner or pcodex.compile_pcodex_packet
     try:
-        compiled = runner(project_root, subagent_prompt, profile)
+        compiled = pcodex.run_compile_runner(runner, project_root, subagent_prompt, profile, tuning_profile=tuning_profile)
     except Exception as exc:
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=True,
+            mode=mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
             error=f"{type(exc).__name__}: {exc}",
             metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
         )
@@ -75,6 +113,9 @@ def transform_subagent_prompt(
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=True,
+            mode=mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
             error="compile runner returned no packet",
             metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
         )
@@ -84,12 +125,16 @@ def transform_subagent_prompt(
     return SubagentTransformResult(
         prompt=transformed,
         enabled=True,
+        mode=mode,
+        transform_applied=True,
+        tuning_profile=tuning_profile,
         packet_path=packet_path,
         used_fallback=route == "explicit_fallback",
         route=route or None,
         metadata={
             **base_metadata,
             "status": "transformed",
+            "transform_applied": True,
             "premode_command": compiled.get("premode_command"),
             "packet_sha256": compiled.get("packet_sha256"),
             "model_facing_sections": compiled.get("model_facing_sections"),

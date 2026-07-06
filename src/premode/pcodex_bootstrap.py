@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import inspect
 import json
 import os
 from pathlib import Path
@@ -169,14 +170,20 @@ def _literal_symbol_kwargs() -> dict[str, str]:
     }
 
 
-def _premode_alias_command(prompt: str, repo_root: Path, profile: str | None) -> list[str]:
-    cmd = ["premode", "compile", prompt, "--repo", str(repo_root), "--plugin", PCODEX_PLUGIN_ALIAS]
-    if profile:
-        cmd.extend(["--profile", profile])
+def _append_tuning_command(cmd: list[str], tuning_profile: str | None) -> list[str]:
+    if tuning_profile:
+        cmd.extend(["--tuning", tuning_profile])
     return cmd
 
 
-def _premode_explicit_command(prompt: str, repo_root: Path, profile: str | None) -> list[str]:
+def _premode_alias_command(prompt: str, repo_root: Path, profile: str | None, tuning_profile: str | None = None) -> list[str]:
+    cmd = ["premode", "compile", prompt, "--repo", str(repo_root), "--plugin", PCODEX_PLUGIN_ALIAS]
+    if profile:
+        cmd.extend(["--profile", profile])
+    return _append_tuning_command(cmd, tuning_profile)
+
+
+def _premode_explicit_command(prompt: str, repo_root: Path, profile: str | None, tuning_profile: str | None = None) -> list[str]:
     cmd = [
         "premode",
         "compile",
@@ -192,19 +199,49 @@ def _premode_explicit_command(prompt: str, repo_root: Path, profile: str | None)
     ]
     if profile:
         cmd.extend(["--profile", profile])
-    return cmd
+    return _append_tuning_command(cmd, tuning_profile)
 
 
-def compile_pcodex_packet(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
+def _compile_runner_accepts_tuning(compile_runner: Any) -> bool:
+    try:
+        signature = inspect.signature(compile_runner)
+    except (TypeError, ValueError):
+        return False
+    return "tuning_profile" in signature.parameters or any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+
+
+def run_compile_runner(
+    compile_runner: Any,
+    repo_root: Path,
+    prompt: str,
+    profile: str | None,
+    *,
+    tuning_profile: str | None = None,
+) -> dict[str, Any]:
+    if tuning_profile and _compile_runner_accepts_tuning(compile_runner):
+        return compile_runner(repo_root, prompt, profile, tuning_profile=tuning_profile)
+    return compile_runner(repo_root, prompt, profile)
+
+
+def compile_pcodex_packet(
+    repo_root: Path,
+    prompt: str,
+    profile: str | None = "lite",
+    *,
+    tuning_profile: str | None = None,
+) -> dict[str, Any]:
     try:
         resolved = resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
         route = "plugin_alias"
-        command = _premode_alias_command(prompt, repo_root, profile)
+        command = _premode_alias_command(prompt, repo_root, profile, tuning_profile)
         kwargs = resolved.as_compile_kwargs()
         plugin_resolution = resolved.as_dict()
     except PluginAliasError as exc:
         route = "explicit_fallback"
-        command = _premode_explicit_command(prompt, repo_root, profile)
+        command = _premode_explicit_command(prompt, repo_root, profile, tuning_profile)
         kwargs = _literal_symbol_kwargs()
         plugin_resolution = None
         fallback_reason = str(exc)
@@ -218,6 +255,7 @@ def compile_pcodex_packet(repo_root: Path, prompt: str, profile: str | None = "l
         cache_optimized=True,
         save=False,
         record_artifacts=False,
+        tuning_profile=tuning_profile,
         **kwargs,
     )
     return {
@@ -232,6 +270,7 @@ def compile_pcodex_packet(repo_root: Path, prompt: str, profile: str | None = "l
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
         "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "tuning_profile": tuning_profile,
     }
 
 
@@ -300,6 +339,35 @@ def child_env_for(repo_root: Path, config: PcodexConfig | None = None) -> dict[s
     return env
 
 
+def child_env_for_mode_state(repo_root: Path, mode_state: dict[str, Any]) -> dict[str, str]:
+    return {
+        CONFIG_ENV: "1" if bool(mode_state.get("enabled")) else "0",
+        ALGORITHM_ENV: PCODEX_PACKET_STRATEGY,
+        PACKET_STRATEGY_ENV: PCODEX_PACKET_STRATEGY,
+        PROJECT_ROOT_ENV: str(repo_root.resolve()),
+    }
+
+
+def resolve_mode_state(repo_root: Path, *, validate_tuned: bool = True, require_runnable: bool = False) -> dict[str, Any]:
+    mode_state = status_payload(repo_root, validate_tuned=validate_tuned)
+    if mode_state.get("state_status") == "invalid_default":
+        message = mode_state.get("state_error") or "Invalid pCodex mode state"
+        if require_runnable:
+            raise PcodexStateError(str(message))
+        return mode_state
+    if require_runnable and mode_state.get("mode") == "tuned" and mode_state.get("tuning_profile_valid") is False:
+        message = mode_state.get("tuning_profile_error") or "Invalid pCodex tuning profile"
+        raise PcodexStateError(str(message))
+    return mode_state
+
+
+def _state_tuning_profile(mode_state: dict[str, Any]) -> str | None:
+    if mode_state.get("mode") != "tuned":
+        return None
+    profile = mode_state.get("tuning_profile")
+    return str(profile) if profile else None
+
+
 def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
@@ -362,21 +430,35 @@ def _write_temp_packet(packet: str) -> str:
     return handle.name
 
 
-def run_dry_run(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
-    config = resolve_config(repo_root)
-    child_env = child_env_for(repo_root, config)
+def run_dry_run(
+    repo_root: Path,
+    prompt: str,
+    profile: str | None = "lite",
+    *,
+    compile_runner: Any | None = None,
+) -> dict[str, Any]:
+    mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
+    mode = str(mode_state["mode"])
+    tuning_profile = _state_tuning_profile(mode_state)
+    child_env = child_env_for_mode_state(repo_root, mode_state)
     base = {
         "status": "dry_run",
-        "enabled": config.enabled,
-        "config_source": config.source,
+        "enabled": bool(mode_state["enabled"]),
+        "mode": mode,
+        "transform_applied": mode != "off",
+        "tuning_profile": tuning_profile,
+        "state_status": mode_state.get("state_status"),
+        "state_error": mode_state.get("state_error"),
+        "config_source": "pcodex_state",
         "algorithm": PCODEX_PACKET_STRATEGY,
         "child_env": child_env,
         "child_env_keys": sorted(child_env),
         "raw_task_preview": redact_text(prompt),
         "codex_launch": "not_executed",
     }
-    if config.enabled:
-        compiled = compile_pcodex_packet(repo_root, prompt, profile)
+    if mode != "off":
+        runner = compile_runner or compile_pcodex_packet
+        compiled = run_compile_runner(runner, repo_root, prompt, profile, tuning_profile=tuning_profile)
         packet_path = _write_temp_packet(compiled["packet"])
         final_prompt = compose_final_prompt(prompt, compiled["packet"])
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
@@ -400,8 +482,9 @@ def run_dry_run(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
 
 
 def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
-    config = resolve_config(repo_root)
-    child_env = child_env_for(repo_root, config)
+    mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
+    tuning_profile = _state_tuning_profile(mode_state)
+    child_env = child_env_for_mode_state(repo_root, mode_state)
     return run_codex(
         repo_root,
         prompt,
@@ -413,15 +496,25 @@ def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
             packet_variant=PCODEX_PACKET_VARIANT,
             packet_strategy=PCODEX_PACKET_STRATEGY,
             lane="pcodex",
+            tuning_profile=tuning_profile,
             child_env=child_env,
         ),
     )
 
 
-def run_disabled(repo_root: Path, prompt: str) -> dict[str, Any]:
-    child_env = child_env_for(repo_root, resolve_config(repo_root))
+def run_disabled(repo_root: Path, prompt: str, mode_state: dict[str, Any] | None = None) -> dict[str, Any]:
+    mode_state = mode_state or resolve_mode_state(repo_root, validate_tuned=False)
+    child_env = child_env_for_mode_state(repo_root, mode_state)
     completed = subprocess.run(["codex", "exec", "-"], input=prompt, text=True, capture_output=True, check=False, cwd=repo_root, env={**os.environ, **child_env})
-    return {"returncode": completed.returncode, "stdout": completed.stdout, "stderr": completed.stderr, "enabled": False, "child_env": child_env}
+    return {
+        "returncode": completed.returncode,
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "enabled": False,
+        "mode": str(mode_state.get("mode") or "off"),
+        "transform_applied": False,
+        "child_env": child_env,
+    }
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -538,13 +631,30 @@ def main(argv: list[str] | None = None) -> int:
             print(compiled["packet"])
         return 0
     if args.command == "run":
+        try:
+            mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
+        except PcodexStateError as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "codex_launch": "not_executed",
+                        "transform_applied": False,
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+            return 2
         if args.dry_run:
             print(json.dumps(run_dry_run(repo_root, args.prompt, args.profile), indent=2, sort_keys=True))
             return 0
-        if resolve_config(repo_root).enabled:
+        if mode_state["mode"] != "off":
             result = run_enabled(repo_root, args.prompt, args.profile)
         else:
-            result = run_disabled(repo_root, args.prompt)
+            result = run_disabled(repo_root, args.prompt, mode_state)
         print(json.dumps(result, indent=2, sort_keys=True))
         return int(result.get("returncode", 0) or 0)
     return 2

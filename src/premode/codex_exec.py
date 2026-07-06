@@ -47,6 +47,7 @@ class CodexOptions:
     lane: str = "codex"
     repo_is_private: bool = False
     private_paths_forbidden: bool = False
+    tuning_profile: str | None = None
     child_env: dict[str, str] = field(default_factory=dict)
 
 
@@ -254,6 +255,7 @@ def run_codex(
         save=options.save,
         context_only=options.context_only,
         record_artifacts=options.record,
+        tuning_profile=options.tuning_profile,
     )
     packet = compiled["packet"]
     if packet == raw_prompt:
@@ -298,6 +300,7 @@ def run_codex(
                 "save": options.save,
                 "context_only": options.context_only,
                 "record": options.record,
+                "tuning_profile": options.tuning_profile,
             },
             "saved_artifacts": compiled.get("saved_artifacts"),
             "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
