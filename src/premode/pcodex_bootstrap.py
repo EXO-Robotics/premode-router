@@ -392,6 +392,7 @@ def _parser() -> argparse.ArgumentParser:
     tune_group = tune.add_mutually_exclusive_group()
     tune_group.add_argument("--static-only", action="store_true", help="Generate static local tuning artifacts. This is the default.")
     tune_group.add_argument("--validate", action="store_true", help="Validate existing .premode/tuning artifacts without regenerating them.")
+    tune_group.add_argument("--verify", action="store_true", help="Verify static tuning profile quality with compile-only local selection.")
     tune.add_argument("--repo-root", default=None, help="Repository root to tune. Defaults to the current repo.")
     tune.add_argument("--out-dir", default=None, help="Artifact directory. Must remain under .premode/tuning/.")
     sub.add_parser("mcp-server")
@@ -431,9 +432,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(set_enabled(repo_root, False), indent=2, sort_keys=True))
         return 0
     if args.command == "tune":
-        from .tuning import validate_tuning_artifacts, write_tuning_artifacts
+        from .tuning import validate_tuning_artifacts, verify_tuning_profile, write_tuning_artifacts
 
         try:
+            if args.verify:
+                result = verify_tuning_profile(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result.get("verdict") in {"PASS", "NEEDS_ADJUSTMENT"} else 1
             if args.validate:
                 result = validate_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
                 print(json.dumps(result, indent=2, sort_keys=True))

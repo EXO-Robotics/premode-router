@@ -36,6 +36,7 @@ ARTIFACT_FILES = {
     "hotspots_and_suppressions": TUNING_DIR / "hotspots_and_suppressions.json",
     "literal_symbol_weights": TUNING_DIR / "literal_symbol_weights.json",
 }
+VERIFY_SCHEMA_VERSION = "pcodex.tuning_verify.v1"
 
 MAX_FILES_INDEXED = 10_000
 MAX_FILE_BYTES_READ = 64_000
@@ -46,6 +47,8 @@ MAX_PROMPT_ROUTES = 500
 MAX_GIT_HISTORY_ENTRIES = 500
 MAX_REPORT_LINE_LENGTH = 160
 MAX_EVALUATION_PROMPTS = 200
+VERIFY_PRIMARY_TOP_K = 3
+VERIFY_RELATED_TEST_TOP_K = 3
 
 SOURCE_EXTENSIONS = {
     ".py",
@@ -801,4 +804,469 @@ def validate_tuning_artifacts(repo_root: Path | str, *, out_dir: Path | str | No
         if warnings:
             lines.extend(["", "## Warnings", *[f"- {warning}" for warning in warnings]])
         (output_dir / "VALIDATION.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return result
+
+
+def _load_json_file(path: Path) -> Any:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _first_list(row: dict[str, Any], keys: tuple[str, ...]) -> list[str]:
+    for key in keys:
+        value = row.get(key)
+        if isinstance(value, list):
+            return [item for item in value if isinstance(item, str) and item and not item.startswith("/")]
+    return []
+
+
+def load_evaluation_prompts(repo_root: Path | str, *, out_dir: Path | str | None = None) -> list[dict[str, Any]]:
+    root = find_repo_root(repo_root)
+    output_dir = _safe_out_dir(root, out_dir)
+    eval_path = output_dir / "evaluation_prompts.jsonl"
+    if not eval_path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for index, line in enumerate(eval_path.read_text(encoding="utf-8").splitlines(), start=1):
+        if len(rows) >= MAX_EVALUATION_PROMPTS:
+            break
+        if not line.strip():
+            continue
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(raw, dict):
+            continue
+        prompt = raw.get("prompt")
+        if not isinstance(prompt, str) or not prompt:
+            continue
+        row_id = raw.get("id")
+        canonical = {
+            "id": row_id if isinstance(row_id, str) and row_id else f"row-{index:03d}",
+            "prompt": prompt,
+            "expected_primary_files": _first_list(raw, ("expected_primary_files", "primary_files", "expected_files", "source_paths")),
+            "expected_related_tests": _first_list(raw, ("expected_related_tests", "related_tests", "test_files", "expected_tests")),
+            "tags": _first_list(raw, ("tags",)),
+        }
+        rows.append(canonical)
+    return rows
+
+
+def _load_verify_artifacts(output_dir: Path) -> dict[str, Any]:
+    payloads: dict[str, Any] = {}
+    profile_path = output_dir / "repo_profile.json"
+    if profile_path.exists():
+        payloads["repo_profile"] = _load_json_file(profile_path)
+    for key in ARTIFACT_FILES:
+        path = output_dir / f"{key}.json"
+        if path.exists():
+            payloads[key] = _load_json_file(path)
+    return payloads
+
+
+def _prompt_terms(prompt: str) -> set[str]:
+    terms: set[str] = set()
+    for raw in WORD_RE.findall(prompt):
+        safe = _safe_term(raw)
+        if safe:
+            terms.add(safe)
+            if safe.endswith("s") and len(safe) > 3:
+                terms.add(safe[:-1])
+    return terms
+
+
+def _term_in_prompt(term: str, terms: set[str], prompt_lower: str) -> bool:
+    safe = _safe_term(term)
+    if not safe:
+        return False
+    if safe in terms or safe in prompt_lower:
+        return True
+    pieces = [piece for piece in safe.split() if piece]
+    return bool(pieces) and all(piece in terms or piece in prompt_lower for piece in pieces)
+
+
+def _taxonomy_roles(taxonomy: dict[str, Any]) -> dict[str, str]:
+    roles = {}
+    for entry in taxonomy.get("paths", []):
+        if isinstance(entry, dict) and isinstance(entry.get("path"), str) and isinstance(entry.get("role"), str):
+            roles[entry["path"]] = entry["role"]
+    return roles
+
+
+def _vocabulary_by_path(vocabulary: dict[str, Any]) -> dict[str, set[str]]:
+    by_path: dict[str, set[str]] = {}
+    for collection in ("terms", "symbols", "imports", "headings"):
+        for item in vocabulary.get(collection, []):
+            if not isinstance(item, dict) or not isinstance(item.get("term"), str):
+                continue
+            term = item["term"]
+            for path in item.get("paths", []):
+                if isinstance(path, str):
+                    by_path.setdefault(path, set()).add(term)
+    return by_path
+
+
+def _weights(artifacts: dict[str, Any]) -> dict[str, float]:
+    payload = artifacts.get("literal_symbol_weights")
+    values = payload.get("weights", {}) if isinstance(payload, dict) else {}
+    defaults = build_literal_symbol_weights()["weights"]
+    return {key: float(values.get(key, default)) for key, default in defaults.items()}
+
+
+def _path_base_score(path: str, prompt: str, terms: set[str], vocabulary_terms: set[str], *, weights: dict[str, float], tuned: bool) -> float:
+    prompt_lower = prompt.lower()
+    path_lower = path.lower()
+    path_tokens = set(_tokenize_path(path))
+    stem_tokens = set(_tokenize_path(PurePosixPath(path).stem))
+    score = 0.0
+    if path_lower in prompt_lower:
+        score += 8.0
+    for term in terms:
+        if term in stem_tokens:
+            score += weights["filename_term_match"] if tuned else 1.0
+        if term in path_tokens:
+            score += weights["directory_term_match"] if tuned else 0.55
+    for term in vocabulary_terms:
+        if _term_in_prompt(term, terms, prompt_lower):
+            score += weights["exact_symbol_match"] if tuned else 0.8
+    return score
+
+
+def _phrase_route_delta(path: str, role: str, prompt: str, terms: set[str], artifacts: dict[str, Any], weights: dict[str, float]) -> float:
+    routes = artifacts.get("prompt_phrase_routes")
+    if not isinstance(routes, dict):
+        return 0.0
+    prompt_lower = prompt.lower()
+    delta = 0.0
+    for route in routes.get("routes", []):
+        if not isinstance(route, dict) or not isinstance(route.get("phrase"), str):
+            continue
+        if not _term_in_prompt(route["phrase"], terms, prompt_lower):
+            continue
+        confidence = min(1.0, max(0.0, float(route.get("confidence", 0.4) or 0.0)))
+        ambiguous = route.get("ambiguity") == "ambiguous"
+        for target in route.get("targets", []):
+            if not isinstance(target, dict):
+                continue
+            target_paths = []
+            if isinstance(target.get("path"), str):
+                target_paths.append(target["path"])
+            if isinstance(target.get("paths"), list):
+                target_paths.extend(item for item in target["paths"] if isinstance(item, str))
+            if not ambiguous and path in target_paths:
+                delta += confidence * 2.0
+            if not ambiguous and target.get("role") == role:
+                delta += confidence * 0.35
+        if ambiguous:
+            delta += weights["ambiguous_phrase_penalty"] * 0.25
+    return delta
+
+
+def _suppression_delta(path: str, role: str, artifacts: dict[str, Any], weights: dict[str, float]) -> float:
+    payload = artifacts.get("hotspots_and_suppressions")
+    if not isinstance(payload, dict):
+        return 0.0
+    delta = 0.0
+    for item in payload.get("boosts", []):
+        if isinstance(item, dict) and item.get("path") == path:
+            delta += min(1.0, max(0.0, float(item.get("weight", 0.0) or 0.0)))
+    for item in payload.get("suppressions", []):
+        if isinstance(item, dict) and item.get("path") == path:
+            delta += max(-5.0, min(0.0, float(item.get("weight", 0.0) or 0.0)))
+    if role == "generated":
+        delta += weights["generated_suppression"]
+    elif role == "vendor":
+        delta += weights["vendor_suppression"]
+    elif role == "noise":
+        delta += weights["noise_suppression"]
+    return delta
+
+
+def _source_test_boosts(primary_scores: dict[str, float], artifacts: dict[str, Any], weights: dict[str, float]) -> dict[str, float]:
+    payload = artifacts.get("source_test_map")
+    if not isinstance(payload, dict):
+        return {}
+    boosts: dict[str, float] = {}
+    for mapping in payload.get("mappings", []):
+        if not isinstance(mapping, dict) or not isinstance(mapping.get("source_path"), str):
+            continue
+        source_score = primary_scores.get(mapping["source_path"], 0.0)
+        if source_score <= 0.0:
+            continue
+        for item in mapping.get("tests", []):
+            if isinstance(item, dict) and isinstance(item.get("test_path"), str):
+                confidence = min(1.0, max(0.0, float(item.get("confidence", 0.0) or 0.0)))
+                boosts[item["test_path"]] = boosts.get(item["test_path"], 0.0) + weights["source_test_relation"] * confidence
+    return boosts
+
+
+def _rank_paths(scores: dict[str, float], *, top_k: int) -> list[str]:
+    ranked = sorted(scores.items(), key=lambda item: (-item[1], item[0]))
+    return [path for path, _score in ranked[:top_k]]
+
+
+def _selection_for_prompt(row: dict[str, Any], artifacts: dict[str, Any], *, tuned: bool) -> dict[str, Any]:
+    taxonomy = artifacts.get("path_taxonomy", {})
+    vocabulary = artifacts.get("repo_vocabulary", {})
+    roles = _taxonomy_roles(taxonomy if isinstance(taxonomy, dict) else {})
+    vocab_by_path = _vocabulary_by_path(vocabulary if isinstance(vocabulary, dict) else {})
+    weights = _weights(artifacts)
+    prompt = row["prompt"]
+    terms = _prompt_terms(prompt)
+    primary_candidates = [path for path, role in roles.items() if role != "test"]
+    test_candidates = [path for path, role in roles.items() if role == "test"]
+    primary_scores: dict[str, float] = {}
+    for path in primary_candidates:
+        role = roles.get(path, "unknown")
+        score = _path_base_score(path, prompt, terms, vocab_by_path.get(path, set()), weights=weights, tuned=tuned)
+        if tuned:
+            score += _phrase_route_delta(path, role, prompt, terms, artifacts, weights)
+            score += _suppression_delta(path, role, artifacts, weights)
+        primary_scores[path] = score
+    test_boosts = _source_test_boosts(primary_scores, artifacts, weights) if tuned else {}
+    test_scores: dict[str, float] = {}
+    for path in test_candidates:
+        score = _path_base_score(path, prompt, terms, vocab_by_path.get(path, set()), weights=weights, tuned=tuned)
+        if tuned:
+            score += _phrase_route_delta(path, "test", prompt, terms, artifacts, weights)
+            score += test_boosts.get(path, 0.0)
+        test_scores[path] = score
+    primary_top_k = max(VERIFY_PRIMARY_TOP_K, len(row.get("expected_primary_files", [])))
+    test_top_k = max(VERIFY_RELATED_TEST_TOP_K, len(row.get("expected_related_tests", [])))
+    return {
+        "primary_files": _rank_paths(primary_scores, top_k=primary_top_k),
+        "related_tests": _rank_paths(test_scores, top_k=test_top_k),
+        "primary_scores": primary_scores,
+        "test_scores": test_scores,
+    }
+
+
+def score_general_selection(row: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
+    return _selection_for_prompt(row, artifacts, tuned=False)
+
+
+def score_tuned_selection(row: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
+    return _selection_for_prompt(row, artifacts, tuned=True)
+
+
+def _hit_rate(rows: list[dict[str, Any]], selections: list[dict[str, Any]], expected_key: str, selected_key: str) -> float:
+    eligible = 0
+    hits = 0
+    for row, selected in zip(rows, selections, strict=False):
+        expected = set(row.get(expected_key, []))
+        if not expected:
+            continue
+        eligible += 1
+        if expected & set(selected.get(selected_key, [])):
+            hits += 1
+    return round(hits / eligible, 4) if eligible else 0.0
+
+
+def _best_rank(expected: list[str], selected: dict[str, Any], key: str) -> int | None:
+    ranking = selected.get(key, [])
+    ranks = [ranking.index(path) + 1 for path in expected if path in ranking]
+    return min(ranks) if ranks else None
+
+
+def _rank_improvement(rows: list[dict[str, Any]], general: list[dict[str, Any]], tuned: list[dict[str, Any]], expected_key: str, selected_key: str) -> float:
+    deltas = []
+    missing_rank = VERIFY_PRIMARY_TOP_K + 2 if selected_key == "primary_files" else VERIFY_RELATED_TEST_TOP_K + 2
+    for row, general_selection, tuned_selection in zip(rows, general, tuned, strict=False):
+        expected = row.get(expected_key, [])
+        if not expected:
+            continue
+        general_rank = _best_rank(expected, general_selection, selected_key) or missing_rank
+        tuned_rank = _best_rank(expected, tuned_selection, selected_key) or missing_rank
+        deltas.append(general_rank - tuned_rank)
+    return round(sum(deltas) / len(deltas), 4) if deltas else 0.0
+
+
+def _false_positive_rate(rows: list[dict[str, Any]], selections: list[dict[str, Any]]) -> float:
+    total = 0
+    false_positives = 0
+    for row, selected in zip(rows, selections, strict=False):
+        expected = set(row.get("expected_primary_files", [])) | set(row.get("expected_related_tests", []))
+        chosen = list(selected.get("primary_files", [])) + list(selected.get("related_tests", []))
+        total += len(chosen)
+        false_positives += sum(1 for path in chosen if path not in expected)
+    return round(false_positives / total, 4) if total else 0.0
+
+
+def _packet_token_estimate(selections: list[dict[str, Any]]) -> int:
+    paths = []
+    for selected in selections:
+        paths.extend(selected.get("primary_files", []))
+        paths.extend(selected.get("related_tests", []))
+    return sum(max(1, len(_tokenize_path(path)) + 2) for path in paths)
+
+
+def compare_selection_results(rows: list[dict[str, Any]], general: list[dict[str, Any]], tuned: list[dict[str, Any]]) -> dict[str, Any]:
+    general_primary = _hit_rate(rows, general, "expected_primary_files", "primary_files")
+    tuned_primary = _hit_rate(rows, tuned, "expected_primary_files", "primary_files")
+    general_tests = _hit_rate(rows, general, "expected_related_tests", "related_tests")
+    tuned_tests = _hit_rate(rows, tuned, "expected_related_tests", "related_tests")
+    general_false_positive = _false_positive_rate(rows, general)
+    tuned_false_positive = _false_positive_rate(rows, tuned)
+    general_tokens = _packet_token_estimate(general)
+    tuned_tokens = _packet_token_estimate(tuned)
+    return {
+        "general": {
+            "expected_primary_file_hit_rate": general_primary,
+            "expected_related_test_hit_rate": general_tests,
+            "false_positive_rate": general_false_positive,
+            "packet_token_estimate": general_tokens,
+        },
+        "tuned": {
+            "expected_primary_file_hit_rate": tuned_primary,
+            "expected_related_test_hit_rate": tuned_tests,
+            "false_positive_rate": tuned_false_positive,
+            "packet_token_estimate": tuned_tokens,
+        },
+        "delta": {
+            "primary_hit_rate": round(tuned_primary - general_primary, 4),
+            "related_test_hit_rate": round(tuned_tests - general_tests, 4),
+            "rank_improvement": _rank_improvement(rows, general, tuned, "expected_primary_files", "primary_files"),
+            "related_test_rank_improvement": _rank_improvement(rows, general, tuned, "expected_related_tests", "related_tests"),
+            "false_positive_reduction": round(general_false_positive - tuned_false_positive, 4),
+            "packet_token_estimate_change": tuned_tokens - general_tokens,
+        },
+    }
+
+
+def _packet_boundary_safe(profile: Any) -> bool:
+    return isinstance(profile, dict) and profile.get("model_facing_packet_boundary") == MODEL_FACING_PACKET_BOUNDARY
+
+
+def _verdict(validation: dict[str, Any], prompt_count: int, packet_boundary_safe: bool, comparison: dict[str, Any] | None, notes: list[str]) -> str:
+    if validation.get("status") != "pass":
+        return "FAIL"
+    if not packet_boundary_safe:
+        return "FAIL"
+    if prompt_count == 0:
+        return "FAIL"
+    if comparison is None:
+        return "FAIL"
+    delta = comparison["delta"]
+    if delta["primary_hit_rate"] < -0.25 or delta["related_test_hit_rate"] < -0.25:
+        return "FAIL"
+    if delta["primary_hit_rate"] < 0 or delta["related_test_hit_rate"] < 0:
+        return "NEEDS_ADJUSTMENT"
+    if prompt_count < 2:
+        notes.append("evaluation_set_too_small")
+        return "NEEDS_ADJUSTMENT"
+    return "PASS"
+
+
+def write_verify_artifacts(repo_root: Path | str, result: dict[str, Any], *, out_dir: Path | str | None = None) -> None:
+    root = find_repo_root(repo_root)
+    output_dir = _safe_out_dir(root, out_dir)
+    _write_json(output_dir / "VERIFY_RESULTS.json", result)
+    lines = [
+        "# pCodex Tuning Verify Report",
+        "",
+        "## Summary",
+        f"- schema: {result['schema_version']}",
+        f"- verdict: {result['verdict']}",
+        f"- profile validation: {result['profile_validation_status']}",
+        f"- evaluation prompts: {result['evaluation_prompt_count']}",
+        "- mode: compile-only local-selection verification",
+        "- live Codex tasks: none",
+        "- subagents: none",
+        "- source edits: none",
+        "- diagnostics: out-of-band",
+        "",
+        "## Metrics",
+        f"- general primary hit rate: {result['general']['expected_primary_file_hit_rate']}",
+        f"- tuned primary hit rate: {result['tuned']['expected_primary_file_hit_rate']}",
+        f"- general related test hit rate: {result['general']['expected_related_test_hit_rate']}",
+        f"- tuned related test hit rate: {result['tuned']['expected_related_test_hit_rate']}",
+        f"- rank improvement: {result['delta'].get('rank_improvement', 0.0)}",
+        f"- false-positive reduction: {result['delta'].get('false_positive_reduction', 0.0)}",
+        f"- packet token estimate change: {result['delta'].get('packet_token_estimate_change', 0)}",
+        f"- packet boundary safe: {result['packet_boundary_safe']}",
+    ]
+    if result.get("notes"):
+        lines.extend(["", "## Notes", *[f"- {note}" for note in result["notes"]]])
+    (output_dir / "VERIFY_REPORT.md").write_text("\n".join(line[:MAX_REPORT_LINE_LENGTH] for line in lines) + "\n", encoding="utf-8")
+
+
+def verify_tuning_profile(repo_root: Path | str, *, out_dir: Path | str | None = None) -> dict[str, Any]:
+    root = find_repo_root(repo_root)
+    output_dir = _safe_out_dir(root, out_dir)
+    notes: list[str] = []
+    validation = validate_tuning_artifacts(root, out_dir=output_dir, write_report=True)
+    artifacts: dict[str, Any] = {}
+    try:
+        artifacts = _load_verify_artifacts(output_dir)
+    except Exception as exc:
+        notes.append(f"artifact_load_failed:{exc.__class__.__name__}")
+    rows = load_evaluation_prompts(root, out_dir=output_dir)
+    if not rows:
+        notes.append("missing_or_empty_evaluation_prompts")
+    packet_safe = _packet_boundary_safe(artifacts.get("repo_profile"))
+    comparison: dict[str, Any] | None = None
+    row_summaries: list[dict[str, Any]] = []
+    if validation.get("status") == "pass" and rows and packet_safe and artifacts:
+        general = [score_general_selection(row, artifacts) for row in rows]
+        tuned = [score_tuned_selection(row, artifacts) for row in rows]
+        comparison = compare_selection_results(rows, general, tuned)
+        for row, general_selection, tuned_selection in zip(rows, general, tuned, strict=False):
+            expected_primary = set(row["expected_primary_files"])
+            expected_tests = set(row["expected_related_tests"])
+            row_summaries.append(
+                {
+                    "id": row["id"],
+                    "general_primary_files": general_selection["primary_files"],
+                    "tuned_primary_files": tuned_selection["primary_files"],
+                    "general_related_tests": general_selection["related_tests"],
+                    "tuned_related_tests": tuned_selection["related_tests"],
+                    "general_primary_hit": bool(expected_primary & set(general_selection["primary_files"])) if expected_primary else None,
+                    "tuned_primary_hit": bool(expected_primary & set(tuned_selection["primary_files"])) if expected_primary else None,
+                    "general_related_test_hit": bool(expected_tests & set(general_selection["related_tests"])) if expected_tests else None,
+                    "tuned_related_test_hit": bool(expected_tests & set(tuned_selection["related_tests"])) if expected_tests else None,
+                }
+            )
+    else:
+        comparison = {
+            "general": {
+                "expected_primary_file_hit_rate": 0.0,
+                "expected_related_test_hit_rate": 0.0,
+                "false_positive_rate": 0.0,
+                "packet_token_estimate": 0,
+            },
+            "tuned": {
+                "expected_primary_file_hit_rate": 0.0,
+                "expected_related_test_hit_rate": 0.0,
+                "false_positive_rate": 0.0,
+                "packet_token_estimate": 0,
+            },
+            "delta": {
+                "primary_hit_rate": 0.0,
+                "related_test_hit_rate": 0.0,
+                "rank_improvement": 0.0,
+                "related_test_rank_improvement": 0.0,
+                "false_positive_reduction": 0.0,
+                "packet_token_estimate_change": 0,
+            },
+        }
+    verdict = _verdict(validation, len(rows), packet_safe, comparison, notes)
+    result = {
+        "schema_version": VERIFY_SCHEMA_VERSION,
+        "status": "verified",
+        "verdict": verdict,
+        "profile_validation_status": "PASS" if validation.get("status") == "pass" else "FAIL",
+        "evaluation_prompt_count": len(rows),
+        "general": comparison["general"],
+        "tuned": comparison["tuned"],
+        "delta": comparison["delta"],
+        "packet_boundary_safe": packet_safe,
+        "profile_validation_failures": validation.get("failures", []),
+        "notes": notes,
+        "rows": row_summaries,
+        "artifacts": {
+            "VERIFY_REPORT": ".premode/tuning/VERIFY_REPORT.md",
+            "VERIFY_RESULTS": ".premode/tuning/VERIFY_RESULTS.json",
+        },
+    }
+    write_verify_artifacts(root, result, out_dir=output_dir)
     return result
