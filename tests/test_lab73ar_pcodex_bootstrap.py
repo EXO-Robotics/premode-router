@@ -94,12 +94,14 @@ def test_pcodex_doctor_detects_missing_premode_safely(repo: Path, monkeypatch: p
     assert result["codex_executable_available"] is True
 
 
-def test_pcodex_status_reads_default_off(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_pcodex_status_reads_default_on_mode_without_state(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _isolated_home(monkeypatch, tmp_path)
 
     result = pcodex.status(repo)
 
-    assert result["enabled"] is False
+    assert result["enabled"] is True
+    assert result["mode"] == "on"
+    assert result["state_status"] == "missing_default"
     assert result["config_source"] == "default"
     assert result["algorithm"] == "literal_symbol"
 

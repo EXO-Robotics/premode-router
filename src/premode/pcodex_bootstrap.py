@@ -15,6 +15,14 @@ from typing import Any
 
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
+from .pcodex_state import (
+    DEFAULT_TUNING_PROFILE,
+    PcodexStateError,
+    set_mode_off,
+    set_mode_on,
+    set_mode_tuned,
+    status_payload,
+)
 from .plugins import PluginAliasError, available_plugin_aliases, resolve_packet_plugin
 
 PCODEX_PLUGIN_ALIAS = "literal_symbol"
@@ -259,12 +267,19 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
 
 def status(cwd: Path | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
+    state = status_payload(repo_root)
+    if config.source in {CONFIG_ENV, CONFIG_PATH_ENV, CONFIG_PATH_ALIAS_ENV, "repo", "user"} and not state["state_exists"]:
+        state["enabled"] = config.enabled
+        state["mode"] = "on" if config.enabled else "off"
+        state["tuning_profile"] = None
     return {
-        "enabled": config.enabled,
+        **state,
         "config_source": config.source,
         "config_path": config.path,
-        "algorithm": PCODEX_PACKET_STRATEGY,
+        "legacy_enabled": config.enabled,
+        "algorithm": state["algorithm"],
         "premode_available": _command_available("premode"),
         "codex_available": _command_available("codex"),
         "plugin_alias_available": plugin_alias_available(),
@@ -307,7 +322,37 @@ def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]
 def set_enabled(cwd: Path | None, enabled: bool) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     path = write_repo_config(cwd, enabled=enabled)
-    return {"status": "enabled" if enabled else "disabled", "enabled": enabled, "config_path": str(path), "algorithm": PCODEX_PACKET_STRATEGY}
+    mode_result = set_mode_on(cwd) if enabled else set_mode_off(cwd)
+    return {
+        "status": "enabled" if enabled else "disabled",
+        **mode_result,
+        "config_path": str(path),
+        "legacy_config_path": str(path),
+    }
+
+
+def set_tuned(cwd: Path | None, profile: str | None = None) -> dict[str, Any]:
+    cwd = Path.cwd() if cwd is None else cwd
+    result = set_mode_tuned(cwd, profile or DEFAULT_TUNING_PROFILE)
+    path = write_repo_config(cwd, enabled=True)
+    return {"status": "tuned", **result, "config_path": str(path), "legacy_config_path": str(path)}
+
+
+def format_status(payload: dict[str, Any]) -> str:
+    lines = [
+        f"enabled: {str(payload.get('enabled')).lower()}",
+        f"mode: {payload.get('mode')}",
+        f"algorithm: {payload.get('algorithm')}",
+        f"tuning_profile: {payload.get('tuning_profile') if payload.get('tuning_profile') is not None else 'null'}",
+        f"state_path: {payload.get('state_path')}",
+    ]
+    if payload.get("mode") == "tuned":
+        lines.append(f"tuning_profile_valid: {str(payload.get('tuning_profile_valid')).lower()}")
+        if payload.get("tuning_profile_error"):
+            lines.append(f"tuning_profile_error: {payload.get('tuning_profile_error')}")
+    if payload.get("state_status") != "loaded":
+        lines.append(f"state_status: {payload.get('state_status')}")
+    return "\n".join(lines)
 
 
 def _write_temp_packet(packet: str) -> str:
@@ -385,9 +430,16 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("doctor")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
-    sub.add_parser("status")
-    sub.add_parser("on")
-    sub.add_parser("off")
+    status_parser = sub.add_parser("status")
+    status_parser.add_argument("--json", action="store_true", help="Print machine-readable pCodex mode state.")
+    status_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    on = sub.add_parser("on")
+    on.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    off = sub.add_parser("off")
+    off.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    tuned = sub.add_parser("tuned")
+    tuned.add_argument("--profile", default=DEFAULT_TUNING_PROFILE, help="Validated tuning profile to use for tuned mode.")
+    tuned.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     tune = sub.add_parser("tune")
     tune_group = tune.add_mutually_exclusive_group()
     tune_group.add_argument("--static-only", action="store_true", help="Generate static local tuning artifacts. This is the default.")
@@ -423,13 +475,24 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))
         return 0
     if args.command == "status":
-        print(json.dumps(status(repo_root), indent=2, sort_keys=True))
+        payload = status(repo_root)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_status(payload))
         return 0
     if args.command == "on":
         print(json.dumps(set_enabled(repo_root, True), indent=2, sort_keys=True))
         return 0
     if args.command == "off":
         print(json.dumps(set_enabled(repo_root, False), indent=2, sort_keys=True))
+        return 0
+    if args.command == "tuned":
+        try:
+            print(json.dumps(set_tuned(repo_root, args.profile), indent=2, sort_keys=True))
+        except PcodexStateError as exc:
+            print(json.dumps({"status": "error", "error": str(exc), "mode": "tuned"}, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
         return 0
     if args.command == "tune":
         from .tuning import validate_tuning_artifacts, verify_tuning_profile, write_tuning_artifacts

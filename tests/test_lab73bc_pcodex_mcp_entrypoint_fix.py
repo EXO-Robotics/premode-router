@@ -53,7 +53,7 @@ def test_pcodex_main_mcp_server_help_routes_to_bootstrap(monkeypatch: pytest.Mon
     assert calls == [["mcp-server", "--help"]]
 
 
-@pytest.mark.parametrize("command", ["install", "doctor", "status", "on", "off"])
+@pytest.mark.parametrize("command", ["install", "doctor", "status", "on", "off", "tuned"])
 def test_existing_bootstrap_commands_still_route_to_bootstrap(command: str, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
