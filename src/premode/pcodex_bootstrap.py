@@ -388,6 +388,12 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("status")
     sub.add_parser("on")
     sub.add_parser("off")
+    tune = sub.add_parser("tune")
+    tune_group = tune.add_mutually_exclusive_group()
+    tune_group.add_argument("--static-only", action="store_true", help="Generate static local tuning artifacts. This is the default.")
+    tune_group.add_argument("--validate", action="store_true", help="Validate existing .premode/tuning artifacts without regenerating them.")
+    tune.add_argument("--repo-root", default=None, help="Repository root to tune. Defaults to the current repo.")
+    tune.add_argument("--out-dir", default=None, help="Artifact directory. Must remain under .premode/tuning/.")
     sub.add_parser("mcp-server")
     comp = sub.add_parser("compile")
     comp.add_argument("prompt")
@@ -407,7 +413,8 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
     cwd = Path.cwd()
-    repo_root = _repo_root(Path(args.repo).resolve() if getattr(args, "repo", None) else cwd)
+    repo_arg = getattr(args, "repo", None) or getattr(args, "repo_root", None)
+    repo_root = _repo_root(Path(repo_arg).resolve() if repo_arg else cwd)
     if args.command == "doctor":
         print(json.dumps(doctor(repo_root), indent=2, sort_keys=True))
         return 0
@@ -423,6 +430,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "off":
         print(json.dumps(set_enabled(repo_root, False), indent=2, sort_keys=True))
         return 0
+    if args.command == "tune":
+        from .tuning import validate_tuning_artifacts, write_tuning_artifacts
+
+        try:
+            if args.validate:
+                result = validate_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
+                print(json.dumps(result, indent=2, sort_keys=True))
+                return 0 if result.get("status") == "pass" else 1
+            result = write_tuning_artifacts(repo_root, out_dir=Path(args.out_dir) if args.out_dir else None)
+        except ValueError as exc:
+            print(json.dumps({"status": "error", "error": str(exc)}, indent=2, sort_keys=True))
+            return 2
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0 if result.get("validation_status") == "pass" else 1
     if args.command == "mcp-server":
         from . import pcodex_mcp_server
 
