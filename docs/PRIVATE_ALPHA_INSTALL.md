@@ -8,12 +8,26 @@ For a source-only public clone, use the source-build installer from the reposito
 
 ```bash
 scripts/install_pcodex_from_source.sh
+export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex setup --no-mcp
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 ```
 
 The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+
+## Before First Real Run
+
+Verify the installed Codex CLI before blaming pCodex for real-run failures:
+
+```bash
+codex --version
+codex exec -C "$PWD" --sandbox workspace-write --ephemeral - <<'EOF'
+Edit only a disposable file. Do not modify source files.
+EOF
+```
+
+If direct Codex fails, update or fix Codex CLI and local Codex config first. `pcodex doctor` and `pcodex status --json` report Codex CLI version/config warnings when they can be detected.
 
 For manual source setup, clone or copy the repository through an approved path, then create a virtual environment:
 
@@ -119,6 +133,26 @@ Tuned improvements are repo-specific and must be verified locally. `pcodex tune 
 Dry run reports the planned wrapper behavior without executing Codex.
 
 `pcodex run` and `pcodex run --dry-run` respect effective mode and report configured/effective mode out of band. Invalid strict tuned state fails before any Codex launch.
+
+## Daily-Use Boundaries
+
+Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, and keep real Codex MCP registration as explicit opt-in only.
+
+Start daily use with:
+
+```bash
+pcodex status
+pcodex setup --no-mcp
+pcodex status --json
+pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+```
+
+Run the first real prompt against a disposable file or disposable repository, then inspect:
+
+```bash
+git diff --name-only
+git diff -- PCODEX_DAILY_USE_TEST.md
+```
 
 ## Status And Telemetry
 

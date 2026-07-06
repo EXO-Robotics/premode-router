@@ -1,3 +1,7 @@
+---
+name: pcodex-subagent-routing
+description: pCodex instruction-level routing guidance for local alpha testing.
+---
 # pCodex Subagent Routing
 
 Use this skill before spawning or delegating local subagents in this repo when pCodex is available.

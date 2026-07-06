@@ -38,6 +38,8 @@ CONFIG_PATH_ALIAS_ENV = "PCODEX_CONFIG_PATH"
 ALGORITHM_ENV = "PCODEX_ALGORITHM"
 PROJECT_ROOT_ENV = "PCODEX_PROJECT_ROOT"
 PACKET_STRATEGY_ENV = "PCODEX_PACKET_STRATEGY"
+MIN_CODEX_CLI_VERSION = (0, 142, 5)
+MIN_CODEX_CLI_VERSION_TEXT = ".".join(str(part) for part in MIN_CODEX_CLI_VERSION)
 
 
 @dataclass(frozen=True)
@@ -173,6 +175,158 @@ def plugin_alias_available() -> bool:
     return True
 
 
+def parse_codex_cli_version(text: str) -> str | None:
+    match = re.search(r"\bv?(\d+)\.(\d+)\.(\d+)\b", text)
+    if not match:
+        return None
+    return ".".join(match.groups())
+
+
+def _version_tuple(version: str | None) -> tuple[int, int, int] | None:
+    if not version:
+        return None
+    parts = version.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        parsed = tuple(int(part) for part in parts)
+    except ValueError:
+        return None
+    return parsed if len(parsed) == 3 else None
+
+
+def codex_cli_version_warning(version: str | None) -> str | None:
+    parsed = _version_tuple(version)
+    if parsed is None:
+        return "Could not parse Codex CLI version; run codex --version and test direct codex exec before pCodex real runs."
+    if parsed < MIN_CODEX_CLI_VERSION:
+        return (
+            f"Codex CLI {version} appears older than {MIN_CODEX_CLI_VERSION_TEXT}; "
+            "update Codex CLI and test direct codex exec before pCodex real runs."
+        )
+    return None
+
+
+def inspect_codex_cli() -> dict[str, Any]:
+    if not _command_available("codex"):
+        return {
+            "available": False,
+            "version": None,
+            "path": None,
+            "version_warning": "Codex CLI is not available on PATH; install or fix Codex before pCodex real runs.",
+        }
+    path = _command_path("codex")
+    if path is None:
+        return {
+            "available": False,
+            "version": None,
+            "path": None,
+            "version_warning": "Codex CLI is not available on PATH; install or fix Codex before pCodex real runs.",
+        }
+    try:
+        completed = subprocess.run(
+            [path, "--version"],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except OSError as exc:
+        return {
+            "available": True,
+            "version": None,
+            "path": path,
+            "version_warning": f"Could not execute codex --version: {type(exc).__name__}",
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "available": True,
+            "version": None,
+            "path": path,
+            "version_warning": "codex --version timed out; test direct codex exec before pCodex real runs.",
+        }
+    output = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
+    version = parse_codex_cli_version(output)
+    return {
+        "available": True,
+        "version": version,
+        "path": path,
+        "version_warning": codex_cli_version_warning(version),
+    }
+
+
+def _display_home_path(path: Path) -> str:
+    try:
+        home = Path.home().resolve()
+        resolved = path.expanduser().resolve()
+        if resolved == home:
+            return "~"
+        if home in resolved.parents:
+            return "~/" + resolved.relative_to(home).as_posix()
+    except OSError:
+        pass
+    return str(path)
+
+
+def _find_service_tier(value: Any) -> str | None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if key == "service_tier":
+                return str(item)
+            nested = _find_service_tier(item)
+            if nested is not None:
+                return nested
+    if isinstance(value, list):
+        for item in value:
+            nested = _find_service_tier(item)
+            if nested is not None:
+                return nested
+    return None
+
+
+def codex_service_tier_warning(service_tier: str | None) -> str | None:
+    if not service_tier:
+        return None
+    normalized = service_tier.strip().lower()
+    if normalized in {"flex", "auto"}:
+        return None
+    if normalized == "default":
+        return 'Codex config service_tier = "default" may be incompatible with current Codex CLI real runs.'
+    return f'Codex config service_tier = "{service_tier}" may be incompatible with current Codex CLI real runs.'
+
+
+def inspect_codex_config(path: Path | None = None) -> dict[str, Any]:
+    config_path = path or (Path.home() / ".codex" / "config.toml")
+    display_path = _display_home_path(config_path)
+    try:
+        with config_path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except FileNotFoundError:
+        return {
+            "path": display_path,
+            "exists": False,
+            "readable": False,
+            "service_tier": None,
+            "service_tier_warning": None,
+        }
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        return {
+            "path": display_path,
+            "exists": True,
+            "readable": False,
+            "service_tier": None,
+            "service_tier_warning": f"Could not read Codex config safely: {type(exc).__name__}",
+        }
+    service_tier = _find_service_tier(data)
+    return {
+        "path": display_path,
+        "exists": True,
+        "readable": True,
+        "service_tier": service_tier,
+        "service_tier_warning": codex_service_tier_warning(service_tier),
+    }
+
+
 def _literal_symbol_kwargs() -> dict[str, str]:
     return {
         "packet_version": PCODEX_PACKET_VERSION,
@@ -300,12 +454,16 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
+    codex_cli = inspect_codex_cli()
+    codex_config = inspect_codex_config()
     return {
         "status": "ok",
         "repo_root": str(repo_root),
         "premode_executable_available": _command_available("premode"),
         "pcodex_executable_available": _command_available("pcodex"),
-        "codex_executable_available": _command_available("codex"),
+        "codex_executable_available": bool(codex_cli.get("available")),
+        "codex_cli": codex_cli,
+        "codex_config": codex_config,
         "plugin_alias_available": plugin_alias_available(),
         "available_plugin_aliases": available_plugin_aliases(),
         "fallback_explicit_literal_symbol_available": True,
@@ -515,6 +673,8 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
+    codex_cli = inspect_codex_cli()
+    codex_config = inspect_codex_config()
     state = resolve_effective_mode(repo_root)
     configured_mode = str(state.get("configured_mode") or state.get("mode") or "on")
     effective_mode = str(state.get("effective_mode") or configured_mode)
@@ -531,7 +691,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     fallback = state.get("fallback") if isinstance(state.get("fallback"), dict) else {}
     telemetry = state.get("telemetry") if isinstance(state.get("telemetry"), dict) else {}
     mcp = {
-        "codex_cli_available": _command_available("codex"),
+        "codex_cli_available": bool(codex_cli.get("available")),
         "registered": False,
         "config_scope": "unknown",
         "status": "unknown",
@@ -562,6 +722,8 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "state_status": state.get("state_status"),
         "state_error": state.get("state_error"),
         "state_schema_version": "pcodex.state.v1",
+        "codex_cli": codex_cli,
+        "codex_config": codex_config,
         "tuning_profile": tuning.get("profile"),
         "tuning_profile_valid": tuning.get("profile_valid"),
         "tuning_validation_status": tuning.get("validation"),
@@ -675,6 +837,8 @@ def format_status(payload: dict[str, Any]) -> str:
     telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
     mcp = payload.get("mcp") if isinstance(payload.get("mcp"), dict) else {}
     savings = payload.get("savings") if isinstance(payload.get("savings"), dict) else {}
+    codex_cli = payload.get("codex_cli") if isinstance(payload.get("codex_cli"), dict) else {}
+    codex_config = payload.get("codex_config") if isinstance(payload.get("codex_config"), dict) else {}
     fallback_text = "active"
     if not fallback.get("active"):
         fallback_text = "none"
@@ -690,6 +854,9 @@ def format_status(payload: dict[str, Any]) -> str:
     savings_text = "unavailable"
     if not savings.get("available"):
         savings_text = f"unavailable ({savings.get('reason') or 'unknown'})"
+    codex_cli_text = "unavailable"
+    if codex_cli.get("available"):
+        codex_cli_text = f"available ({codex_cli.get('version') or 'version unknown'})"
     lines = [
         f"pCodex: {'on' if payload.get('enabled') else 'off'}",
         f"Configured mode: {payload.get('configured_mode')}",
@@ -698,7 +865,7 @@ def format_status(payload: dict[str, Any]) -> str:
         f"Tuning: {tuning.get('verify') or tuning.get('validation') or 'missing'}",
         f"Tuning profile: {tuning.get('profile') or 'none'}",
         f"MCP: {mcp_text}",
-        f"Codex CLI: {'available' if mcp.get('codex_cli_available') else 'unavailable'}",
+        f"Codex CLI: {codex_cli_text}",
         f"Fallback: {fallback_text}",
         f"Telemetry: compile_count={telemetry.get('compile_count', 0)} fallback_count={telemetry.get('fallback_count', 0)}",
         f"Savings estimate: {savings_text}",
@@ -706,6 +873,10 @@ def format_status(payload: dict[str, Any]) -> str:
     ]
     if payload.get("state_status") != "loaded":
         lines.append(f"State status: {payload.get('state_status')}")
+    if codex_cli.get("version_warning"):
+        lines.append(f"Codex CLI warning: {codex_cli.get('version_warning')}")
+    if codex_config.get("service_tier_warning"):
+        lines.append(f"Codex config warning: {codex_config.get('service_tier_warning')}")
     return "\n".join(lines)
 
 

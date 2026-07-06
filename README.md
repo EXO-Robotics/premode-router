@@ -106,6 +106,7 @@ From a fresh public clone, install pCodex into an isolated local environment fro
 git clone https://github.com/EXO-Robotics/premode-router.git
 cd premode-router
 scripts/install_pcodex_from_source.sh
+export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex setup --no-mcp
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
@@ -120,6 +121,32 @@ scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-
 ```
 
 That bundle installer requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
+
+## Daily Use From Source Install
+
+Before the first real `pcodex run`, verify the installed Codex CLI directly:
+
+```bash
+codex --version
+codex exec -C "$PWD" --sandbox workspace-write --ephemeral - <<'EOF'
+Edit only a disposable file. Do not modify source files.
+EOF
+```
+
+If direct Codex fails, update or fix Codex CLI and local Codex config before debugging pCodex. `pcodex doctor` and `pcodex status --json` include Codex CLI/config preflight fields when available.
+
+Daily-use starter flow:
+
+```bash
+pcodex status
+pcodex setup --no-mcp
+pcodex status --json
+pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+pcodex run "Edit only a disposable test file. Do not modify any other files."
+git diff --name-only
+```
+
+Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
 
 ## Quick Local Setup
 
@@ -164,6 +191,8 @@ Smoke commands:
 - [pCodex bootstrap commands](docs/PCODEX_BOOTSTRAP.md)
 - [pCodex MCP status](docs/PCODEX_MCP_STATUS.md)
 - [Private alpha install](docs/PRIVATE_ALPHA_INSTALL.md)
+- [pCodex daily use](docs/DAILY_USE.md)
+- [MacBook dogfood notes](docs/MACBOOK_DOGFOOD.md)
 - [Release/archive hygiene](docs/RELEASE_ARCHIVE_HYGIENE.md)
 - [pCodex subagent routing contract](docs/pcodex/SUBAGENT_ROUTING_CONTRACT.md)
 

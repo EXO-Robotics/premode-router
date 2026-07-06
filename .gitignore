@@ -23,6 +23,7 @@ htmlcov/
 *token*
 
 # Pre-mode generated outputs
+.premode/pcodex_state.json
 .premode/out/
 .premode/audit/
 .premode/metrics/

@@ -51,6 +51,9 @@ def test_skill_file_exists_and_references_transform_contract() -> None:
     assert SKILL.exists()
     text = _text(SKILL)
 
+    assert text.startswith("---\n")
+    assert "name: pcodex-subagent-routing" in text
+    assert "description: pCodex instruction-level routing guidance for local alpha testing." in text
     assert "# pCodex Subagent Routing" in text
     assert "transform_subagent_prompt" in text
     assert "raw_subagent_prompt" in text
