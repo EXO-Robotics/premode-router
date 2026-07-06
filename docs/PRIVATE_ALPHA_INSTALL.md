@@ -134,6 +134,12 @@ Dry run reports the planned wrapper behavior without executing Codex.
 
 `pcodex run` and `pcodex run --dry-run` respect effective mode and report configured/effective mode out of band. Invalid strict tuned state fails before any Codex launch.
 
+## Generated Local State
+
+Normal pCodex use may create repo-local generated state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
+
+These paths should generally stay untracked. Version tuning artifacts only when deliberately reviewed and useful for the repository. The pasteable bootstrap prompts add a bounded `.gitignore` section for this state and do not blanket-ignore all `.premode/`.
+
 ## Daily-Use Boundaries
 
 Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, and keep real Codex MCP registration as explicit opt-in only.

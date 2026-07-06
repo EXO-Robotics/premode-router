@@ -20,6 +20,8 @@ pcodex run --dry-run "Hypothetical task. Do not modify files."
 
 Prefer dry-run before real edits. Inspect `git diff --name-only` after any real run.
 
+Generated `.premode/` and `.pcodex/` local state, including `.premode/tuning/`, can appear during normal use. Keep it untracked unless the user deliberately chooses to version tuning artifacts.
+
 ## Boundaries
 
 - Do not assume `/pcodex` commands exist.

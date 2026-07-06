@@ -12,4 +12,4 @@ pcodex tune --verify
 pcodex status --json
 ```
 
-Explain that `on` uses tuned behavior only when a valid profile and `PASS` verifier result exist. Do not claim guaranteed savings.
+Explain that `on` uses tuned behavior only when a valid profile and `PASS` verifier result exist. `NEEDS_ADJUSTMENT` is normal for a fresh repo until tuning and verification pass. Do not claim guaranteed savings.

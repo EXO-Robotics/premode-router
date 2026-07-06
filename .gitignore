@@ -27,6 +27,7 @@ htmlcov/
 .premode/out/
 .premode/audit/
 .premode/metrics/
+.premode/tuning/
 .premode/index/
 .pcodex/
 usage_ledger.jsonl

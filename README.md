@@ -122,6 +122,20 @@ scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-
 
 That bundle installer requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
 
+## Fastest repo bootstrap
+
+1. Open the target repo in Codex.
+2. Paste the prompt from [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md).
+3. Let Codex create repo-local skills, `AGENTS.md`, `.gitignore`, and `PCODEX_SETUP_REPORT.md`.
+4. Use terminal `pcodex status` and `pcodex run --dry-run` as the reliable control plane.
+
+Related onboarding docs:
+
+- [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md)
+- [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md)
+- [pCodex daily use](docs/DAILY_USE.md)
+- [MacBook dogfood notes](docs/MACBOOK_DOGFOOD.md)
+
 ## Daily Use From Source Install
 
 Before the first real `pcodex run`, verify the installed Codex CLI directly:

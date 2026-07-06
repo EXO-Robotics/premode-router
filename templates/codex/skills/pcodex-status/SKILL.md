@@ -23,5 +23,9 @@ Summarize:
 - MCP status
 - Codex CLI availability/version warnings
 - Codex config warnings
+- generated local state
+- savings-estimate availability
+
+Fresh repos may report tuning verification as `NEEDS_ADJUSTMENT` until tuning and verification pass. MCP status may be unknown when setup used `--no-mcp`. Savings estimates may be unavailable until telemetry exists.
 
 Do not modify files. Do not run live Codex tasks. Do not register MCP unless the user explicitly asks.

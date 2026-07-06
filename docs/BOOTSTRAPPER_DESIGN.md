@@ -5,8 +5,9 @@ This document defines the first pasteable pCodex onboarding UX. The goal is a bo
 1. Inspect the repo.
 2. Install or locate pCodex.
 3. Create repo-local agent UX files.
-4. Run doctor/status/setup/dry-run verification only.
-5. Write `PCODEX_SETUP_REPORT.md`.
+4. Patch generated-state hygiene into `.gitignore`.
+5. Run doctor/status/setup/dry-run verification only.
+6. Write `PCODEX_SETUP_REPORT.md`.
 
 pCodex remains a private local context compiler and routing formatter. Terminal `pcodex` commands are the reliable control plane.
 
@@ -21,6 +22,7 @@ Codex integration should write project-local instruction surfaces:
 - `.codex/skills/pcodex-status/SKILL.md`
 - `.codex/skills/pcodex-dry-run/SKILL.md`
 - `.codex/skills/pcodex-tune/SKILL.md`
+- `.gitignore` bounded pCodex generated-state section
 
 Codex skills are the primary Codex-facing reusable instruction target. Codex custom prompt files are not the primary integration target.
 
@@ -36,6 +38,7 @@ OpenCode integration should write OpenCode-specific command files:
 - `.opencode/commands/pcodex-status.md`
 - `.opencode/commands/pcodex-dry-run.md`
 - `.opencode/commands/pcodex-tune.md`
+- `.gitignore` bounded pCodex generated-state section
 
 Optional guidance files may include:
 
@@ -74,21 +77,40 @@ scripts/install_pcodex_from_source.sh --install-root "$HOME/.pcodex-alpha"
 - Do not claim automatic MCP invocation.
 - Do not claim real internal Codex subagent interception.
 - Do not claim guaranteed savings.
+- Do not delete generated state during bootstrap unless explicitly requested.
+- Do not blanket-ignore all `.premode/`; ignore only expected generated state unless a repo deliberately chooses a wider policy.
+
+## Generated State Hygiene
+
+The pasteable bootstrap prompts should patch or create `.gitignore` with this bounded section and append it only once:
+
+```gitignore
+# pCodex generated local state
+.premode/pcodex_state.json
+.premode/out/
+.premode/audit/
+.premode/metrics/
+.premode/tuning/
+.pcodex/
+```
+
+Normal pCodex use may create `.premode/` and `.pcodex/` files, including local tuning outputs under `.premode/tuning/`. The setup report should mention that this generated local state is expected and should remain untracked unless the user deliberately versions reviewed tuning artifacts.
 
 ## Generated Report
 
 Every pasteable bootstrap should write `PCODEX_SETUP_REPORT.md` with:
 
-- repo path
-- git status before and after
-- pCodex path
-- pCodex version/help summary if available
-- doctor/status summary
-- setup result
-- skills or command files created
-- `AGENTS.md` updated yes/no
-- MCP config touched yes/no
-- real Codex config touched yes/no
-- dry-run result
-- warnings
-- next steps
+- `PASS`
+- `WARN`
+- `FILES CREATED OR UPDATED`
+- `NOT TOUCHED`
+- `NEXT STEPS`
+- `First Real Prompt After Bootstrap`
+
+Warnings should be written as expected alpha states, not failures by default:
+
+- `NEEDS_ADJUSTMENT` tuning is normal for a fresh repo until tuning and verification pass.
+- MCP status may be unknown when setup used `--no-mcp`.
+- Savings estimates may be unavailable until enough local telemetry exists.
+- Generated local state is expected and should remain untracked.
+- Missing native `/pcodex` slash commands are not bootstrap failure; terminal `pcodex` commands remain the guaranteed control plane.

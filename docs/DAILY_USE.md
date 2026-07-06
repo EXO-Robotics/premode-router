@@ -54,6 +54,39 @@ Expected first-run boundary:
 - only `PCODEX_DAILY_USE_TEST.md` changes
 - source, docs, and scripts remain untouched
 
+## Generated Local State
+
+Normal pCodex use may create local state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
+
+These files should generally remain untracked. Only version tuning artifacts deliberately, after reviewing what they contain and why the repo should carry them.
+
+## First Real Prompt After Bootstrap
+
+Use a disposable or low-risk file first.
+
+```bash
+cat > PCODEX_FIRST_REAL_PROMPT.md <<'EOF'
+# pCodex First Real Prompt
+Initial line.
+EOF
+git add PCODEX_FIRST_REAL_PROMPT.md
+pcodex run --dry-run "Edit only PCODEX_FIRST_REAL_PROMPT.md. Add one bullet under the heading saying: pCodex first real prompt passed. Do not modify any other files."
+pcodex run "Edit only PCODEX_FIRST_REAL_PROMPT.md. Add one bullet under the heading saying: pCodex first real prompt passed. Do not modify any other files."
+git status --short
+git diff -- PCODEX_FIRST_REAL_PROMPT.md
+git diff --name-only
+```
+
+Pass criteria:
+
+- Only `PCODEX_FIRST_REAL_PROMPT.md` changed.
+- The file contains `- pCodex first real prompt passed.`
+
+If anything else changes, stop and inspect the diff.
+
+Do not use `/pcodex` slash commands as the guaranteed path.
+Use terminal `pcodex` commands.
+
 ## Boundaries
 
 - Use terminal `pcodex` commands.
