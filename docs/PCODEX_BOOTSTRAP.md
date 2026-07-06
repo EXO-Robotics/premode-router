@@ -13,12 +13,17 @@ It keeps `literal_symbol` as the default algorithm and passes pCodex state to ch
 ```bash
 pcodex install
 pcodex doctor
+pcodex setup
+pcodex setup --json
+pcodex setup --skip-tune
+pcodex setup --no-mcp
 pcodex status
 pcodex status --json
 pcodex on
 pcodex off
 pcodex tuned
 pcodex tuned --profile .premode/tuning/repo_profile.json
+pcodex tune
 pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
@@ -33,20 +38,38 @@ pcodex mcp-server
 pCodex supports three repo-local modes:
 
 - `off`: raw prompt, no pCodex transform
-- `on`: generalized `literal_symbol` transform
-- `tuned`: `literal_symbol` transform with a validated tuning profile
+- `on`: best safe available pCodex behavior
+- `tuned`: force tuned behavior or fail clearly
 
-`pcodex on` writes repo-local state for generalized mode. `pcodex off` writes repo-local state for raw-prompt mode. `pcodex tuned` validates `.premode/tuning/repo_profile.json` before writing tuned state; use `--profile` to select a different validated profile.
+`pcodex on` writes repo-local state for smart on mode. Smart on uses tuned behavior only when `.premode/tuning/repo_profile.json` validates and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. Otherwise it safely falls back to generalized `literal_symbol`.
+
+`pcodex off` writes repo-local state for raw-prompt mode. `pcodex tuned` validates `.premode/tuning/repo_profile.json` before writing strict tuned state; use `--profile` to select a different validated profile. Strict tuned mode fails clearly when the profile is missing or invalid.
 
 If mode state is missing, pCodex reports the safe default `on`. Invalid state falls back to raw prompt for MCP transforms and blocks `pcodex run` before launching Codex.
 
-`pcodex status` reports mode, state path, tuning profile, whether `premode` and `codex` are available, and whether the `literal_symbol` plugin alias resolves. `pcodex status --json` prints the same state in machine-readable form.
+`pcodex status` reports configured mode, effective mode, algorithm, tuning status/profile, MCP status, Codex CLI availability, fallback state, local telemetry counters, savings-estimate availability, and state path. `pcodex status --json` prints the same dashboard in machine-readable form with `schema_version: pcodex.status.v1`.
 
 `pcodex doctor` reports local wrapper readiness. It does not print secrets or full environment dumps.
 
+## Setup
+
+`pcodex setup` is the recommended default path after install:
+
+```bash
+pcodex setup
+```
+
+It runs local checks, optionally attempts isolated Codex MCP registration, runs one-step tuning unless `--skip-tune` is provided, writes `tuned` only when verification is `PASS`, writes `on` for skipped or non-PASS tuning, and prints a concise dashboard. Use `--json` for automation. Use `--no-mcp` to skip MCP registration. Real Codex config mutation requires the explicit `--real-codex-registration` flag.
+
 ## Tuning
 
-Generate, validate, and verify repo-local tuning artifacts:
+Run the one-step local tuning pipeline:
+
+```bash
+pcodex tune
+```
+
+Advanced maintenance commands remain available:
 
 ```bash
 pcodex tune --static-only
@@ -70,7 +93,7 @@ If the plugin alias is unavailable, pCodex falls back to the explicit equivalent
 
 `pcodex run --dry-run` does not execute Codex. It reports the current mode, whether a transform would be applied, the tuning profile when tuned mode is active, the planned Pre-mode command when applicable, planned Codex invocation, pCodex child environment keys, packet path when a packet is produced, and redacted prompt previews.
 
-`pcodex run` can invoke Codex locally. In `off` mode it sends the raw prompt. In `on` mode it compiles through generalized `literal_symbol`. In `tuned` mode it validates the tuning profile before any Codex launch and then compiles with `--tuning`.
+`pcodex run --dry-run` also reports configured and effective mode. `pcodex run` can invoke Codex locally. In effective `off` mode it sends the raw prompt. In effective `on` mode it compiles through generalized `literal_symbol`. In effective `tuned` mode it compiles with `--tuning`. Strict `tuned` mode validates the tuning profile before any Codex launch.
 
 Do not use `pcodex run` for private live tasks unless that execution is explicitly approved for the current task.
 
@@ -92,6 +115,8 @@ The algorithm value is `literal_symbol`.
 `pcodex mcp-server` starts the dependency-free stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
 
 The transform respects off/on/tuned state. `off` returns the raw prompt. `on` appends the generalized compact packet. `tuned` appends a tuned compact packet when the profile validates; tuned failure returns the raw prompt plus out-of-band error metadata.
+
+The transform also reports configured and effective mode in metadata. Smart `on` uses tuned packets only for verified PASS profiles; otherwise it appends the generalized compact packet and records fallback metadata out of band.
 
 ## Not Yet Proven
 

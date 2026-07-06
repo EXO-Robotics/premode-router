@@ -257,7 +257,9 @@ run_cmd "$PREMODE_SHIM" benchmark --help
 run_cmd "$PCODEX_SHIM" --help
 run_cmd "$PCODEX_SHIM" doctor
 run_cmd "$PCODEX_SHIM" status
+run_cmd "$PCODEX_SHIM" status --json
 run_cmd "$PCODEX_SHIM" compile --help
+run_cmd "$PCODEX_SHIM" tune --help
 run_cmd "$PCODEX_SHIM" run --dry-run "$SAFE_DUMMY_PROMPT"
 run_cmd "$PCODEX_SHIM" mcp-server --help
 run_cmd "$PREMODE_SHIM" benchmark --profile lite --json --plugin literal_symbol --out "$BENCHMARK_OUT"
@@ -282,11 +284,9 @@ elif [[ "$CODEX_MODE" == "real" ]]; then
 fi
 
 log "install smoke complete" | tee -a "$REPORT_OUT"
-log "pCodex installed in general mode." | tee -a "$REPORT_OUT"
-log "Use: pcodex status" | tee -a "$REPORT_OUT"
-log "Use: pcodex tune --static-only" | tee -a "$REPORT_OUT"
-log "Use: pcodex tune --validate" | tee -a "$REPORT_OUT"
-log "Use: pcodex tune --verify" | tee -a "$REPORT_OUT"
-log "Use: pcodex tuned" | tee -a "$REPORT_OUT"
-log "Use: pcodex off / pcodex on" | tee -a "$REPORT_OUT"
+log "pCodex installed. Run: pcodex setup" | tee -a "$REPORT_OUT"
+log "Use: pcodex setup --json for machine-readable setup output" | tee -a "$REPORT_OUT"
+log "Use: pcodex status to inspect configured/effective mode, tuning, MCP, fallback, telemetry, and savings availability" | tee -a "$REPORT_OUT"
+log "Use: pcodex off / pcodex on / pcodex tuned for manual control" | tee -a "$REPORT_OUT"
+log "Use: pcodex tune for one-step static generation, validation, and verification" | tee -a "$REPORT_OUT"
 log "rollback isolated install with: $0 --install-root '$INSTALL_ROOT' --uninstall" | tee -a "$REPORT_OUT"

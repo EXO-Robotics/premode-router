@@ -6,7 +6,7 @@ There is a market, but the product should not be positioned as another coding ag
 
 The strongest category is:
 
-> A universal preflight, context-control, and patch-governance layer for AI coding agents.
+> A local-first preflight, context-control, and patch-governance layer for AI coding agents.
 
 The coding agents do the work. Pre-mode makes sure the work starts with the right context, stays in scope, uses the right commands, avoids secrets, and produces something auditable.
 

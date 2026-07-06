@@ -39,12 +39,17 @@ Current pCodex command surface:
 ```bash
 pcodex install
 pcodex doctor
+pcodex setup
+pcodex setup --json
+pcodex setup --skip-tune
+pcodex setup --no-mcp
 pcodex status
 pcodex status --json
 pcodex on
 pcodex off
 pcodex tuned
 pcodex tuned --profile .premode/tuning/repo_profile.json
+pcodex tune
 pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
@@ -56,10 +61,18 @@ pcodex mcp-server
 Mode meanings:
 
 - `off`: raw prompt, no pCodex transform
-- `on`: generalized `literal_symbol` transform
-- `tuned`: `literal_symbol` transform with a validated tuning profile
+- `on`: best safe available pCodex behavior
+- `tuned`: force tuned behavior or fail clearly
 
-`pcodex run` and `pcodex run --dry-run` respect the repo-local mode state. The MCP transform also respects off/on/tuned state; tuned-mode failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
+`on` resolves to effective tuned behavior only when a valid profile exists and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. Otherwise, `on` falls back to generalized `literal_symbol`. `tuned` remains strict: invalid tuned state fails before `pcodex run` launches Codex, and MCP tuned failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
+
+`pcodex setup` is the recommended default configuration path. It runs local checks, optional isolated MCP registration, one-step tuning, safe mode selection, and prints a concise dashboard. Real Codex config mutation remains opt-in only.
+
+`pcodex tune` now runs static generation, validation, and verification by default. The `--static-only`, `--validate`, and `--verify` flags remain available for focused maintenance.
+
+`pcodex status` reports configured mode, effective mode, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
+
+`pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
 
 `pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
@@ -110,7 +123,10 @@ Smoke commands:
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
+.venv/bin/pcodex setup --no-mcp
 .venv/bin/pcodex status
+.venv/bin/pcodex status --json
+.venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
 .venv/bin/pcodex run --dry-run "Inspect hello.txt"
 .venv/bin/pcodex mcp-server --help

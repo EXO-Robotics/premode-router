@@ -6,7 +6,15 @@ It does not run Codex, dispatch subagents, call external services, edit source f
 
 ## Commands
 
-Generate static tuning artifacts:
+Run the recommended one-step local tuning pipeline:
+
+```bash
+pcodex tune
+```
+
+This runs static artifact generation, validation, and offline verification in order. It does not run Codex or contact external services.
+
+Generate static tuning artifacts only:
 
 ```bash
 pcodex tune --static-only
@@ -61,8 +69,16 @@ Key files:
 
 These verdicts do not guarantee live Codex task success or token savings. Tuned improvements are repo-specific and must be verified locally.
 
+## Mode Interaction
+
+`on` mode uses tuned behavior only when `.premode/tuning/repo_profile.json` is valid and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. If the profile is missing, invalid, not verified, `NEEDS_ADJUSTMENT`, or `FAIL`, `on` safely falls back to generalized `literal_symbol`.
+
+`tuned` mode remains strict. It requires a valid tuning profile and fails clearly when the profile is missing or invalid.
+
+`pcodex status` reports configured mode, effective mode, tuning status, fallback state, local telemetry counters, and savings-estimate availability. Fallback telemetry stores counters and reasons only; it must not store prompts, source snippets, secrets, or file contents.
+
 ## Safety Boundary
 
 Tuning artifacts are local repo artifacts. They should not contain secrets, absolute local paths, source snippets, or expanded model-facing diagnostics. Model-facing packet rendering remains the V5 `TASK`, `PRIMARY_FILES`, `RELATED_TESTS`, and end-marker boundary.
 
-Use `pcodex tuned` only after the profile validates and the verifier result is acceptable for the repo.
+Use `pcodex setup` for the default setup path. Use `pcodex tuned` only when you intentionally want strict tuned mode after the profile validates and the verifier result is acceptable for the repo.

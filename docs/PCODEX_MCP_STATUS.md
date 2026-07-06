@@ -28,10 +28,12 @@ The server is stdio-only. It does not bind sockets, start a network listener, la
 The MCP transform reads repo-local pCodex mode state:
 
 - `off`: returns the raw prompt and marks `transform_applied=false`
-- `on`: appends the generalized `literal_symbol` packet
+- `on`: uses best safe available behavior, appending a tuned packet only when a valid profile exists and `VERIFY_RESULTS.json` verdict is `PASS`; otherwise it appends the generalized `literal_symbol` packet
 - `tuned`: validates the configured tuning profile and appends a tuned packet
 
-If tuned mode cannot validate the profile, the transform returns the raw prompt and reports the error only in out-of-band metadata. The raw prompt is preserved in every mode.
+If strict tuned mode cannot validate the profile, the transform returns the raw prompt and reports the error only in out-of-band metadata. The raw prompt is preserved in every mode.
+
+The tool result includes configured mode and effective mode in metadata. Fallback telemetry is local-only and stores counters/reasons only; it does not store prompts, source snippets, secrets, or file contents.
 
 ## Proven In Alpha4
 
@@ -70,5 +72,6 @@ The alpha4 result does not prove:
 - real pre-dispatch subagent interception
 - hosted Codex UI integration
 - production-ready MCP integration
+- native slash-command support
 
 Instruction files may tell Codex to call the tool before local subagent dispatch, but instruction-level routing is not a hard dispatch hook.

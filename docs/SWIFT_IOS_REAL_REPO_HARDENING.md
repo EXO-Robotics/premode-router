@@ -10,7 +10,7 @@ Testing against a large Swift/Xcode app exposed issues that do not show up in sm
 - App concepts such as `Day Report` can be misclassified as documentation if `report` is treated too generically.
 - Generated `.premode/` files can pollute dirty-branch review packets.
 
-v2.4.2 fixes those issues in a universal way.
+v2.4.2 fixes those issues through general parser and routing hardening.
 
 ## Fixes
 
