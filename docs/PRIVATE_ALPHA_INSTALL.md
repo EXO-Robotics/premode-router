@@ -4,7 +4,18 @@ This is a local/private install flow for the current pCodex alpha. It is not a p
 
 ## Local Setup
 
-Clone or copy the private repository through an approved private path, then create a virtual environment:
+For a source-only public clone, use the source-build installer from the repository root:
+
+```bash
+scripts/install_pcodex_from_source.sh
+~/.pcodex-alpha/bin/pcodex setup --no-mcp
+~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+```
+
+The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+
+For manual source setup, clone or copy the repository through an approved path, then create a virtual environment:
 
 ```bash
 python3.11 -m venv .venv
@@ -22,6 +33,26 @@ Install the private literal-symbol plugin locally:
 ```bash
 .venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
+
+## Private Bundle Install
+
+The private-alpha bundle installer is for a prepared local artifact bundle, not a source-only public clone:
+
+```bash
+scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-alpha-v0.3.0
+```
+
+The artifact root must contain:
+
+```text
+README_INSTALL_FIRST.md
+ARTIFACT_MANIFEST.json
+SHA256SUMS.txt
+dist_core/
+dist_plugin/
+```
+
+`scripts/install_pcodex_private_alpha.sh` requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
 
 ## Smoke Checks
 

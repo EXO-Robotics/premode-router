@@ -98,6 +98,29 @@ Do not claim:
 
 This repository and the literal-symbol plugin package are private and proprietary. Nothing here has been published to PyPI or another external registry. Access to the repository does not grant permission to use, copy, publish, distribute, commercialize, host, train on, or sublicense the software.
 
+## Public Clone Source Install
+
+From a fresh public clone, install pCodex into an isolated local environment from the checked-out source tree:
+
+```bash
+git clone https://github.com/EXO-Robotics/premode-router.git
+cd premode-router
+scripts/install_pcodex_from_source.sh
+~/.pcodex-alpha/bin/pcodex setup --no-mcp
+~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+```
+
+The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+
+The private-alpha bundle installer is separate:
+
+```bash
+scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-alpha-v0.3.0
+```
+
+That bundle installer requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
+
 ## Quick Local Setup
 
 Python >=3.11 is required. macOS system Python may be too old; Python 3.9 will not work because tomllib requires Python 3.11+ unless a backport dependency is added.
