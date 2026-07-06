@@ -1,6 +1,6 @@
 # Docs Implementation Report — v0.2.6.6
 
-This document mirrors the root `IMPLEMENTATION_REPORT.md` for users browsing the `docs/` directory.
+This document mirrors the historical `docs/history/codex-prompts/IMPLEMENTATION_REPORT.md` for users browsing the `docs/` directory.
 
 ## Current release
 
@@ -45,4 +45,4 @@ PYTHONPATH=src python -m premode.cli benchmark --profile lite --json
 
 ## Next
 
-`v2.7.0 — Agent Config Linter`, described in `CODEX_ONE_SHOT_PROMPT_v2.7.0.md`.
+`v2.7.0 — Agent Config Linter`, described in `docs/history/codex-prompts/CODEX_ONE_SHOT_PROMPT_v2.7.0.md`.

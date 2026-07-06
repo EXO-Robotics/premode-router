@@ -247,7 +247,7 @@ def test_docs_primary_flow_mentions_since_compile():
 
 
 def test_v265_v27_prompt_exists_but_linter_not_implemented():
-    prompt_path = Path("CODEX_ONE_SHOT_PROMPT_v2.7.0.md")
+    prompt_path = Path("docs/history/codex-prompts/CODEX_ONE_SHOT_PROMPT_v2.7.0.md")
     assert prompt_path.exists()
     text = prompt_path.read_text(encoding="utf-8")
     assert "premode lint-agents" in text
@@ -259,8 +259,8 @@ def test_v265_v27_prompt_exists_but_linter_not_implemented():
 
 def test_v266_docs_are_current_and_concise():
     readme = Path("README.md").read_text(encoding="utf-8")
-    index = Path("FINAL_PACKAGE_INDEX.md").read_text(encoding="utf-8")
-    report = Path("IMPLEMENTATION_REPORT.md").read_text(encoding="utf-8")
+    index = Path("docs/history/codex-prompts/FINAL_PACKAGE_INDEX.md").read_text(encoding="utf-8")
+    report = Path("docs/history/codex-prompts/IMPLEMENTATION_REPORT.md").read_text(encoding="utf-8")
     assert "v0.2.6.24" in readme
     assert "premode review-patch --since-compile" in readme
     assert "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q" in readme

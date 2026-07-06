@@ -1,0 +1,52 @@
+{
+  "description": "Small representative prompt suite for Pre-mode/pCodex tuning and benchmark-assisted strategy comparison.",
+  "prompts": [
+    {
+      "name": "cli_compile_path",
+      "prompt": "Fix a failing compile command without changing plugin or MCP behavior.",
+      "expected_files": [
+        "src/premode/cli.py"
+      ],
+      "expected_tests": [
+        "tests/test_v267_codex_cli_compat.py"
+      ]
+    },
+    {
+      "name": "test_fix_narrow",
+      "prompt": "Fix the failing test while keeping the implementation scope minimal.",
+      "expected_files": [
+        "src/premode/cli.py"
+      ],
+      "expected_tests": [
+        "tests/test_v267_codex_cli_compat.py"
+      ]
+    },
+    {
+      "name": "docs_only_update",
+      "prompt": "Update the documentation for the public source install path without changing runtime behavior.",
+      "expected_files": [
+        "README.md",
+        "docs/PRIVATE_ALPHA_INSTALL.md"
+      ],
+      "expected_tests": []
+    },
+    {
+      "name": "config_safe_change",
+      "prompt": "Adjust repository configuration safely without touching generated runtime outputs.",
+      "expected_files": [
+        ".premode/config.json"
+      ],
+      "expected_tests": []
+    },
+    {
+      "name": "scope_guarded_patch",
+      "prompt": "Make a narrow patch and do not modify .premode/out, .premode/audit, .premode/metrics, or generated artifacts.",
+      "expected_files": [
+        "src/premode/cli.py"
+      ],
+      "expected_tests": [
+        "tests/test_v267_codex_cli_compat.py"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "name": "premode-router",
+  "status": "source-visible development alpha",
+  "license_mode": "source-visible-permission-required",
+  "python": ">=3.11",
+  "supported_runtime": "codex-cli",
+  "entrypoints": {
+    "cli": "premode",
+    "codex_wrapper": "pcodex"
+  },
+  "current_install": {
+    "public_source": [
+      "git clone https://github.com/EXO-Robotics/premode-router.git",
+      "cd premode-router",
+      "scripts/install_pcodex_from_source.sh",
+      "export PATH=\"$HOME/.pcodex-alpha/bin:$PATH\""
+    ],
+    "development_editable": [
+      "python3.11 -m venv .venv",
+      ".venv/bin/python -m pip install -e .",
+      ".venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol"
+    ]
+  },
+  "future_install": {
+    "package_registry": [
+      "pipx install premode-router"
+    ],
+    "status": "future/not active unless package publication exists"
+  },
+  "setup": [
+    "pcodex doctor || true",
+    "pcodex setup --no-mcp",
+    "pcodex status",
+    "pcodex status --json"
+  ],
+  "primary_workflow": [
+    "pcodex run --dry-run \"<task>\"",
+    "pcodex run \"<task>\"",
+    "premode review-patch --since-compile"
+  ],
+  "manual_compile_review": [
+    "premode compile --plugin literal_symbol \"<task>\" --profile lite --json",
+    "premode review-patch --since-compile"
+  ],
+  "benchmark": [
+    "premode benchmark --profile lite --json",
+    "premode stress --profile lite --json"
+  ],
+  "tuning": {
+    "current_commands": [
+      "pcodex tune",
+      "pcodex tune --validate",
+      "pcodex tune --verify",
+      "pcodex status --json"
+    ],
+    "distinction": {
+      "benchmarking": "measurement",
+      "tuning": "selecting or validating repo-local defaults",
+      "validation": "proving the selected behavior remains safe"
+    },
+    "input_example": "examples/tuning_prompts.json",
+    "doc": "docs/TUNING.md"
+  },
+  "validation": [
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q",
+    "premode detect --json",
+    "premode benchmark --profile lite --json"
+  ],
+  "important_docs": [
+    "AI_START_HERE.md",
+    "AGENTS.md",
+    "README.md",
+    "docs/TUNING.md",
+    "docs/DAILY_USE.md",
+    "docs/PASTEABLE_CODEX_BOOTSTRAP.md",
+    "docs/CLAIMS_AND_LIMITATIONS.md"
+  ],
+  "do_not_edit_by_default": [
+    ".premode/out/",
+    ".premode/audit/",
+    ".premode/metrics/",
+    ".premode/pcodex_state.json",
+    ".pcodex/",
+    ".agents/plugins/",
+    "generated outputs",
+    "runtime caches"
+  ],
+  "generated_output_paths": [
+    ".premode/out/",
+    ".premode/audit/",
+    ".premode/metrics/",
+    ".pcodex/",
+    "PCODEX_SETUP_REPORT.md"
+  ],
+  "experimental_or_deferred": [
+    "native /pcodex slash-command support",
+    "automatic internal Codex subagent interception",
+    "automatic MCP invocation",
+    "native installed-Codex schema discovery",
+    "hosted Codex UI integration",
+    "public package install until package publication exists"
+  ]
+}

@@ -22,6 +22,16 @@ Prefer flat subagent fan-out over nested delegation:
 
 Do not use subagents for tiny single-file edits, narrow commands, or parallel write-heavy work that would create conflicts.
 
+## Canonical Agent Entry Points
+
+For current repo operation, start with:
+
+- `AI_START_HERE.md`
+- `premode.ai.json`
+- `AGENTS.md`
+
+Historical prompt files under `docs/history/` are preserved for traceability and are not current operating instructions.
+
 ## pCodex Routing
 
 When working in this repo, use pCodex for local Codex routing where available.

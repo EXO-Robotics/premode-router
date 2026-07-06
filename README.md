@@ -4,6 +4,16 @@ Pre-mode Router is a private local context compiler and routing formatter for AI
 
 It runs before an agent action to select compact repo context and format a model-facing packet. It is not a local reasoning engine, planner, or replacement for the coding agent. The current private alpha path is centered on the V5 `literal_symbol` plugin and the local pCodex wrapper.
 
+## For AI agents
+
+Start with:
+
+- `AI_START_HERE.md`
+- `premode.ai.json`
+- `AGENTS.md`
+
+These files define the current install, setup, validation, benchmark, tuning, and safety boundaries for agents. Do not infer current behavior from historical prompt files. Historical prompts live under `docs/history/` and are not current operating instructions.
+
 ## Current Private Alpha
 
 Base package version: `v0.2.6.24`.
@@ -114,6 +124,8 @@ export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 
 The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
+Current install means the public source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
+
 The private-alpha bundle installer is separate:
 
 ```bash
@@ -201,6 +213,9 @@ Smoke commands:
 ## Docs Map
 
 - [Claims and limitations](docs/CLAIMS_AND_LIMITATIONS.md)
+- [AI agent start here](AI_START_HERE.md)
+- [AI operating manifest](premode.ai.json)
+- [Tuning guide](docs/TUNING.md)
 - [V5 literal-symbol strategy](docs/V5_LITERAL_SYMBOL.md)
 - [Plugin system](docs/PLUGIN_SYSTEM.md)
 - [pCodex tuning](docs/PCODEX_TUNING.md)
