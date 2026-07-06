@@ -154,6 +154,15 @@ git diff --name-only
 git diff -- PCODEX_DAILY_USE_TEST.md
 ```
 
+For pasteable agent onboarding, see:
+
+- [Pasteable Codex bootstrap](PASTEABLE_CODEX_BOOTSTRAP.md)
+- [Pasteable OpenCode bootstrap](PASTEABLE_OPENCODE_BOOTSTRAP.md)
+- [Bootstrapper design](BOOTSTRAPPER_DESIGN.md)
+- [Integration commands plan](INTEGRATION_COMMANDS_PLAN.md)
+
+The pasteable prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.
+
 ## Status And Telemetry
 
 `pcodex status` shows configured mode, effective mode, tuning, MCP status, fallback state, local telemetry counters, and savings-estimate availability. Fallback telemetry is local-only and stores counters/reasons only. It must not store prompts, source snippets, secrets, or file contents. Savings availability is a local estimate status, not a guaranteed or monetary savings claim.

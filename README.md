@@ -148,6 +148,8 @@ git diff --name-only
 
 Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
 
+For pasteable onboarding, use the bounded prompts in [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md) or [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md). These prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface; OpenCode commands are OpenCode-specific.
+
 ## Quick Local Setup
 
 Python >=3.11 is required. macOS system Python may be too old; Python 3.9 will not work because tomllib requires Python 3.11+ unless a backport dependency is added.
@@ -193,6 +195,10 @@ Smoke commands:
 - [Private alpha install](docs/PRIVATE_ALPHA_INSTALL.md)
 - [pCodex daily use](docs/DAILY_USE.md)
 - [MacBook dogfood notes](docs/MACBOOK_DOGFOOD.md)
+- [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md)
+- [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md)
+- [Bootstrapper design](docs/BOOTSTRAPPER_DESIGN.md)
+- [Integration commands plan](docs/INTEGRATION_COMMANDS_PLAN.md)
 - [Release/archive hygiene](docs/RELEASE_ARCHIVE_HYGIENE.md)
 - [pCodex subagent routing contract](docs/pcodex/SUBAGENT_ROUTING_CONTRACT.md)
 

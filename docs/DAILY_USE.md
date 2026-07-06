@@ -63,3 +63,14 @@ Expected first-run boundary:
 - Run the first real prompt against disposable files or disposable repositories.
 - Inspect `git diff --name-only` after real runs.
 - Real Codex MCP config registration remains explicit opt-in only.
+
+## Pasteable Bootstrap
+
+For one-paste repo onboarding, use:
+
+- [Pasteable Codex bootstrap](PASTEABLE_CODEX_BOOTSTRAP.md)
+- [Pasteable OpenCode bootstrap](PASTEABLE_OPENCODE_BOOTSTRAP.md)
+- [Bootstrapper design](BOOTSTRAPPER_DESIGN.md)
+- [Integration commands plan](INTEGRATION_COMMANDS_PLAN.md)
+
+Pasteable bootstrap prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.
