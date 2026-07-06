@@ -30,10 +30,12 @@ Install the private literal-symbol plugin locally:
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
 .venv/bin/pcodex status
+.venv/bin/pcodex status --json
+.venv/bin/pcodex tune --help
 .venv/bin/pcodex mcp-server --help
 ```
 
-## pCodex Toggle
+## pCodex Modes
 
 ```bash
 .venv/bin/pcodex install
@@ -44,6 +46,34 @@ Install the private literal-symbol plugin locally:
 
 `pcodex install` defaults to a dry run. Use `pcodex install --apply` only when you intentionally want to write repo-local pCodex config.
 
+Modes:
+
+- `off`: raw prompt, no pCodex transform
+- `on`: generalized `literal_symbol` transform
+- `tuned`: `literal_symbol` transform with a validated tuning profile
+
+Missing mode state reports the safe default `on`.
+
+## Tuning Flow
+
+```bash
+.venv/bin/pcodex tune --static-only
+.venv/bin/pcodex tune --validate
+.venv/bin/pcodex tune --verify
+.venv/bin/pcodex tuned
+.venv/bin/pcodex status --json
+```
+
+The default profile is `.premode/tuning/repo_profile.json`. `pcodex tuned` validates the profile before writing tuned mode state. Use `pcodex tuned --profile .premode/tuning/repo_profile.json` to be explicit.
+
+Compile-time tuning can also be invoked directly:
+
+```bash
+.venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
+```
+
+Tuned improvements are repo-specific and must be verified locally. `pcodex tune --verify` is compile-only local selection, not a live Codex task.
+
 ## Dry Run
 
 ```bash
@@ -51,6 +81,8 @@ Install the private literal-symbol plugin locally:
 ```
 
 Dry run reports the planned wrapper behavior without executing Codex.
+
+`pcodex run` and `pcodex run --dry-run` respect off/on/tuned mode state. Invalid tuned state fails before any Codex launch.
 
 ## Optional Isolated Codex MCP Registration
 

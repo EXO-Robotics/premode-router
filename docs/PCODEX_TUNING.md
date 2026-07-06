@@ -1,0 +1,68 @@
+# pCodex Tuning
+
+pCodex tuning is a local, static profile layer for the private `literal_symbol` path. It generates repo-specific artifacts under `.premode/tuning/`, validates them, and can run an offline compile-only verifier before tuned mode is enabled.
+
+It does not run Codex, dispatch subagents, call external services, edit source files, or add model-facing diagnostics.
+
+## Commands
+
+Generate static tuning artifacts:
+
+```bash
+pcodex tune --static-only
+```
+
+Validate existing artifacts:
+
+```bash
+pcodex tune --validate
+```
+
+Run the offline mini verifier:
+
+```bash
+pcodex tune --verify
+```
+
+The generated profile can be used directly by Pre-mode:
+
+```bash
+premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Fix the failing test"
+```
+
+## Generated Files
+
+Default output lives under `.premode/tuning/`.
+
+Key files:
+
+- `.premode/tuning/repo_profile.json`
+- `.premode/tuning/path_taxonomy.json`
+- `.premode/tuning/repo_vocabulary.json`
+- `.premode/tuning/source_test_map.json`
+- `.premode/tuning/prompt_phrase_routes.json`
+- `.premode/tuning/hotspots_and_suppressions.json`
+- `.premode/tuning/literal_symbol_weights.json`
+- `.premode/tuning/evaluation_prompts.jsonl`
+- `.premode/tuning/TUNING_REPORT.md`
+- `.premode/tuning/VALIDATION_REPORT.md`
+- `.premode/tuning/VERIFY_REPORT.md`
+- `.premode/tuning/VERIFY_RESULTS.json`
+
+`repo_profile.json` is the compile-time profile consumed by `--tuning` and by `pcodex tuned`.
+
+## Verification Meanings
+
+`pcodex tune --verify` compares generalized and tuned local selection against generated evaluation prompts. It is compile-only and local-selection only.
+
+- `PASS`: profile validates, packet boundary is safe, evaluation prompts exist, and tuned selection is not worse by the verifier's local metrics.
+- `NEEDS_ADJUSTMENT`: profile validates but local selection evidence suggests review or refinement before relying on tuned mode.
+- `FAIL`: profile validation, packet-boundary safety, or local selection checks failed.
+
+These verdicts do not guarantee live Codex task success or token savings. Tuned improvements are repo-specific and must be verified locally.
+
+## Safety Boundary
+
+Tuning artifacts are local repo artifacts. They should not contain secrets, absolute local paths, source snippets, or expanded model-facing diagnostics. Model-facing packet rendering remains the V5 `TASK`, `PRIMARY_FILES`, `RELATED_TESTS`, and end-marker boundary.
+
+Use `pcodex tuned` only after the profile validates and the verifier result is acceptable for the repo.

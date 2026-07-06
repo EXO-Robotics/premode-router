@@ -10,6 +10,14 @@ Use the plugin alias:
 premode compile --plugin literal_symbol "Fix the failing test"
 ```
 
+Use explicit tuning only with a validated repo-local profile:
+
+```bash
+premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Fix the failing test"
+```
+
+Tuning does not become the default compile path. The default remains the generalized `literal_symbol` strategy unless `--tuning` is supplied or pCodex mode state is set to `tuned`.
+
 The explicit equivalent flags are:
 
 ```bash
@@ -75,5 +83,6 @@ This is a measured public same-run matrix result, not a universal guarantee.
 
 - The measured savings claim is limited to the six-prompt public same-run matrix.
 - The strategy does not prove savings on all Codex tasks.
+- Tuned behavior is repo-specific and must be verified locally before relying on it.
 - The strategy does not own Codex dispatch or subagent routing.
 - The plugin package is private and not published.

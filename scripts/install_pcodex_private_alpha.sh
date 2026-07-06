@@ -282,4 +282,11 @@ elif [[ "$CODEX_MODE" == "real" ]]; then
 fi
 
 log "install smoke complete" | tee -a "$REPORT_OUT"
+log "pCodex installed in general mode." | tee -a "$REPORT_OUT"
+log "Use: pcodex status" | tee -a "$REPORT_OUT"
+log "Use: pcodex tune --static-only" | tee -a "$REPORT_OUT"
+log "Use: pcodex tune --validate" | tee -a "$REPORT_OUT"
+log "Use: pcodex tune --verify" | tee -a "$REPORT_OUT"
+log "Use: pcodex tuned" | tee -a "$REPORT_OUT"
+log "Use: pcodex off / pcodex on" | tee -a "$REPORT_OUT"
 log "rollback isolated install with: $0 --install-root '$INSTALL_ROOT' --uninstall" | tee -a "$REPORT_OUT"

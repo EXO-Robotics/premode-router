@@ -14,6 +14,12 @@ Current lead command:
 premode compile --plugin literal_symbol "Fix the failing test"
 ```
 
+Explicit repo tuning is available only when a validated local profile is supplied:
+
+```bash
+premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Fix the failing test"
+```
+
 The `literal_symbol` plugin maps to:
 
 ```text
@@ -34,12 +40,26 @@ Current pCodex command surface:
 pcodex install
 pcodex doctor
 pcodex status
+pcodex status --json
 pcodex on
 pcodex off
+pcodex tuned
+pcodex tuned --profile .premode/tuning/repo_profile.json
+pcodex tune --static-only
+pcodex tune --validate
+pcodex tune --verify
 pcodex compile "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
 pcodex mcp-server
 ```
+
+Mode meanings:
+
+- `off`: raw prompt, no pCodex transform
+- `on`: generalized `literal_symbol` transform
+- `tuned`: `literal_symbol` transform with a validated tuning profile
+
+`pcodex run` and `pcodex run --dry-run` respect the repo-local mode state. The MCP transform also respects off/on/tuned state; tuned-mode failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
 
 `pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
@@ -88,8 +108,10 @@ Smoke commands:
 ```bash
 .venv/bin/premode compile --plugin literal_symbol --help
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
+.venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
 .venv/bin/pcodex status
+.venv/bin/pcodex tune --help
 .venv/bin/pcodex run --dry-run "Inspect hello.txt"
 .venv/bin/pcodex mcp-server --help
 ```
@@ -99,6 +121,7 @@ Smoke commands:
 - [Claims and limitations](docs/CLAIMS_AND_LIMITATIONS.md)
 - [V5 literal-symbol strategy](docs/V5_LITERAL_SYMBOL.md)
 - [Plugin system](docs/PLUGIN_SYSTEM.md)
+- [pCodex tuning](docs/PCODEX_TUNING.md)
 - [pCodex bootstrap commands](docs/PCODEX_BOOTSTRAP.md)
 - [pCodex MCP status](docs/PCODEX_MCP_STATUS.md)
 - [Private alpha install](docs/PRIVATE_ALPHA_INSTALL.md)

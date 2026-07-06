@@ -23,6 +23,16 @@ pcodex_transform_subagent_prompt
 
 The server is stdio-only. It does not bind sockets, start a network listener, launch Codex, print secrets, or dump the environment.
 
+## Mode-Aware Transform
+
+The MCP transform reads repo-local pCodex mode state:
+
+- `off`: returns the raw prompt and marks `transform_applied=false`
+- `on`: appends the generalized `literal_symbol` packet
+- `tuned`: validates the configured tuning profile and appends a tuned packet
+
+If tuned mode cannot validate the profile, the transform returns the raw prompt and reports the error only in out-of-band metadata. The raw prompt is preserved in every mode.
+
 ## Proven In Alpha4
 
 The command-backed local MCP harness proved:

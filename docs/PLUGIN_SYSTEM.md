@@ -54,6 +54,14 @@ premode compile --plugin literal_symbol "Fix the failing test"
 
 If the alias resolves successfully, the CLI applies the plugin packet options. If the caller also passes explicit packet options, they must match the plugin metadata.
 
+Optional compile-time tuning can be applied with a validated repo-local profile:
+
+```bash
+premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Fix the failing test"
+```
+
+The tuning profile adjusts local selection weights and routes for the `literal_symbol` path. It does not change the plugin alias metadata, does not expand the model-facing packet boundary, and is not the default unless a caller explicitly supplies `--tuning` or pCodex mode state selects tuned behavior.
+
 ## Benchmark Usage
 
 The benchmark command supports the same plugin alias:

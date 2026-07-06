@@ -67,10 +67,28 @@ Verify commands without running live tasks:
 ~/.pcodex-alpha/bin/pcodex --help
 ~/.pcodex-alpha/bin/pcodex doctor
 ~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex status --json
 ~/.pcodex-alpha/bin/pcodex compile --help
+~/.pcodex-alpha/bin/pcodex tune --help
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect a file named hello.txt and report whether it contains the text hello from pcodex. Do not modify files."
 ~/.pcodex-alpha/bin/pcodex mcp-server --help
 ```
+
+Post-install recommended flow:
+
+```bash
+~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex tune --static-only
+~/.pcodex-alpha/bin/pcodex tune --validate
+~/.pcodex-alpha/bin/pcodex tune --verify
+~/.pcodex-alpha/bin/pcodex tuned
+~/.pcodex-alpha/bin/pcodex status --json
+~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect login flow. Do not modify files."
+```
+
+Default mode after install should remain `on`, the generalized `literal_symbol` transform, unless explicitly changed. Use `pcodex tuned` only after tuning validates and verifies acceptably for this repo. Use `pcodex off` when the raw prompt should pass through without a pCodex transform.
+
+Slash-style `/pcodex` commands are not native Codex UI commands yet. Treat any slash-style language as instruction-level or future work only.
 
 If `codex` exists, the installer verifies MCP registration only under isolated config by default:
 

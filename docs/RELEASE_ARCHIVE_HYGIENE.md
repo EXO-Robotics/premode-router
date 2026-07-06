@@ -49,6 +49,9 @@ For the next private alpha artifact lab, create the archive in a clean temporary
 premode compile --plugin literal_symbol
 pcodex doctor
 pcodex status
+pcodex tune --static-only
+pcodex tune --validate
+pcodex tune --verify
 pcodex run --dry-run
 pcodex mcp-server --help
 ```
