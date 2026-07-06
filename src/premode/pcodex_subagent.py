@@ -18,6 +18,7 @@ class SubagentTransformResult:
     enabled: bool
     algorithm: str = pcodex.PCODEX_PACKET_STRATEGY
     mode: str | None = None
+    effective_mode: str | None = None
     transform_applied: bool = False
     tuning_profile: str | None = None
     packet_path: str | None = None
@@ -49,8 +50,11 @@ def transform_subagent_prompt(
     profile: str | None = "lite",
 ) -> SubagentTransformResult:
     mode_state = pcodex.resolve_mode_state(project_root, validate_tuned=True, require_runnable=False)
-    mode = str(mode_state.get("mode") or "on")
-    tuning_profile = str(mode_state["tuning_profile"]) if mode == "tuned" and mode_state.get("tuning_profile") else None
+    mode = str(mode_state.get("configured_mode") or mode_state.get("mode") or "on")
+    effective_mode = str(mode_state.get("effective_mode") or mode)
+    tuning_profile = str(mode_state["effective_tuning_profile"]) if effective_mode == "tuned" and mode_state.get("effective_tuning_profile") else None
+    fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
+    fallback_reason = str(fallback.get("last_reason")) if fallback.get("active") and fallback.get("last_reason") else None
     base_metadata: dict[str, Any] = {
         "parent_prompt_present": parent_prompt is not None,
         "spawn_metadata_keys": sorted((spawn_metadata or {}).keys()),
@@ -59,8 +63,12 @@ def transform_subagent_prompt(
         "state_status": mode_state.get("state_status"),
         "state_error": mode_state.get("state_error"),
         "mode": mode,
+        "configured_mode": mode,
+        "effective_mode": effective_mode,
         "transform_applied": False,
         "tuning_profile": tuning_profile,
+        "tuning": mode_state.get("tuning"),
+        "fallback": fallback,
     }
     if mode_state.get("state_status") == "invalid_default":
         error = str(mode_state.get("state_error") or "Invalid pCodex mode state")
@@ -68,27 +76,31 @@ def transform_subagent_prompt(
             prompt=subagent_prompt,
             enabled=False,
             mode=mode,
+            effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=tuning_profile,
             error=error,
             metadata={**base_metadata, "status": "invalid_state_raw_prompt", "error": error},
         )
-    if mode == "tuned" and mode_state.get("tuning_profile_valid") is False:
-        error = str(mode_state.get("tuning_profile_error") or "Invalid pCodex tuning profile")
+    tuning = mode_state.get("tuning") if isinstance(mode_state.get("tuning"), dict) else {}
+    if mode == "tuned" and not tuning.get("profile_valid"):
+        error = str(tuning.get("profile_error") or "Invalid pCodex tuning profile")
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=True,
             mode=mode,
+            effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=tuning_profile,
             error=error,
             metadata={**base_metadata, "status": "tuned_profile_invalid_raw_prompt", "error": error},
         )
-    if mode == "off":
+    if effective_mode == "off":
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=False,
             mode=mode,
+            effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=None,
             metadata={**base_metadata, "status": "disabled_raw_prompt"},
@@ -102,6 +114,7 @@ def transform_subagent_prompt(
             prompt=subagent_prompt,
             enabled=True,
             mode=mode,
+            effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=tuning_profile,
             error=f"{type(exc).__name__}: {exc}",
@@ -114,11 +127,18 @@ def transform_subagent_prompt(
             prompt=subagent_prompt,
             enabled=True,
             mode=mode,
+            effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=tuning_profile,
             error="compile runner returned no packet",
             metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
         )
+    telemetry = pcodex.record_runtime_telemetry(
+        project_root,
+        configured_mode=mode,
+        effective_mode=effective_mode,
+        fallback_reason=fallback_reason,
+    )
     packet_path = None if dry_run else _write_packet(packet)
     route = str(compiled.get("route") or "")
     transformed = compose_transformed_prompt(subagent_prompt, packet)
@@ -126,6 +146,7 @@ def transform_subagent_prompt(
         prompt=transformed,
         enabled=True,
         mode=mode,
+        effective_mode=effective_mode,
         transform_applied=True,
         tuning_profile=tuning_profile,
         packet_path=packet_path,
@@ -138,5 +159,6 @@ def transform_subagent_prompt(
             "premode_command": compiled.get("premode_command"),
             "packet_sha256": compiled.get("packet_sha256"),
             "model_facing_sections": compiled.get("model_facing_sections"),
+            "telemetry": telemetry.get("telemetry"),
         },
     )

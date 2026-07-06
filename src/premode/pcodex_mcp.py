@@ -33,6 +33,7 @@ TOOL_OUTPUT_SCHEMA: dict[str, Any] = {
         "enabled": {"type": "boolean"},
         "algorithm": {"const": pcodex.PCODEX_PACKET_STRATEGY},
         "mode": {"type": ["string", "null"]},
+        "effective_mode": {"type": ["string", "null"]},
         "transform_applied": {"type": "boolean"},
         "tuning_profile": {"type": ["string", "null"]},
         "used_fallback": {"type": "boolean"},
@@ -44,6 +45,7 @@ TOOL_OUTPUT_SCHEMA: dict[str, Any] = {
         "enabled",
         "algorithm",
         "mode",
+        "effective_mode",
         "transform_applied",
         "tuning_profile",
         "used_fallback",
@@ -63,6 +65,7 @@ class PcodexToolResult:
     error: str | None
     metadata: Mapping[str, object]
     mode: str | None = None
+    effective_mode: str | None = None
     transform_applied: bool = False
     tuning_profile: str | None = None
 
@@ -72,6 +75,7 @@ class PcodexToolResult:
             "enabled": self.enabled,
             "algorithm": self.algorithm,
             "mode": self.mode,
+            "effective_mode": self.effective_mode,
             "transform_applied": self.transform_applied,
             "tuning_profile": self.tuning_profile,
             "used_fallback": self.used_fallback,
@@ -108,6 +112,7 @@ def pcodex_transform_subagent_prompt_tool(
             enabled=False,
             algorithm=pcodex.PCODEX_PACKET_STRATEGY,
             mode=None,
+            effective_mode=None,
             transform_applied=False,
             tuning_profile=None,
             used_fallback=False,
@@ -117,6 +122,7 @@ def pcodex_transform_subagent_prompt_tool(
                 "packet_path": None,
                 "input_prompt_preserved": True,
                 "mode": None,
+                "effective_mode": None,
                 "transform_applied": False,
                 "tuning_profile": None,
                 "model_facing_sections": MODEL_FACING_SECTIONS,
@@ -141,8 +147,12 @@ def pcodex_transform_subagent_prompt_tool(
         "route": result.route,
         "dry_run": bool(dry_run),
         "mode": result.mode,
+        "configured_mode": result.mode,
+        "effective_mode": result.effective_mode,
         "transform_applied": result.transform_applied,
         "tuning_profile": result.tuning_profile,
+        "tuning": result.metadata.get("tuning"),
+        "fallback": result.metadata.get("fallback"),
     }
     if result.error:
         metadata["error_status"] = result.metadata.get("status")
@@ -151,6 +161,7 @@ def pcodex_transform_subagent_prompt_tool(
         enabled=result.enabled,
         algorithm=result.algorithm,
         mode=result.mode,
+        effective_mode=result.effective_mode,
         transform_applied=result.transform_applied,
         tuning_profile=result.tuning_profile,
         used_fallback=result.used_fallback,
@@ -166,6 +177,7 @@ def _metadata_for_result(result: PcodexToolResult, *, status: str = "transformed
         "enabled": result.enabled,
         "algorithm": result.algorithm,
         "mode": result.mode,
+        "effective_mode": result.effective_mode,
         "transform_applied": result.transform_applied,
         "tuning_profile": result.tuning_profile,
         "used_fallback": result.used_fallback,

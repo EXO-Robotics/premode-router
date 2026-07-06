@@ -19,10 +19,11 @@ from .compiler import compile_prompt
 from .pcodex_state import (
     DEFAULT_TUNING_PROFILE,
     PcodexStateError,
+    record_runtime_telemetry,
+    resolve_effective_mode,
     set_mode_off,
     set_mode_on,
     set_mode_tuned,
-    status_payload,
 )
 from .plugins import PluginAliasError, available_plugin_aliases, resolve_packet_plugin
 
@@ -514,19 +515,61 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
-    state = status_payload(repo_root)
+    state = resolve_effective_mode(repo_root)
+    configured_mode = str(state.get("configured_mode") or state.get("mode") or "on")
+    effective_mode = str(state.get("effective_mode") or configured_mode)
     if config.source in {CONFIG_ENV, CONFIG_PATH_ENV, CONFIG_PATH_ALIAS_ENV, "repo", "user"} and not state["state_exists"]:
+        configured_mode = "on" if config.enabled else "off"
+        effective_mode = configured_mode
         state["enabled"] = config.enabled
-        state["mode"] = "on" if config.enabled else "off"
+        state["mode"] = configured_mode
+        state["configured_mode"] = configured_mode
+        state["effective_mode"] = effective_mode
         state["tuning_profile"] = None
+        state["effective_tuning_profile"] = None
+    tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
+    fallback = state.get("fallback") if isinstance(state.get("fallback"), dict) else {}
+    telemetry = state.get("telemetry") if isinstance(state.get("telemetry"), dict) else {}
+    mcp = {
+        "codex_cli_available": _command_available("codex"),
+        "registered": False,
+        "config_scope": "unknown",
+        "status": "unknown",
+    }
     return {
-        **state,
+        "schema_version": "pcodex.status.v1",
+        "enabled": bool(state.get("enabled")),
+        "configured_mode": configured_mode,
+        "effective_mode": effective_mode,
+        "mode": configured_mode,
+        "algorithm": state.get("algorithm") or PCODEX_PACKET_STRATEGY,
+        "tuning": {
+            "profile": tuning.get("profile"),
+            "validation": tuning.get("validation"),
+            "verify": tuning.get("verify"),
+            "results_path": tuning.get("results_path"),
+        },
+        "mcp": mcp,
+        "fallback": {
+            "active": bool(fallback.get("active")),
+            "last_reason": fallback.get("last_reason"),
+            "last_at": fallback.get("last_at"),
+        },
+        "telemetry": telemetry,
+        "savings": {"available": False, "reason": "not_enough_data"},
+        "state_path": state.get("state_path"),
+        "state_exists": state.get("state_exists"),
+        "state_status": state.get("state_status"),
+        "state_error": state.get("state_error"),
+        "state_schema_version": "pcodex.state.v1",
+        "tuning_profile": tuning.get("profile"),
+        "tuning_profile_valid": tuning.get("profile_valid"),
+        "tuning_validation_status": tuning.get("validation"),
         "config_source": config.source,
         "config_path": config.path,
         "legacy_enabled": config.enabled,
-        "algorithm": state["algorithm"],
         "premode_available": _command_available("premode"),
-        "codex_available": _command_available("codex"),
+        "codex_available": mcp["codex_cli_available"],
         "plugin_alias_available": plugin_alias_available(),
     }
 
@@ -560,7 +603,7 @@ def child_env_for(repo_root: Path, config: PcodexConfig | None = None) -> dict[s
 
 def child_env_for_mode_state(repo_root: Path, mode_state: dict[str, Any]) -> dict[str, str]:
     return {
-        CONFIG_ENV: "1" if bool(mode_state.get("enabled")) else "0",
+        CONFIG_ENV: "1" if str(mode_state.get("effective_mode") or mode_state.get("mode")) != "off" else "0",
         ALGORITHM_ENV: PCODEX_PACKET_STRATEGY,
         PACKET_STRATEGY_ENV: PCODEX_PACKET_STRATEGY,
         PROJECT_ROOT_ENV: str(repo_root.resolve()),
@@ -568,22 +611,23 @@ def child_env_for_mode_state(repo_root: Path, mode_state: dict[str, Any]) -> dic
 
 
 def resolve_mode_state(repo_root: Path, *, validate_tuned: bool = True, require_runnable: bool = False) -> dict[str, Any]:
-    mode_state = status_payload(repo_root, validate_tuned=validate_tuned)
+    mode_state = resolve_effective_mode(repo_root, validate_tuned=validate_tuned)
     if mode_state.get("state_status") == "invalid_default":
         message = mode_state.get("state_error") or "Invalid pCodex mode state"
         if require_runnable:
             raise PcodexStateError(str(message))
         return mode_state
-    if require_runnable and mode_state.get("mode") == "tuned" and mode_state.get("tuning_profile_valid") is False:
-        message = mode_state.get("tuning_profile_error") or "Invalid pCodex tuning profile"
+    tuning = mode_state.get("tuning") if isinstance(mode_state.get("tuning"), dict) else {}
+    if require_runnable and mode_state.get("configured_mode") == "tuned" and not tuning.get("profile_valid"):
+        message = tuning.get("profile_error") or "Invalid pCodex tuning profile"
         raise PcodexStateError(str(message))
     return mode_state
 
 
 def _state_tuning_profile(mode_state: dict[str, Any]) -> str | None:
-    if mode_state.get("mode") != "tuned":
+    if mode_state.get("effective_mode") != "tuned":
         return None
-    profile = mode_state.get("tuning_profile")
+    profile = mode_state.get("effective_tuning_profile") or mode_state.get("tuning_profile")
     return str(profile) if profile else None
 
 
@@ -626,19 +670,42 @@ def set_tuned(cwd: Path | None, profile: str | None = None) -> dict[str, Any]:
 
 
 def format_status(payload: dict[str, Any]) -> str:
+    tuning = payload.get("tuning") if isinstance(payload.get("tuning"), dict) else {}
+    fallback = payload.get("fallback") if isinstance(payload.get("fallback"), dict) else {}
+    telemetry = payload.get("telemetry") if isinstance(payload.get("telemetry"), dict) else {}
+    mcp = payload.get("mcp") if isinstance(payload.get("mcp"), dict) else {}
+    savings = payload.get("savings") if isinstance(payload.get("savings"), dict) else {}
+    fallback_text = "active"
+    if not fallback.get("active"):
+        fallback_text = "none"
+    elif fallback.get("last_reason"):
+        fallback_text = f"active ({fallback.get('last_reason')})"
+    mcp_status = str(mcp.get("status") or "unknown")
+    if mcp_status == "unknown":
+        mcp_text = "unknown"
+    elif mcp.get("registered"):
+        mcp_text = f"registered in {mcp.get('config_scope') or 'unknown'} config"
+    else:
+        mcp_text = "not registered"
+    savings_text = "unavailable"
+    if not savings.get("available"):
+        savings_text = f"unavailable ({savings.get('reason') or 'unknown'})"
     lines = [
-        f"enabled: {str(payload.get('enabled')).lower()}",
-        f"mode: {payload.get('mode')}",
-        f"algorithm: {payload.get('algorithm')}",
-        f"tuning_profile: {payload.get('tuning_profile') if payload.get('tuning_profile') is not None else 'null'}",
-        f"state_path: {payload.get('state_path')}",
+        f"pCodex: {'on' if payload.get('enabled') else 'off'}",
+        f"Configured mode: {payload.get('configured_mode')}",
+        f"Effective mode: {payload.get('effective_mode')}",
+        f"Algorithm: {payload.get('algorithm')}",
+        f"Tuning: {tuning.get('verify') or tuning.get('validation') or 'missing'}",
+        f"Tuning profile: {tuning.get('profile') or 'none'}",
+        f"MCP: {mcp_text}",
+        f"Codex CLI: {'available' if mcp.get('codex_cli_available') else 'unavailable'}",
+        f"Fallback: {fallback_text}",
+        f"Telemetry: compile_count={telemetry.get('compile_count', 0)} fallback_count={telemetry.get('fallback_count', 0)}",
+        f"Savings estimate: {savings_text}",
+        f"State path: {payload.get('state_path')}",
     ]
-    if payload.get("mode") == "tuned":
-        lines.append(f"tuning_profile_valid: {str(payload.get('tuning_profile_valid')).lower()}")
-        if payload.get("tuning_profile_error"):
-            lines.append(f"tuning_profile_error: {payload.get('tuning_profile_error')}")
     if payload.get("state_status") != "loaded":
-        lines.append(f"state_status: {payload.get('state_status')}")
+        lines.append(f"State status: {payload.get('state_status')}")
     return "\n".join(lines)
 
 
@@ -681,15 +748,22 @@ def run_dry_run(
     compile_runner: Any | None = None,
 ) -> dict[str, Any]:
     mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
-    mode = str(mode_state["mode"])
+    mode = str(mode_state.get("configured_mode") or mode_state["mode"])
+    effective_mode = str(mode_state.get("effective_mode") or mode)
     tuning_profile = _state_tuning_profile(mode_state)
     child_env = child_env_for_mode_state(repo_root, mode_state)
+    fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
+    fallback_reason = str(fallback.get("last_reason")) if fallback.get("active") and fallback.get("last_reason") else None
     base = {
         "status": "dry_run",
-        "enabled": bool(mode_state["enabled"]),
+        "enabled": effective_mode != "off",
         "mode": mode,
-        "transform_applied": mode != "off",
+        "configured_mode": mode,
+        "effective_mode": effective_mode,
+        "transform_applied": effective_mode != "off",
         "tuning_profile": tuning_profile,
+        "tuning": mode_state.get("tuning"),
+        "fallback": fallback,
         "state_status": mode_state.get("state_status"),
         "state_error": mode_state.get("state_error"),
         "config_source": "pcodex_state",
@@ -699,9 +773,10 @@ def run_dry_run(
         "raw_task_preview": redact_text(prompt),
         "codex_launch": "not_executed",
     }
-    if mode != "off":
+    if effective_mode != "off":
         runner = compile_runner or compile_pcodex_packet
         compiled = run_compile_runner(runner, repo_root, prompt, profile, tuning_profile=tuning_profile)
+        telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
         packet_path = _write_temp_packet(compiled["packet"])
         final_prompt = compose_final_prompt(prompt, compiled["packet"])
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
@@ -713,7 +788,9 @@ def run_dry_run(
             "final_prompt_preview": redact_text(final_prompt),
             "packet_sha256": compiled["packet_sha256"],
             "route": compiled["route"],
+            "telemetry": telemetry.get("telemetry"),
         }
+    telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode)
     invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
     return {
         **base,
@@ -721,12 +798,18 @@ def run_dry_run(
         "codex_command": invocation.args,
         "packet_path": None,
         "final_prompt_preview": redact_text(prompt),
+        "telemetry": telemetry.get("telemetry"),
     }
 
 
 def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> dict[str, Any]:
     mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
     tuning_profile = _state_tuning_profile(mode_state)
+    configured_mode = str(mode_state.get("configured_mode") or mode_state.get("mode") or "on")
+    effective_mode = str(mode_state.get("effective_mode") or configured_mode)
+    fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
+    fallback_reason = str(fallback.get("last_reason")) if fallback.get("active") and fallback.get("last_reason") else None
+    record_runtime_telemetry(repo_root, configured_mode=configured_mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
     child_env = child_env_for_mode_state(repo_root, mode_state)
     return run_codex(
         repo_root,
@@ -924,7 +1007,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.dry_run:
             print(json.dumps(run_dry_run(repo_root, args.prompt, args.profile), indent=2, sort_keys=True))
             return 0
-        if mode_state["mode"] != "off":
+        if mode_state.get("effective_mode") != "off":
             result = run_enabled(repo_root, args.prompt, args.profile)
         else:
             result = run_disabled(repo_root, args.prompt, mode_state)

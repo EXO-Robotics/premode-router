@@ -153,10 +153,11 @@ def test_pcodex_status_human_includes_mode_fields(tmp_path: Path, capsys: pytest
     assert pcodex.main(["status", "--repo-root", str(repo)]) == 0
     out = capsys.readouterr().out
 
-    assert "enabled: true" in out
-    assert "mode: on" in out
-    assert "algorithm: literal_symbol" in out
-    assert "tuning_profile: null" in out
+    assert "pCodex: on" in out
+    assert "Configured mode: on" in out
+    assert "Effective mode: on" in out
+    assert "Algorithm: literal_symbol" in out
+    assert "Tuning profile: none" in out
 
 
 def test_pcodex_status_json_is_parseable(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -166,9 +167,12 @@ def test_pcodex_status_json_is_parseable(tmp_path: Path, capsys: pytest.CaptureF
     assert pcodex.main(["status", "--json", "--repo-root", str(repo)]) == 0
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["schema_version"] == "pcodex.state.v1"
+    assert payload["schema_version"] == "pcodex.status.v1"
+    assert payload["state_schema_version"] == "pcodex.state.v1"
     assert payload["enabled"] is True
     assert payload["mode"] == "on"
+    assert payload["configured_mode"] == "on"
+    assert payload["effective_mode"] == "on"
     assert payload["state_path"] == ".premode/pcodex_state.json"
 
 

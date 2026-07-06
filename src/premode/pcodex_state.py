@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,7 @@ STATE_SCHEMA_VERSION = "pcodex.state.v1"
 DEFAULT_ALGORITHM = "literal_symbol"
 DEFAULT_TUNING_PROFILE = ".premode/tuning/repo_profile.json"
 VALID_MODES = {"off", "on", "tuned"}
+VALID_EFFECTIVE_MODES = {"off", "on", "tuned"}
 
 
 class PcodexStateError(ValueError):
@@ -63,6 +65,71 @@ def _state_for_mode(mode: str, *, tuning_profile: str | None = None) -> dict[str
     raise PcodexStateError(f"Invalid pCodex mode: {mode}")
 
 
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _display_path(repo_root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _display_profile(repo_root: Path, profile: Path | str) -> str:
+    path = Path(profile)
+    if path.is_absolute():
+        try:
+            return path.resolve().relative_to(repo_root.resolve()).as_posix()
+        except ValueError:
+            return str(path)
+    return path.as_posix()
+
+
+def _optional_string_or_none(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _optional_int(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value >= 0:
+        return value
+    return 0
+
+
+def _fallback_payload(value: Any | None = None) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    return {
+        "active": bool(data.get("active", False)),
+        "last_reason": _optional_string_or_none(data.get("last_reason")),
+        "last_at": _optional_string_or_none(data.get("last_at")),
+    }
+
+
+def _last_verify_payload(value: Any | None = None) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    return {
+        "verdict": _optional_string_or_none(data.get("verdict")),
+        "results_path": _optional_string_or_none(data.get("results_path")),
+        "checked_at": _optional_string_or_none(data.get("checked_at")),
+    }
+
+
+def _telemetry_payload(value: Any | None = None) -> dict[str, Any]:
+    data = value if isinstance(value, dict) else {}
+    raw_counts = data.get("mode_counts")
+    counts = raw_counts if isinstance(raw_counts, dict) else {}
+    return {
+        "compile_count": _optional_int(data.get("compile_count")),
+        "mode_counts": {mode: _optional_int(counts.get(mode)) for mode in ("off", "on", "tuned")},
+        "fallback_count": _optional_int(data.get("fallback_count")),
+    }
+
+
 def validate_state(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise PcodexStateError("Invalid pCodex state: expected JSON object")
@@ -88,13 +155,24 @@ def validate_state(payload: Any) -> dict[str, Any]:
             raise PcodexStateError("Invalid pCodex state: tuning_profile must be null unless mode is tuned")
         if enabled is not (mode == "on"):
             raise PcodexStateError("Invalid pCodex state: enabled does not match mode")
-    return {
+    normalized = {
         "schema_version": STATE_SCHEMA_VERSION,
         "enabled": enabled,
         "mode": mode,
         "algorithm": DEFAULT_ALGORITHM,
         "tuning_profile": tuning_profile,
     }
+    if "effective_mode" in payload:
+        effective_mode = str(payload.get("effective_mode") or "").strip()
+        if effective_mode in VALID_EFFECTIVE_MODES:
+            normalized["effective_mode"] = effective_mode
+    if "fallback" in payload:
+        normalized["fallback"] = _fallback_payload(payload.get("fallback"))
+    if "last_verify" in payload:
+        normalized["last_verify"] = _last_verify_payload(payload.get("last_verify"))
+    if "telemetry" in payload:
+        normalized["telemetry"] = _telemetry_payload(payload.get("telemetry"))
+    return normalized
 
 
 def read_pcodex_state(repo_root: Path | str) -> dict[str, Any]:
@@ -138,23 +216,6 @@ def set_mode_off(repo_root: Path | str) -> dict[str, Any]:
     return {**state, "state_path": _display_path(root, path), "state_status": "written"}
 
 
-def _display_path(repo_root: Path, path: Path) -> str:
-    try:
-        return path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError:
-        return str(path)
-
-
-def _display_profile(repo_root: Path, profile: Path | str) -> str:
-    path = Path(profile)
-    if path.is_absolute():
-        try:
-            return path.resolve().relative_to(repo_root.resolve()).as_posix()
-        except ValueError:
-            return str(path)
-    return path.as_posix()
-
-
 def validate_tuning_profile_for_mode(repo_root: Path | str, profile: Path | str) -> dict[str, Any]:
     try:
         loaded = load_compile_tuning_profile(repo_root, profile)
@@ -165,6 +226,183 @@ def validate_tuning_profile_for_mode(repo_root: Path | str, profile: Path | str)
         "profile_path": _display_profile(find_repo_root(repo_root), profile),
         "validation_status": loaded["validation"].get("status"),
     }
+
+
+def _resolve_profile_path(repo_root: Path, profile: Path | str) -> Path:
+    path = Path(profile)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve()
+
+
+def _verify_results_for_profile(repo_root: Path, profile: Path | str) -> tuple[Path, str]:
+    profile_path = _resolve_profile_path(repo_root, profile)
+    results_path = profile_path.parent / "VERIFY_RESULTS.json"
+    return results_path, _display_path(repo_root, results_path)
+
+
+def inspect_tuning_status(repo_root: Path | str, profile: Path | str | None) -> dict[str, Any]:
+    root = find_repo_root(repo_root)
+    if profile is None:
+        return {
+            "profile": None,
+            "validation": "missing",
+            "verify": "missing",
+            "results_path": None,
+            "profile_valid": False,
+            "profile_error": None,
+            "fallback_reason": None,
+        }
+    display = _display_profile(root, profile)
+    try:
+        loaded = load_compile_tuning_profile(root, profile)
+    except TuningProfileError as exc:
+        results_path, results_display = _verify_results_for_profile(root, profile)
+        return {
+            "profile": display,
+            "validation": "FAIL",
+            "verify": "invalid",
+            "results_path": results_display if results_path.exists() else None,
+            "profile_valid": False,
+            "profile_error": str(exc),
+            "fallback_reason": "tuning_profile_invalid",
+        }
+    results_path, results_display = _verify_results_for_profile(root, loaded["profile_display"])
+    if not results_path.exists():
+        return {
+            "profile": display,
+            "validation": "PASS",
+            "verify": "not_verified",
+            "results_path": None,
+            "profile_valid": True,
+            "profile_error": None,
+            "fallback_reason": "tuning_not_verified",
+        }
+    try:
+        verify_payload = json.loads(results_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "profile": display,
+            "validation": "PASS",
+            "verify": "invalid",
+            "results_path": results_display,
+            "profile_valid": True,
+            "profile_error": None,
+            "fallback_reason": f"verify_results_invalid:{exc.__class__.__name__}",
+        }
+    verdict = str(verify_payload.get("verdict") or "invalid").strip() or "invalid"
+    fallback_reason = None if verdict == "PASS" else f"verify_{verdict.lower()}"
+    return {
+        "profile": display,
+        "validation": "PASS",
+        "verify": verdict,
+        "results_path": results_display,
+        "profile_valid": True,
+        "profile_error": None,
+        "fallback_reason": fallback_reason,
+    }
+
+
+def _profile_for_on(root: Path) -> str | None:
+    default_profile = root / DEFAULT_TUNING_PROFILE
+    if default_profile.exists():
+        return DEFAULT_TUNING_PROFILE
+    return None
+
+
+def resolve_effective_mode(repo_root: Path | str, *, validate_tuned: bool = True) -> dict[str, Any]:
+    root = find_repo_root(repo_root)
+    state = status_payload(root, validate_tuned=validate_tuned)
+    configured_mode = str(state.get("mode") or "on")
+    if state.get("state_status") == "invalid_default":
+        tuning = inspect_tuning_status(root, None)
+        return {
+            **state,
+            "configured_mode": configured_mode,
+            "effective_mode": "on",
+            "effective_tuning_profile": None,
+            "tuning": tuning,
+            "fallback": {"active": False, "last_reason": None, "last_at": None},
+            "telemetry": _telemetry_payload(state.get("telemetry")),
+        }
+    if configured_mode == "off":
+        tuning = inspect_tuning_status(root, None)
+        return {
+            **state,
+            "configured_mode": "off",
+            "effective_mode": "off",
+            "effective_tuning_profile": None,
+            "tuning": tuning,
+            "fallback": _fallback_payload(state.get("fallback")),
+            "telemetry": _telemetry_payload(state.get("telemetry")),
+        }
+    if configured_mode == "tuned":
+        profile = str(state.get("tuning_profile") or DEFAULT_TUNING_PROFILE)
+        tuning = inspect_tuning_status(root, profile)
+        return {
+            **state,
+            "configured_mode": "tuned",
+            "effective_mode": "tuned" if tuning["profile_valid"] else "tuned",
+            "effective_tuning_profile": profile if tuning["profile_valid"] else None,
+            "tuning": tuning,
+            "fallback": _fallback_payload(state.get("fallback")),
+            "telemetry": _telemetry_payload(state.get("telemetry")),
+        }
+    profile = _profile_for_on(root)
+    tuning = inspect_tuning_status(root, profile)
+    use_tuned = tuning["profile_valid"] and tuning["verify"] == "PASS"
+    fallback_reason = tuning.get("fallback_reason") if profile else None
+    fallback_state = _fallback_payload(state.get("fallback"))
+    fallback = {
+        "active": bool(fallback_reason),
+        "last_reason": str(fallback_reason) if fallback_reason else fallback_state["last_reason"],
+        "last_at": fallback_state["last_at"],
+    }
+    return {
+        **state,
+        "configured_mode": "on",
+        "effective_mode": "tuned" if use_tuned else "on",
+        "effective_tuning_profile": str(profile) if use_tuned else None,
+        "tuning": tuning,
+        "fallback": fallback,
+        "telemetry": _telemetry_payload(state.get("telemetry")),
+    }
+
+
+def record_runtime_telemetry(
+    repo_root: Path | str,
+    *,
+    configured_mode: str,
+    effective_mode: str,
+    fallback_reason: str | None = None,
+) -> dict[str, Any]:
+    root = find_repo_root(repo_root)
+    state = read_pcodex_state(root)
+    state.pop("_state_status", None)
+    state.pop("_state_error", None)
+    telemetry = _telemetry_payload(state.get("telemetry"))
+    telemetry["compile_count"] += 1
+    mode_counts = telemetry["mode_counts"]
+    if effective_mode in mode_counts:
+        mode_counts[effective_mode] += 1
+    fallback = _fallback_payload(state.get("fallback"))
+    if fallback_reason:
+        telemetry["fallback_count"] += 1
+        fallback = {"active": True, "last_reason": str(fallback_reason), "last_at": _utc_now()}
+    else:
+        fallback = {"active": False, "last_reason": fallback["last_reason"], "last_at": fallback["last_at"]}
+    state["effective_mode"] = effective_mode
+    state["fallback"] = fallback
+    state["telemetry"] = telemetry
+    resolved = resolve_effective_mode(root)
+    tuning = resolved.get("tuning") if isinstance(resolved.get("tuning"), dict) else {}
+    state["last_verify"] = {
+        "verdict": _optional_string_or_none(tuning.get("verify")),
+        "results_path": _optional_string_or_none(tuning.get("results_path")),
+        "checked_at": _utc_now(),
+    }
+    write_pcodex_state(root, state)
+    return {"fallback": fallback, "telemetry": telemetry}
 
 
 def set_mode_tuned(repo_root: Path | str, profile: Path | str = DEFAULT_TUNING_PROFILE) -> dict[str, Any]:
