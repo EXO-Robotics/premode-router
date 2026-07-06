@@ -49,6 +49,8 @@ MAX_REPORT_LINE_LENGTH = 160
 MAX_EVALUATION_PROMPTS = 200
 VERIFY_PRIMARY_TOP_K = 3
 VERIFY_RELATED_TEST_TOP_K = 3
+COMPILE_TUNING_PRIMARY_TOP_K = 12
+COMPILE_TUNING_RELATED_TEST_TOP_K = 12
 
 SOURCE_EXTENSIONS = {
     ".py",
@@ -134,6 +136,10 @@ class StaticInventory:
     repo_root: Path
     files: list[str]
     caps_hit: list[str] = field(default_factory=list)
+
+
+class TuningProfileError(ValueError):
+    """Raised when an explicit compile-time tuning profile cannot be used."""
 
 
 def find_repo_root(start: Path | str | None = None) -> Path:
@@ -996,7 +1002,7 @@ def _source_test_boosts(primary_scores: dict[str, float], artifacts: dict[str, A
         for item in mapping.get("tests", []):
             if isinstance(item, dict) and isinstance(item.get("test_path"), str):
                 confidence = min(1.0, max(0.0, float(item.get("confidence", 0.0) or 0.0)))
-                boosts[item["test_path"]] = boosts.get(item["test_path"], 0.0) + weights["source_test_relation"] * confidence
+                boosts[item["test_path"]] = boosts.get(item["test_path"], 0.0) + min(5.0, weights["source_test_relation"] * confidence * 4.0)
     return boosts
 
 
@@ -1005,7 +1011,14 @@ def _rank_paths(scores: dict[str, float], *, top_k: int) -> list[str]:
     return [path for path, _score in ranked[:top_k]]
 
 
-def _selection_for_prompt(row: dict[str, Any], artifacts: dict[str, Any], *, tuned: bool) -> dict[str, Any]:
+def _selection_for_prompt(
+    row: dict[str, Any],
+    artifacts: dict[str, Any],
+    *,
+    tuned: bool,
+    primary_top_k: int | None = None,
+    related_test_top_k: int | None = None,
+) -> dict[str, Any]:
     taxonomy = artifacts.get("path_taxonomy", {})
     vocabulary = artifacts.get("repo_vocabulary", {})
     roles = _taxonomy_roles(taxonomy if isinstance(taxonomy, dict) else {})
@@ -1031,8 +1044,8 @@ def _selection_for_prompt(row: dict[str, Any], artifacts: dict[str, Any], *, tun
             score += _phrase_route_delta(path, "test", prompt, terms, artifacts, weights)
             score += test_boosts.get(path, 0.0)
         test_scores[path] = score
-    primary_top_k = max(VERIFY_PRIMARY_TOP_K, len(row.get("expected_primary_files", [])))
-    test_top_k = max(VERIFY_RELATED_TEST_TOP_K, len(row.get("expected_related_tests", [])))
+    primary_top_k = max(primary_top_k or VERIFY_PRIMARY_TOP_K, len(row.get("expected_primary_files", [])))
+    test_top_k = max(related_test_top_k or VERIFY_RELATED_TEST_TOP_K, len(row.get("expected_related_tests", [])))
     return {
         "primary_files": _rank_paths(primary_scores, top_k=primary_top_k),
         "related_tests": _rank_paths(test_scores, top_k=test_top_k),
@@ -1041,12 +1054,24 @@ def _selection_for_prompt(row: dict[str, Any], artifacts: dict[str, Any], *, tun
     }
 
 
-def score_general_selection(row: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
-    return _selection_for_prompt(row, artifacts, tuned=False)
+def score_general_selection(
+    row: dict[str, Any],
+    artifacts: dict[str, Any],
+    *,
+    primary_top_k: int | None = None,
+    related_test_top_k: int | None = None,
+) -> dict[str, Any]:
+    return _selection_for_prompt(row, artifacts, tuned=False, primary_top_k=primary_top_k, related_test_top_k=related_test_top_k)
 
 
-def score_tuned_selection(row: dict[str, Any], artifacts: dict[str, Any]) -> dict[str, Any]:
-    return _selection_for_prompt(row, artifacts, tuned=True)
+def score_tuned_selection(
+    row: dict[str, Any],
+    artifacts: dict[str, Any],
+    *,
+    primary_top_k: int | None = None,
+    related_test_top_k: int | None = None,
+) -> dict[str, Any]:
+    return _selection_for_prompt(row, artifacts, tuned=True, primary_top_k=primary_top_k, related_test_top_k=related_test_top_k)
 
 
 def _hit_rate(rows: list[dict[str, Any]], selections: list[dict[str, Any]], expected_key: str, selected_key: str) -> float:
@@ -1270,3 +1295,166 @@ def verify_tuning_profile(repo_root: Path | str, *, out_dir: Path | str | None =
     }
     write_verify_artifacts(root, result, out_dir=output_dir)
     return result
+
+
+def _resolve_profile_path(repo_root: Path, tuning_profile: Path | str) -> tuple[Path, str]:
+    display = str(tuning_profile)
+    path = Path(tuning_profile)
+    if not path.is_absolute():
+        path = repo_root / path
+    return path.resolve(), display
+
+
+def load_compile_tuning_profile(repo_root: Path | str, tuning_profile: Path | str) -> dict[str, Any]:
+    root = find_repo_root(repo_root)
+    profile_path, display = _resolve_profile_path(root, tuning_profile)
+    if not profile_path.exists():
+        raise TuningProfileError(f"Tuning profile not found: {display}")
+    if profile_path.name != "repo_profile.json":
+        raise TuningProfileError("Invalid tuning profile: expected repo_profile.json")
+    try:
+        output_dir = _safe_out_dir(root, profile_path.parent)
+    except ValueError as exc:
+        raise TuningProfileError(f"Invalid tuning profile: {exc}") from exc
+    validation = validate_tuning_artifacts(root, out_dir=output_dir, write_report=False)
+    if validation.get("status") != "pass":
+        failures = validation.get("failures") or ["validation_failed"]
+        raise TuningProfileError("Invalid tuning profile: " + "; ".join(str(failure) for failure in failures[:6]))
+    try:
+        artifacts = _load_verify_artifacts(output_dir)
+    except Exception as exc:
+        raise TuningProfileError(f"Invalid tuning profile: {exc.__class__.__name__}") from exc
+    return {
+        "profile_path": profile_path,
+        "profile_display": display,
+        "out_dir": output_dir,
+        "validation": validation,
+        "artifacts": artifacts,
+    }
+
+
+def _item_path(item: Any) -> str:
+    if isinstance(item, dict):
+        return str(item.get("path") or "").strip()
+    return str(item or "").strip()
+
+
+def _item_by_path(items: list[Any]) -> dict[str, dict[str, Any]]:
+    by_path: dict[str, dict[str, Any]] = {}
+    for item in items:
+        path = _item_path(item)
+        if not path:
+            continue
+        if isinstance(item, dict):
+            by_path.setdefault(path, dict(item))
+        else:
+            by_path.setdefault(path, {"path": path})
+    return by_path
+
+
+def _tuning_candidate_item(path: str, role: str) -> dict[str, Any]:
+    return {
+        "path": path,
+        "kind": role if role != "unknown" else "source",
+        "source": "pcodex_tuning_profile",
+        "reason": "tuning_profile_rank_boost",
+        "tuning_profile_candidate": True,
+    }
+
+
+def _rerank_bucket(
+    current_items: list[Any],
+    tuned_paths: list[str],
+    scores: dict[str, float],
+    roles: dict[str, str],
+    *,
+    bucket: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    current_by_path = _item_by_path(current_items)
+    current_paths = list(current_by_path)
+    pool: list[str] = list(current_paths)
+    for path in tuned_paths:
+        role = roles.get(path, "unknown")
+        if role in {"generated", "vendor", "noise"} and path not in current_by_path:
+            continue
+        if float(scores.get(path, 0.0) or 0.0) <= 0.0 and path not in current_by_path:
+            continue
+        if path not in pool:
+            pool.append(path)
+    before_index = {path: index for index, path in enumerate(current_paths)}
+    ranked = sorted(
+        pool,
+        key=lambda path: (
+            -float(scores.get(path, 0.0) or 0.0),
+            before_index.get(path, 10_000),
+            path.count("/"),
+            path.lower(),
+        ),
+    )
+    result: list[dict[str, Any]] = []
+    for path in ranked:
+        item = dict(current_by_path.get(path) or _tuning_candidate_item(path, roles.get(path, "unknown")))
+        if path not in current_by_path:
+            item["reason"] = f"tuning_profile_{bucket}_promotion"
+            item["candidate_projection_reason"] = item["reason"]
+        result.append(item)
+    return result, {
+        "before": current_paths,
+        "after": [_item_path(item) for item in result],
+        "promoted": [path for path in ranked if path not in current_by_path],
+    }
+
+
+def apply_compile_tuning_profile(
+    repo_root: Path | str,
+    raw_prompt: str,
+    manifest: dict[str, Any],
+    tuning_profile: Path | str,
+) -> dict[str, Any]:
+    loaded = load_compile_tuning_profile(repo_root, tuning_profile)
+    artifacts = loaded["artifacts"]
+    taxonomy = artifacts.get("path_taxonomy") if isinstance(artifacts.get("path_taxonomy"), dict) else {}
+    roles = _taxonomy_roles(taxonomy)
+    row = {"id": "compile", "prompt": raw_prompt, "expected_primary_files": [], "expected_related_tests": [], "tags": []}
+    tuned = score_tuned_selection(
+        row,
+        artifacts,
+        primary_top_k=COMPILE_TUNING_PRIMARY_TOP_K,
+        related_test_top_k=COMPILE_TUNING_RELATED_TEST_TOP_K,
+    )
+    primary, primary_diag = _rerank_bucket(
+        list(manifest.get("candidate_edit_files") or manifest.get("likely_files") or manifest.get("likely_edit_files") or []),
+        list(tuned.get("primary_files") or []),
+        dict(tuned.get("primary_scores") or {}),
+        roles,
+        bucket="primary",
+    )
+    related, related_diag = _rerank_bucket(
+        list(manifest.get("related_tests") or manifest.get("suggested_tests") or manifest.get("verification_files") or []),
+        list(tuned.get("related_tests") or []),
+        dict(tuned.get("test_scores") or {}),
+        roles,
+        bucket="related_test",
+    )
+    manifest["candidate_edit_files"] = primary
+    manifest["likely_edit_files"] = primary
+    manifest["likely_files"] = primary
+    manifest["related_tests"] = related
+    manifest["suggested_tests"] = related
+    manifest["verification_files"] = related
+    manifest["tuning_profile_diagnostics"] = {
+        "applied": True,
+        "profile_path": ".premode/tuning/repo_profile.json",
+        "schema_version": VERIFY_SCHEMA_VERSION,
+        "base_algorithm": "literal_symbol",
+        "diagnostics_out_of_band": True,
+        "model_facing_allowed": False,
+        "primary": primary_diag,
+        "related_tests": related_diag,
+        "validation_status": loaded["validation"].get("status"),
+    }
+    metrics = manifest.setdefault("metrics", {})
+    metrics["tuning_profile_applied"] = True
+    metrics["tuning_primary_promoted_count"] = len(primary_diag["promoted"])
+    metrics["tuning_related_test_promoted_count"] = len(related_diag["promoted"])
+    return manifest["tuning_profile_diagnostics"]

@@ -25,6 +25,7 @@ from .review_patch import review_patch, format_review_report
 from .benchmark import run_benchmark, format_benchmark_report
 from .launch_safety import RootGuardError, resolve_cli_repo
 from .plugins import PluginAliasError, apply_packet_plugin
+from .tuning import TuningProfileError
 
 
 def _print_json(obj) -> None:
@@ -129,6 +130,7 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--show-raw", action="store_true")
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
     comp.add_argument("--plugin", default=None, help="Resolve packet options from an installed Pre-mode plugin alias.")
+    comp.add_argument("--tuning", default=None, help="Apply a validated pCodex repo tuning profile to internal ranking. Explicit opt-in only.")
     comp.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help="Compiled packet renderer version. v5 is ranked context only.")
     v5_variants = ["ranked_paths", "ranked_snippets", "primary_tests_only", "top1_plus_tests", "ranked_paths_plus_anchors", "ranked_paths_selective_snippets", "ranked_paths_no_support", "ranked_paths_tests_first", "ranked_paths_top1", "tool_assisted_backbone", "tool_assisted_backbone_no_task_class", "tool_assisted_backbone_no_relations", "tool_assisted_anchors_internal"]
     anchor_strategies = [
@@ -367,25 +369,33 @@ def main(argv: list[str] | None = None) -> int:
         out = Path(args.out) if args.out else None
         json_out = Path(args.json_out) if args.json_out else None
         plugin_resolution = _apply_packet_plugin_or_exit(args)
+        if args.tuning and str(args.packet_strategy or "").replace("-", "_").strip().lower() != "literal_symbol":
+            print("premode: error: --tuning currently supports only --plugin literal_symbol / packet_strategy literal_symbol.", file=sys.stderr)
+            return 2
         packet_mode = "evidence_snippets" if args.evidence_snippets or args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only")
-        result = compile_prompt(
-            compile_repo,
-            args.prompt,
-            args.profile,
-            out_path=out,
-            json_out_path=json_out,
-            use_repo_map=args.use_repo_map,
-            packet_version=args.packet_version,
-            packet_variant=args.packet_variant,
-            packet_strategy=args.packet_strategy,
-            packet_detail_mode=packet_mode,
-            snippet_budget_tokens=args.snippet_budget_tokens,
-            cache_optimized=args.cache_optimized,
-            context_only=args.context_only,
-            save=args.save,
-            record_artifacts=not args.no_record,
-            include_packet_debug_metadata=args.include_packet_debug_metadata,
-        )
+        try:
+            result = compile_prompt(
+                compile_repo,
+                args.prompt,
+                args.profile,
+                out_path=out,
+                json_out_path=json_out,
+                use_repo_map=args.use_repo_map,
+                packet_version=args.packet_version,
+                packet_variant=args.packet_variant,
+                packet_strategy=args.packet_strategy,
+                packet_detail_mode=packet_mode,
+                snippet_budget_tokens=args.snippet_budget_tokens,
+                cache_optimized=args.cache_optimized,
+                context_only=args.context_only,
+                save=args.save,
+                record_artifacts=not args.no_record,
+                include_packet_debug_metadata=args.include_packet_debug_metadata,
+                tuning_profile=Path(args.tuning) if args.tuning else None,
+            )
+        except TuningProfileError as exc:
+            print(f"premode: error: {exc}", file=sys.stderr)
+            return 2
         if plugin_resolution:
             result["plugin_alias_resolution"] = plugin_resolution
         if args.json:

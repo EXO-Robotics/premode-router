@@ -338,7 +338,8 @@ def test_pcodex_main_tune_verify_routes_to_bootstrap_without_codex_exec_defaults
 def test_generalized_compile_default_and_model_packet_boundary_remain_unchanged() -> None:
     source = Path(cli.__file__).read_text(encoding="utf-8")
 
-    assert "--tuning" not in source
+    assert 'comp.add_argument("--tuning"' in source
+    assert "Explicit opt-in only" in source
     assert tuning.MODEL_FACING_PACKET_BOUNDARY == [
         "TASK",
         "PRIMARY_FILES",

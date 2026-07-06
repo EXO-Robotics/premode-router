@@ -323,7 +323,8 @@ def test_generalized_compile_default_remains_unchanged() -> None:
     source = Path(cli.__file__).read_text(encoding="utf-8")
 
     assert 'comp.add_argument("--plugin"' in source
-    assert "--tuning" not in source
+    assert 'comp.add_argument("--tuning"' in source
+    assert "Explicit opt-in only" in source
 
 
 def test_model_facing_packet_rendering_constants_remain_internal_only() -> None:

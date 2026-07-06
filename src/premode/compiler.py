@@ -51,6 +51,7 @@ from .router import (
 )
 from .safe_reader import safe_read, is_secret_name
 from .timeutil import timestamp_iso
+from .tuning import TuningProfileError, apply_compile_tuning_profile
 
 PACKET_V2_MARKER = "PREMODE_COMPILED_PACKET_V2"
 PACKET_V3_MARKER = "PREMODE_COMPILED_PACKET_V3"
@@ -5842,6 +5843,7 @@ def build_compiled_packet(
     context_only: bool = False,
     record: bool = True,
     include_packet_debug_metadata: bool = False,
+    tuning_profile: Path | str | None = None,
 ) -> dict[str, Any]:
     selected_context = select_context(repo_root, raw_prompt, profile_name, use_repo_map=use_repo_map, context_only=context_only, record=record)
     manifest = selected_context["manifest"]
@@ -5875,6 +5877,11 @@ def build_compiled_packet(
     if marker == PACKET_V3_MARKER:
         selected = _lite_v3_candidate_full_text_top_up(repo_root, raw_prompt, profile_name, manifest, selected)
     manifest["metrics"]["packet_version"] = marker
+    if tuning_profile is not None:
+        active_strategy = str(manifest.get("packet_strategy") or packet_strategy or "").replace("-", "_").strip().lower()
+        if marker != PACKET_V5_MARKER or str(variant or "") != PACKET_VARIANT_TOOL_ASSISTED_ANCHORS_INTERNAL or active_strategy != "literal_symbol":
+            raise TuningProfileError("--tuning currently supports only --plugin literal_symbol / packet_strategy literal_symbol.")
+        apply_compile_tuning_profile(repo_root, raw_prompt, manifest, tuning_profile)
 
     if marker == PACKET_V3_MARKER:
         manifest["packet_detail_mode"] = PACKET_DETAIL_PATHS_ONLY
@@ -6406,6 +6413,7 @@ def compile_prompt(
     record: bool = True,
     record_artifacts: bool | None = None,
     include_packet_debug_metadata: bool = False,
+    tuning_profile: Path | str | None = None,
 ) -> dict[str, Any]:
     if record_artifacts is None:
         record_artifacts = record
@@ -6423,6 +6431,7 @@ def compile_prompt(
         context_only=context_only,
         record=record_artifacts,
         include_packet_debug_metadata=include_packet_debug_metadata,
+        tuning_profile=tuning_profile,
     )
     packet = compiled["packet"]
     manifest = compiled["manifest"]
@@ -6524,6 +6533,7 @@ def compile_prompt(
             "suggested_tests": manifest.get("suggested_tests") or [],
         },
         "model_facing_leakage_check": manifest.get("model_facing_leakage_check"),
+        "tuning_profile_diagnostics": manifest.get("tuning_profile_diagnostics"),
         "pre_agent_worktree_state": manifest.get("pre_agent_worktree_state"),
         "cacheable_prefix_tokens": manifest["metrics"].get("cacheable_prefix_tokens"),
         "dynamic_suffix_tokens": manifest["metrics"].get("dynamic_suffix_tokens"),
