@@ -1,6 +1,6 @@
 # pCodex Codex Tool Configuration
 
-This document describes a local tool configuration candidate for pCodex subagent prompt transformation.
+This document describes the local tool configuration candidate for pCodex subagent prompt transformation. See `docs/PCODEX_MCP_STATUS.md` for the current alpha4 proof boundary.
 
 ## Tool Server Candidate
 
@@ -44,6 +44,12 @@ The intended workflow is:
 2. Codex calls `pcodex_transform_subagent_prompt` with the exact prompt.
 3. pCodex routes the prompt through `transform_subagent_prompt`.
 4. Codex dispatches the subagent using the returned transformed prompt.
+
+## Alpha4 Proof Boundary
+
+Alpha4 proves that the same command used in Codex MCP registration can start the local stdio server, expose `pcodex_transform_subagent_prompt` through `tools/list`, expose its schema through that command-backed MCP path, and transform a safe dummy prompt.
+
+Installed Codex can register/list/get the server in an isolated `CODEX_HOME`, but native installed-Codex schema discovery and automatic tool invocation are not yet proven.
 
 ## Enforcement Status
 

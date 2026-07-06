@@ -27,6 +27,8 @@ htmlcov/
 .premode/audit/
 .premode/metrics/
 .premode/index/
+.pcodex/
+usage_ledger.jsonl
 *.jsonl
 
 # Lab/temp artifacts

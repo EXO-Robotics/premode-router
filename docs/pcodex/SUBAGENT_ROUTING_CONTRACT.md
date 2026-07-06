@@ -59,7 +59,7 @@ pcodex mcp-server
 
 The intended local tool name is `pcodex_transform_subagent_prompt`. The server candidate accepts JSON tool calls, delegates to `pcodex_transform_subagent_prompt_tool`, and returns transformed prompt text plus out-of-band metadata. It does not open a network listener and does not dump environment variables or secrets.
 
-Installed Codex can register local stdio MCP servers with `codex mcp add`, but pre-dispatch enforcement is not proven unless Codex is configured or confirmed to call this tool before `spawnAgent` dispatch. AGENTS.md and skill instructions remain the instruction-level routing layer.
+Installed Codex can register local stdio MCP servers with `codex mcp add`. Alpha4 proved isolated registration/list/get and a command-backed local MCP harness call, but native installed-Codex schema discovery and pre-dispatch enforcement are not proven unless Codex is configured or confirmed to call this tool before `spawnAgent` dispatch. AGENTS.md and skill instructions remain the instruction-level routing layer.
 
 ## Instruction Behavior
 

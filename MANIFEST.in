@@ -13,6 +13,16 @@ recursive-exclude .pytest_cache *
 recursive-exclude .premode/out *
 recursive-exclude .premode/audit *
 recursive-exclude .premode/metrics *
+recursive-exclude .premode/index *
+recursive-exclude .pcodex *
+global-exclude usage_ledger.jsonl
+global-exclude .env
+global-exclude .env.*
+global-exclude *.pem
+global-exclude *.key
+global-exclude *credentials*
+global-exclude *secret*
+global-exclude *token*
 global-exclude .DS_Store
 global-exclude *.pyc
 global-exclude *.pyo
