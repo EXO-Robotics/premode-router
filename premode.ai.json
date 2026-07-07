@@ -9,11 +9,18 @@
     "codex_wrapper": "pcodex"
   },
   "current_install": {
+    "canonical_first_run_doc": "docs/FIRST_RUN.md",
     "public_source": [
-      "git clone https://github.com/EXO-Robotics/premode-router.git",
       "cd premode-router",
       "scripts/install_pcodex_from_source.sh",
-      "export PATH=\"$HOME/.pcodex-alpha/bin:$PATH\""
+      "export PATH=\"$HOME/.pcodex-alpha/bin:$PATH\"",
+      "pcodex doctor",
+      "pcodex setup --skip-tune --no-mcp",
+      "pcodex on",
+      "pcodex status",
+      "pcodex first-run",
+      "pcodex first-run --json",
+      "pcodex run --dry-run \"Hypothetical setup verification task. Do not modify files.\""
     ],
     "development_editable": [
       "python3.11 -m venv .venv",
@@ -28,16 +35,23 @@
     "status": "future/not active unless package publication exists"
   },
   "setup": [
-    "pcodex doctor || true",
+    "pcodex doctor",
     "pcodex doctor --json",
-    "pcodex setup --no-mcp",
+    "pcodex setup --skip-tune --no-mcp",
+    "pcodex on",
     "pcodex status",
-    "pcodex status --json"
+    "pcodex status --json",
+    "pcodex first-run",
+    "pcodex first-run --json"
   ],
   "primary_workflow": [
     "pcodex run --dry-run \"<task>\"",
     "pcodex run \"<task>\"",
     "premode review-patch --since-compile"
+  ],
+  "cleanup": [
+    "pcodex cleanup --local-state --dry-run",
+    "pcodex cleanup --local-state --yes"
   ],
   "effective_states": [
     "OFF_RAW",
@@ -78,6 +92,7 @@
     "AI_START_HERE.md",
     "AGENTS.md",
     "README.md",
+    "docs/FIRST_RUN.md",
     "docs/TUNING.md",
     "docs/INCREMENTAL_TUNING.md",
     "docs/CONTENT_FREE_TELEMETRY.md",
@@ -101,6 +116,8 @@
     ".premode/audit/",
     ".premode/metrics/",
     ".premode/lcc.lock.json",
+    ".premode/inventory/files.json",
+    ".premode/topology/repo_topology.json",
     ".premode/out/cache_manifest.json",
     ".pcodex/",
     "PCODEX_SETUP_REPORT.md"

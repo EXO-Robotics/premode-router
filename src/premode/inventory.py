@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -97,6 +98,25 @@ def inventory_cache_path(repo_root: Path | str) -> Path:
 
 def _sha256_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    tmp = Path(handle.name)
+    try:
+        with handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def _run_git(repo_root: Path, args: list[str], metrics: InventoryMetrics | None = None) -> tuple[bool, bytes, str | None]:
@@ -380,9 +400,7 @@ def build_inventory(repo_root: Path | str, force: bool = False, *, write: bool =
     if write:
         path = inventory_cache_path(root)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        _atomic_write_json(path, payload)
     return InventoryBuildResult(payload, "fresh", metrics)
 
 

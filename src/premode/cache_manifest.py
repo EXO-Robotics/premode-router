@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,25 @@ from .lockfile import display_path, find_repo_root, git_branch, git_head, sha256
 
 CACHE_MANIFEST_SCHEMA_VERSION = "premode.lcc.cache_manifest.v1"
 CACHE_MANIFEST_REL_PATH = Path(".premode") / "out" / "cache_manifest.json"
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    tmp = Path(handle.name)
+    try:
+        with handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def cache_manifest_path(repo_root: Path | str) -> Path:
@@ -125,7 +145,5 @@ def write_cache_manifest(repo_root: Path | str, resolved: dict[str, Any], compil
     payload = build_cache_manifest(root, resolved, compiled)
     path = cache_manifest_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(validate_cache_manifest(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    _atomic_write_json(path, validate_cache_manifest(payload))
     return {"status": "written", "path": display_path(root, path), "valid": True, "payload": payload, "error": None}

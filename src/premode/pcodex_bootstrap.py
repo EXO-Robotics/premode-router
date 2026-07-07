@@ -14,11 +14,13 @@ import tempfile
 import tomllib
 from typing import Any
 
+from . import __version__
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
 from .cache_manifest import read_cache_manifest, write_cache_manifest
-from .inventory import refresh_inventory_if_needed, summarize_inventory
-from .lockfile import read_lockfile, update_lockfile_from_resolver
+from .install_manifest import read_install_manifest
+from .inventory import load_inventory, refresh_inventory_if_needed, summarize_inventory
+from .lockfile import read_lockfile, sha256_text, update_lockfile_from_resolver
 from .topology import refresh_topology_if_needed, summarize_topology
 from .pcodex_state import (
     DEFAULT_TUNING_PROFILE,
@@ -47,6 +49,19 @@ PROJECT_ROOT_ENV = "PCODEX_PROJECT_ROOT"
 PACKET_STRATEGY_ENV = "PCODEX_PACKET_STRATEGY"
 MIN_CODEX_CLI_VERSION = (0, 142, 5)
 MIN_CODEX_CLI_VERSION_TEXT = ".".join(str(part) for part in MIN_CODEX_CLI_VERSION)
+LOCAL_STATE_CLEANUP_TARGETS = [
+    ".premode/pcodex_state.json",
+    ".premode/lcc.lock.json",
+    ".premode/out/cache_manifest.json",
+    ".premode/out/",
+    ".premode/inventory/files.json",
+    ".premode/inventory/",
+    ".premode/topology/repo_topology.json",
+    ".premode/topology/",
+    ".premode/audit/",
+    ".premode/metrics/",
+    ".premode/pcodex_codex_home/",
+]
 
 
 @dataclass(frozen=True)
@@ -217,6 +232,237 @@ def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
         }
         for path in paths
     }
+
+
+def _relative_cleanup_path(repo_root: Path, path: Path) -> str:
+    try:
+        return path.resolve().relative_to(repo_root.resolve()).as_posix()
+    except (OSError, ValueError):
+        return str(path)
+
+
+def _safe_cleanup_target(repo_root: Path, relative_path: str) -> Path:
+    normalized = relative_path.strip().replace("\\", "/").strip("/")
+    allowed = {item.strip("/") for item in LOCAL_STATE_CLEANUP_TARGETS}
+    if normalized not in allowed:
+        raise ValueError(f"unsupported cleanup target: {relative_path}")
+    target = (repo_root / normalized).resolve()
+    root = repo_root.resolve()
+    if target != root and root not in target.parents:
+        raise ValueError(f"cleanup target escapes repo root: {relative_path}")
+    if not normalized.startswith(".premode/"):
+        raise ValueError(f"cleanup target is not repo-local generated state: {relative_path}")
+    return target
+
+
+def cleanup_local_state_plan(repo_root: Path | str) -> dict[str, Any]:
+    root = _repo_root(Path(repo_root))
+    actions: list[dict[str, Any]] = []
+    for relative in LOCAL_STATE_CLEANUP_TARGETS:
+        target = _safe_cleanup_target(root, relative)
+        exists = target.exists()
+        kind = "directory" if relative.endswith("/") or target.is_dir() else "file"
+        actions.append(
+            {
+                "path": _relative_cleanup_path(root, target),
+                "exists": exists,
+                "kind": kind,
+                "action": "remove" if exists else "skip_missing",
+            }
+        )
+    return {
+        "schema_version": "pcodex.cleanup_local_state.v1",
+        "repo_root_hash": sha256_text(str(root.resolve())),
+        "scope": "repo_local_generated_state",
+        "dry_run": True,
+        "actions": actions,
+        "writes_or_deletes": False,
+        "source_config_preserved": [".pcodex/", ".gitignore", ".premodeignore"],
+        "user_source_files_preserved": True,
+    }
+
+
+def cleanup_local_state(repo_root: Path | str, *, dry_run: bool = True) -> dict[str, Any]:
+    root = _repo_root(Path(repo_root))
+    plan = cleanup_local_state_plan(root)
+    if dry_run:
+        return plan
+    removed: list[str] = []
+    for action in plan["actions"]:
+        if action["action"] != "remove":
+            continue
+        target = _safe_cleanup_target(root, str(action["path"]))
+        if target.is_dir():
+            shutil.rmtree(target)
+            removed.append(str(action["path"]))
+        elif target.exists():
+            target.unlink()
+            removed.append(str(action["path"]))
+    return {
+        **plan,
+        "dry_run": False,
+        "writes_or_deletes": bool(removed),
+        "removed": removed,
+    }
+
+
+def _manifest_summary() -> dict[str, Any]:
+    manifest = read_install_manifest()
+    payload = manifest.get("payload") if isinstance(manifest.get("payload"), dict) else {}
+    return {
+        "status": manifest.get("status"),
+        "valid": manifest.get("valid"),
+        "path_summary": _display_home_path(Path(str(manifest.get("path")))) if manifest.get("path") else None,
+        "package_name": payload.get("package_name") or "premode-router",
+        "lcc_version": payload.get("lcc_version") or __version__,
+        "install_channel": payload.get("install_channel"),
+        "source_type": payload.get("source_type"),
+        "source_branch": payload.get("source_branch"),
+        "source_head": payload.get("source_head"),
+        "source_dirty": payload.get("source_dirty"),
+        "source_repo_hash": payload.get("source_repo_hash"),
+        "install_root_hash": payload.get("install_root_hash"),
+        "files_installed_count": payload.get("files_installed_count"),
+        "installer_version": payload.get("installer_version"),
+        "provenance_status": payload.get("provenance_status") or ("missing_manifest" if manifest.get("status") == "missing" else "unknown"),
+        "warnings": payload.get("warnings") if isinstance(payload.get("warnings"), list) else [],
+    }
+
+
+def _read_inventory_skip_summary(repo_root: Path) -> dict[str, Any]:
+    payload = load_inventory(repo_root)
+    if not isinstance(payload, dict):
+        return {
+            "available": False,
+            "ignored_by_premode_count": 0,
+            "skipped_runtime_count": 0,
+            "skipped_generated_count": 0,
+            "skipped_secret_count": 0,
+            "skipped_unsafe_count": 0,
+        }
+    return {
+        "available": True,
+        "ignored_by_premode_count": int(payload.get("ignored_by_premode_count") or 0),
+        "skipped_runtime_count": int(payload.get("skipped_runtime_count") or 0),
+        "skipped_generated_count": int(payload.get("skipped_generated_count") or 0),
+        "skipped_secret_count": int(payload.get("skipped_secret_count") or 0),
+        "skipped_unsafe_count": int(payload.get("skipped_unsafe_count") or 0),
+    }
+
+
+def first_run_summary(payload: dict[str, Any]) -> dict[str, str]:
+    enabled = bool(payload.get("enabled"))
+    inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
+    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
+    if not enabled:
+        return {"readiness": "not_ready", "next_action": "pcodex on"}
+    if inventory.get("state") not in {"fresh"} or topology.get("state") not in {"fresh"}:
+        return {"readiness": "ready_for_dry_run_refresh", "next_action": "pcodex run --dry-run \"<task>\""}
+    return {"readiness": "ready_for_dry_run", "next_action": "pcodex run --dry-run \"<task>\""}
+
+
+def first_run_receipt(cwd: Path | None = None) -> dict[str, Any]:
+    cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    state = resolve_effective_mode(repo_root)
+    public_mode = str(state.get("configured_mode") or state.get("mode") or "on")
+    effective_mode = str(state.get("effective_mode") or public_mode)
+    enabled = effective_mode != "off" and state.get("effective_state") != EFFECTIVE_OFF_RAW
+    lockfile = read_lockfile(repo_root)
+    cache_manifest = read_cache_manifest(repo_root)
+    inventory = summarize_inventory(repo_root)
+    topology = summarize_topology(repo_root)
+    generated_state = generated_state_path_status(repo_root)
+    install = _manifest_summary()
+    receipt: dict[str, Any] = {
+        "schema_version": "pcodex.first_run_receipt.v1",
+        "lcc_installed": _command_available("pcodex") or _command_available("premode"),
+        "lcc_version": __version__,
+        "install": install,
+        "repo": {
+            "root_hash": sha256_text(str(repo_root.resolve())),
+            "path_summary": repo_root.name,
+            "git_repo": (repo_root / ".git").exists(),
+        },
+        "mode": {
+            "public_mode": public_mode,
+            "lcc_on": enabled,
+            "effective_state": state.get("effective_state"),
+            "plugin_alias": state.get("plugin_alias") or PCODEX_PLUGIN_ALIAS,
+            "packet_version": state.get("packet_version") or PCODEX_PACKET_VERSION,
+            "packet_variant": state.get("packet_variant") or PCODEX_PACKET_VARIANT,
+            "packet_strategy": state.get("packet_strategy") or PCODEX_PACKET_STRATEGY,
+        },
+        "next_prompt": {
+            "will_transform": enabled,
+            "preflight_available": True,
+            "codex_launch_on_dry_run": "not_executed",
+            "prompt_preservation": "exact_user_prompt_preserved_by_compile_contract",
+            "raw_prompt_stored": False,
+        },
+        "state": {
+            "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+            "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
+            "inventory": inventory,
+            "topology": topology,
+            "inventory_skip_summary": _read_inventory_skip_summary(repo_root),
+            "generated_state_paths": generated_state,
+        },
+        "privacy": {
+            "content_free": True,
+            "raw_prompts": False,
+            "source_bodies": False,
+            "source_snippets": False,
+            "secrets": False,
+            "packet_text": False,
+            "inventory_path_list": False,
+            "topology_path_list": False,
+            "environment_values": False,
+        },
+        "cache_behavior": {
+            "fresh_inventory_avoids_full_repo_walk": inventory.get("cache_hit") if inventory.get("state") == "fresh" else None,
+            "fresh_topology_avoids_full_repo_walk": not bool(topology.get("fallback_used")) if topology.get("state") == "fresh" else None,
+            "prompt_cache_guarantee": "none",
+        },
+        "cleanup": {
+            "dry_run_command": "pcodex cleanup --local-state --dry-run",
+            "apply_command": "pcodex cleanup --local-state --yes",
+            "scope": "repo_local_generated_state",
+        },
+    }
+    receipt["first_run"] = first_run_summary(
+        {
+            "enabled": enabled,
+            "inventory": inventory,
+            "topology": topology,
+        }
+    )
+    return receipt
+
+
+def format_first_run_receipt(payload: dict[str, Any]) -> str:
+    install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
+    mode = payload.get("mode") if isinstance(payload.get("mode"), dict) else {}
+    first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
+    state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
+    inventory = state.get("inventory") if isinstance(state.get("inventory"), dict) else {}
+    topology = state.get("topology") if isinstance(state.get("topology"), dict) else {}
+    return "\n".join(
+        [
+            "pCodex first-run receipt",
+            f"LCC installed: {'yes' if payload.get('lcc_installed') else 'no'}",
+            f"Version: {payload.get('lcc_version')}",
+            f"Install channel: {install.get('install_channel') or 'unknown'} ({install.get('provenance_status') or 'unknown'})",
+            f"Mode: {mode.get('public_mode')} ({'on' if mode.get('lcc_on') else 'off'})",
+            f"Plugin: {mode.get('plugin_alias')}",
+            f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('source') or 'none'}, {inventory.get('file_count') or 0} files",
+            f"Topology: {topology.get('state') or 'unknown'}, {topology.get('repo_shape') or 'unknown'}, {topology.get('node_count') or 0} nodes",
+            f"Readiness: {first_run.get('readiness') or 'unknown'}",
+            f"Next action: {first_run.get('next_action') or 'pcodex doctor'}",
+            "Receipt is content-free: no prompts, source bodies, snippets, secrets, packet text, or environment values.",
+            "Cleanup: pcodex cleanup --local-state --dry-run",
+        ]
+    )
 
 
 def parse_codex_cli_version(text: str) -> str | None:
@@ -519,6 +765,8 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
     topology = summarize_topology(repo_root)
     tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
     cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
+    enabled = str(state.get("effective_mode") or state.get("configured_mode") or state.get("mode")) != "off"
+    first_run = first_run_summary({"enabled": enabled, "inventory": inventory, "topology": topology})
     return {
         "status": "ok",
         "repo_root": str(repo_root),
@@ -559,6 +807,8 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "mcp": {"status": "unknown", "config_scope": "unknown"},
         "savings": {"available": False, "reason": "not_enough_data"},
         "generated_state_paths": generated_state_path_status(repo_root),
+        "install": _manifest_summary(),
+        "first_run": first_run,
         "native_codex_integration": {
             "slash_commands": "not_native",
             "installed_schema_discovery": "not_proven",
@@ -578,10 +828,15 @@ def format_doctor(payload: dict[str, Any]) -> str:
     topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
     cache_shape = payload.get("cache_shape") if isinstance(payload.get("cache_shape"), dict) else {}
     generated_paths = payload.get("generated_state_paths") if isinstance(payload.get("generated_state_paths"), dict) else {}
+    first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
+    install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
     ignored_count = sum(1 for item in generated_paths.values() if isinstance(item, dict) and item.get("git_ignored"))
     lines = [
         "pCodex doctor",
         f"Repo root: {payload.get('repo_root')}",
+        f"Readiness: {first_run.get('readiness') or 'unknown'}",
+        f"Next action: {first_run.get('next_action') or 'pcodex status'}",
+        f"Install provenance: {install.get('provenance_status') or 'unknown'}",
         f"Configured mode: {payload.get('configured_mode')}",
         f"Effective mode: {payload.get('effective_mode')}",
         f"Effective state: {payload.get('effective_state')}",
@@ -834,6 +1089,13 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     cache_manifest = read_cache_manifest(repo_root)
     inventory = summarize_inventory(repo_root)
     topology = summarize_topology(repo_root)
+    first_run = first_run_summary(
+        {
+            "enabled": effective_mode != "off",
+            "inventory": inventory,
+            "topology": topology,
+        }
+    )
     return {
         "schema_version": "pcodex.status.v1",
         "enabled": bool(state.get("enabled")),
@@ -872,6 +1134,8 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "state_status": state.get("state_status"),
         "state_error": state.get("state_error"),
         "state_schema_version": "pcodex.state.v1",
+        "install": _manifest_summary(),
+        "first_run": first_run,
         "codex_cli": codex_cli,
         "codex_config": codex_config,
         "tuning_profile": tuning.get("profile"),
@@ -1016,6 +1280,8 @@ def format_status(payload: dict[str, Any]) -> str:
     savings = payload.get("savings") if isinstance(payload.get("savings"), dict) else {}
     codex_cli = payload.get("codex_cli") if isinstance(payload.get("codex_cli"), dict) else {}
     codex_config = payload.get("codex_config") if isinstance(payload.get("codex_config"), dict) else {}
+    first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
+    install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
     fallback_text = "active"
     if not fallback.get("active"):
         fallback_text = "none"
@@ -1036,6 +1302,9 @@ def format_status(payload: dict[str, Any]) -> str:
         codex_cli_text = f"available ({codex_cli.get('version') or 'version unknown'})"
     lines = [
         f"pCodex: {'on' if payload.get('enabled') else 'off'}",
+        f"Readiness: {first_run.get('readiness') or 'unknown'}",
+        f"Next action: {first_run.get('next_action') or 'pcodex doctor'}",
+        f"Install provenance: {install.get('provenance_status') or 'unknown'}",
         f"Configured mode: {payload.get('configured_mode')}",
         f"Effective mode: {payload.get('effective_mode')}",
         f"Effective state: {payload.get('effective_state')}",
@@ -1291,6 +1560,16 @@ def _parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
     doctor_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    first_run_parser = sub.add_parser("first-run")
+    first_run_parser.add_argument("--json", action="store_true", help="Print machine-readable first-run receipt.")
+    first_run_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    cleanup_parser = sub.add_parser("cleanup")
+    cleanup_parser.add_argument("--local-state", action="store_true", help="Limit cleanup to repo-local generated pCodex/LCC state.")
+    cleanup_mode = cleanup_parser.add_mutually_exclusive_group()
+    cleanup_mode.add_argument("--dry-run", action="store_true", help="List generated local state that would be removed.")
+    cleanup_mode.add_argument("--yes", action="store_true", help="Remove generated local state.")
+    cleanup_parser.add_argument("--json", action="store_true", help="Print machine-readable cleanup result.")
+    cleanup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
     status_parser = sub.add_parser("status")
@@ -1345,6 +1624,32 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(format_doctor(payload))
+        return 0
+    if args.command == "first-run":
+        payload = first_run_receipt(repo_root)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_first_run_receipt(payload))
+        return 0
+    if args.command == "cleanup":
+        if not args.local_state:
+            print(json.dumps({"status": "error", "error": "--local-state is required", "scope": "none"}, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        payload = cleanup_local_state(repo_root, dry_run=not args.yes)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            planned = [item for item in payload.get("actions", []) if isinstance(item, dict) and item.get("action") == "remove"]
+            print("pCodex cleanup local state")
+            print(f"Mode: {'dry-run' if payload.get('dry_run') else 'apply'}")
+            print(f"Scope: {payload.get('scope')}")
+            for item in planned:
+                print(f"  remove {item.get('path')}")
+            if payload.get("dry_run"):
+                print("No files were removed.")
+            else:
+                print(f"Removed: {len(payload.get('removed') or [])}")
         return 0
     if args.command == "install":
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))

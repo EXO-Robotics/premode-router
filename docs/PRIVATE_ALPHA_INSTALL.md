@@ -4,17 +4,21 @@ This is a local/private install flow for the current pCodex alpha. It is not a p
 
 ## Local Setup
 
-For a source-only public clone, use the source-build installer from the repository root:
+For an authorized source checkout, use the source-build installer from the repository root:
 
 ```bash
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
-~/.pcodex-alpha/bin/pcodex setup --no-mcp
+~/.pcodex-alpha/bin/pcodex doctor
+~/.pcodex-alpha/bin/pcodex setup --skip-tune --no-mcp
+~/.pcodex-alpha/bin/pcodex on
 ~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex first-run
+~/.pcodex-alpha/bin/pcodex first-run --json
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 ```
 
-The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It prunes generated/runtime state from the temporary build copy and writes `~/.pcodex-alpha/install_manifest.json`. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
 ## Before First Real Run
 
@@ -74,9 +78,12 @@ dist_plugin/
 .venv/bin/premode compile --plugin literal_symbol --help
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
-.venv/bin/pcodex setup --no-mcp
+.venv/bin/pcodex setup --skip-tune --no-mcp
 .venv/bin/pcodex status
 .venv/bin/pcodex status --json
+.venv/bin/pcodex first-run
+.venv/bin/pcodex first-run --json
+.venv/bin/pcodex cleanup --local-state --dry-run
 .venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
 .venv/bin/pcodex mcp-server --help
@@ -94,7 +101,7 @@ dist_plugin/
 
 `pcodex install` defaults to a dry run. Use `pcodex install --apply` only when you intentionally want to write repo-local pCodex config.
 
-`pcodex setup` is the recommended default path after local install. It runs local checks, optional isolated MCP registration, one-step tuning, safe mode selection, and dashboard output. Use `pcodex setup --no-mcp` to skip MCP registration and `pcodex setup --json` for automation. Real Codex config mutation is never the default.
+`pcodex setup --skip-tune --no-mcp` is the recommended first-run path after local install. It runs local checks, skips tuning, skips MCP registration, writes safe `on` mode, and keeps the first value local. Use `pcodex setup` when you intentionally want the fuller setup path with one-step tuning. Real Codex config mutation is never the default.
 
 Modes:
 
@@ -148,8 +155,9 @@ Start daily use with:
 
 ```bash
 pcodex status
-pcodex setup --no-mcp
+pcodex setup --skip-tune --no-mcp
 pcodex status --json
+pcodex first-run --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 ```
 
@@ -192,6 +200,20 @@ codex mcp add pcodex -- .venv/bin/pcodex mcp-server
 ```
 
 ## Cleanup
+
+Preview known repo-local generated state cleanup:
+
+```bash
+.venv/bin/pcodex cleanup --local-state --dry-run
+```
+
+Apply known repo-local generated state cleanup:
+
+```bash
+.venv/bin/pcodex cleanup --local-state --yes
+```
+
+This preserves source files, `.pcodex/`, `.gitignore`, `.premodeignore`, and user config.
 
 Remove isolated Codex registration:
 

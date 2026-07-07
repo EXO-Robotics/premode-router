@@ -6,12 +6,32 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 from typing import Any
 
 from . import __version__
 
 LOCKFILE_SCHEMA_VERSION = "premode.lcc.lock.v1"
 LOCKFILE_REL_PATH = Path(".premode") / "lcc.lock.json"
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    tmp = Path(handle.name)
+    try:
+        with handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def utc_now() -> str:
@@ -176,9 +196,7 @@ def write_lockfile(repo_root: Path | str, payload: dict[str, Any]) -> Path:
     validated = validate_lock_payload(payload)
     path = lockfile_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(validated, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    _atomic_write_json(path, validated)
     return path
 
 

@@ -138,21 +138,16 @@ from pathlib import Path
 src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
 
-ignore_names = {
-    ".git",
-    ".venv",
-    ".mypy_cache",
-    ".pytest_cache",
-    "__pycache__",
-    "build",
-    "dist",
-}
+sys.path.insert(0, str(src / "src"))
+from premode.install_manifest import should_exclude_source_install_path  # noqa: E402
 
 
-def ignore(_directory: str, names: list[str]) -> set[str]:
+def ignore(directory: str, names: list[str]) -> set[str]:
     ignored: set[str] = set()
+    base = Path(directory)
     for name in names:
-        if name in ignore_names or name.endswith(".egg-info"):
+        rel = (base / name).relative_to(src).as_posix()
+        if should_exclude_source_install_path(rel):
             ignored.add(name)
     return ignored
 
@@ -206,6 +201,12 @@ run_cmd "$INSTALL_ROOT/bin/python" -m pip install --upgrade pip setuptools wheel
 BUILD_REPO_ROOT="$(prepare_build_source | tail -n 1)"
 run_cmd "$INSTALL_ROOT/bin/python" -m pip install "$BUILD_REPO_ROOT"
 run_cmd "$INSTALL_ROOT/bin/python" -m pip install "$BUILD_REPO_ROOT/packages/premode-plugin-literal-symbol"
+run_cmd "$INSTALL_ROOT/bin/python" -m premode.install_manifest \
+  --write "$INSTALL_ROOT/install_manifest.json" \
+  --install-root "$INSTALL_ROOT" \
+  --source-repo "$REPO_ROOT" \
+  --build-repo "$BUILD_REPO_ROOT" \
+  --installer-script "$0"
 
 [[ "$RUN_SMOKE" -eq 0 ]] || run_smoke
 
@@ -217,8 +218,12 @@ case "$MCP_MODE" in
 esac
 
 log "source install complete"
+log "install manifest: $INSTALL_ROOT/install_manifest.json"
 log "optional PATH line: export PATH=\"$INSTALL_ROOT/bin:\$PATH\""
 log "next checks:"
+log "  $INSTALL_ROOT/bin/pcodex doctor"
+log "  $INSTALL_ROOT/bin/pcodex setup --skip-tune --no-mcp"
+log "  $INSTALL_ROOT/bin/pcodex on"
 log "  $INSTALL_ROOT/bin/pcodex status"
-log "  $INSTALL_ROOT/bin/pcodex setup --no-mcp"
+log "  $INSTALL_ROOT/bin/pcodex first-run --json"
 log "  $INSTALL_ROOT/bin/pcodex run --dry-run \"Hypothetical dummy task: inspect this repo. Do not modify files.\""

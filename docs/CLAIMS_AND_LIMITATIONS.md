@@ -11,6 +11,8 @@ This document defines the public wording boundary for the current private pCodex
 - pCodex can run static generation, validation, and offline verification locally with `pcodex tune`.
 - Advanced tuning maintenance remains available with `pcodex tune --static-only`, `pcodex tune --validate`, and `pcodex tune --verify`.
 - pCodex supports three repo-local modes: `off`, `on`, and `tuned`.
+- pCodex provides `pcodex first-run` and `pcodex first-run --json` for content-free first-run receipts.
+- pCodex provides `pcodex cleanup --local-state --dry-run` and `pcodex cleanup --local-state --yes` for known repo-local generated state.
 - `on` means best safe available pCodex behavior: it uses tuned behavior only when a valid profile exists and local verifier verdict is `PASS`; otherwise it uses generalized `literal_symbol`.
 - `tuned` is strict and fails clearly when a tuning profile is missing or invalid.
 - `pcodex status` reports configured mode, effective mode, tuning, MCP, fallback, local telemetry, and savings-estimate availability.
@@ -31,6 +33,7 @@ This document defines the public wording boundary for the current private pCodex
 - Native installed-Codex schema discovery.
 - Hosted Codex UI integration.
 - Public package release readiness.
+- PyPI or pipx package availability unless a package has actually been published.
 
 ## Required Wording Discipline
 

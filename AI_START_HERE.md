@@ -1,6 +1,6 @@
 # AI Start Here
 
-This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, and `AGENTS.md` before using historical docs or prompts.
+This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, `AGENTS.md`, and `docs/FIRST_RUN.md` before using historical docs or prompts.
 
 ## 1. What this repo is
 
@@ -26,22 +26,24 @@ Do not assume `/pcodex` slash commands, native hosted Codex UI integration, auto
 
 Python `>=3.11` is required.
 
-## 6. Current public source install
+## 6. Current source install and first run
 
-Use this path for a fresh public source clone:
+Use `docs/FIRST_RUN.md` as the canonical private-beta first-run path. From a source checkout:
 
 ```bash
-git clone https://github.com/EXO-Robotics/premode-router.git
 cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
-pcodex doctor || true
-pcodex setup --no-mcp
+pcodex doctor
+pcodex setup --skip-tune --no-mcp
+pcodex on
 pcodex status
+pcodex first-run
+pcodex first-run --json
 pcodex run --dry-run "Hypothetical setup verification task. Do not modify files."
 ```
 
-The source installer builds from the checked-out repo. It does not publish packages, does not install the pCodex packages from PyPI, does not run live Codex tasks, and does not mutate real Codex config unless explicitly asked through the installer option that does so.
+The source installer builds from the checked-out repo, prunes generated/runtime state from the temporary build copy, and writes `install_manifest.json` under the install root. It does not publish packages, does not install the pCodex packages from PyPI, does not run live Codex tasks, and does not mutate real Codex config unless explicitly asked through the installer option that does so.
 
 ## 7. Current development install
 
@@ -79,7 +81,8 @@ Start with dry-run before real execution:
 pcodex doctor || true
 pcodex doctor --json
 pcodex status
-pcodex setup --no-mcp
+pcodex setup --skip-tune --no-mcp
+pcodex first-run --json
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
 premode review-patch --since-compile
@@ -203,6 +206,8 @@ Generated/runtime paths include:
 - `.premode/pcodex_state.json`
 - `.premode/lcc.lock.json`
 - `.premode/out/cache_manifest.json`
+- `.premode/inventory/files.json`
+- `.premode/topology/repo_topology.json`
 - `.pcodex/`
 - `PCODEX_SETUP_REPORT.md`
 - `dist/`
@@ -222,14 +227,31 @@ These surfaces are experimental, deferred, or not guaranteed:
 - hosted Codex UI integration
 - public package install until package publication exists
 
-## 18. Troubleshooting commands
+## 18. Cleanup and repair
+
+Preview repo-local generated state cleanup:
+
+```bash
+pcodex cleanup --local-state --dry-run
+```
+
+Apply repo-local generated state cleanup:
+
+```bash
+pcodex cleanup --local-state --yes
+```
+
+This cleanup surface preserves source files, `.pcodex/`, `.gitignore`, `.premodeignore`, and user config. Use `docs/FIRST_RUN.md` for the full repair path.
+
+## 19. Troubleshooting commands
 
 ```bash
 pcodex doctor || true
 pcodex doctor --json
 pcodex status
 pcodex status --json
-pcodex setup --no-mcp
+pcodex setup --skip-tune --no-mcp
+pcodex first-run --json
 pcodex run --dry-run "Hypothetical troubleshooting task. Do not modify files."
 premode detect --json
 premode benchmark --profile lite --json
@@ -243,11 +265,12 @@ If direct Codex execution fails, verify Codex CLI before debugging pCodex:
 codex --version
 ```
 
-## 19. Canonical docs map
+## 20. Canonical docs map
 
 - `AI_START_HERE.md`: current AI operating entrypoint.
 - `premode.ai.json`: machine-readable AI operating manifest.
 - `AGENTS.md`: Codex-specific boundaries, routing, lab, and commit rules.
+- `docs/FIRST_RUN.md`: canonical private-beta first-run, receipt, cleanup, and repair path.
 - `README.md`: product overview, source install path, command reference, and claims boundary.
 - `docs/TUNING.md`: benchmark/tune/validate guide.
 - `docs/INCREMENTAL_TUNING.md`: tuning staleness and future incremental tuning design.

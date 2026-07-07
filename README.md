@@ -11,6 +11,7 @@ Start with:
 - `AI_START_HERE.md`
 - `premode.ai.json`
 - `AGENTS.md`
+- `docs/FIRST_RUN.md`
 
 These files define the current install, setup, validation, benchmark, tuning, and safety boundaries for agents. Do not infer current behavior from historical prompt files. Historical prompts live under `docs/history/` and are not current operating instructions.
 
@@ -113,23 +114,28 @@ Do not claim:
 
 This repository and the literal-symbol plugin package are private and proprietary. Nothing here has been published to PyPI or another external registry. Access to the repository does not grant permission to use, copy, publish, distribute, commercialize, host, train on, or sublicense the software.
 
-## Public Clone Source Install
+## Source Install And First Run
 
-From a fresh public clone, install pCodex into an isolated local environment from the checked-out source tree:
+For the canonical private-beta first-run path, see [pCodex first run](docs/FIRST_RUN.md).
+
+From a source checkout, install pCodex into an isolated local environment from the checked-out source tree:
 
 ```bash
-git clone https://github.com/EXO-Robotics/premode-router.git
 cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
-~/.pcodex-alpha/bin/pcodex setup --no-mcp
+~/.pcodex-alpha/bin/pcodex doctor
+~/.pcodex-alpha/bin/pcodex setup --skip-tune --no-mcp
+~/.pcodex-alpha/bin/pcodex on
 ~/.pcodex-alpha/bin/pcodex status
+~/.pcodex-alpha/bin/pcodex first-run
+~/.pcodex-alpha/bin/pcodex first-run --json
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 ```
 
-The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It writes `~/.pcodex-alpha/install_manifest.json`, prunes generated/runtime state from the build source, does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
-Current install means the public source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
+Current install means the source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
 
 The private-alpha bundle installer is separate:
 
@@ -170,8 +176,9 @@ Daily-use starter flow:
 
 ```bash
 pcodex status
-pcodex setup --no-mcp
+pcodex setup --skip-tune --no-mcp
 pcodex status --json
+pcodex first-run --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 pcodex run "Edit only a disposable test file. Do not modify any other files."
 git diff --name-only
@@ -218,6 +225,7 @@ Smoke commands:
 ## Docs Map
 
 - [Claims and limitations](docs/CLAIMS_AND_LIMITATIONS.md)
+- [pCodex first run](docs/FIRST_RUN.md)
 - [AI agent start here](AI_START_HERE.md)
 - [AI operating manifest](premode.ai.json)
 - [Tuning guide](docs/TUNING.md)

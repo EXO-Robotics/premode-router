@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -149,6 +150,25 @@ def _sha256_text(text: str) -> str:
 
 def _sha256_json(payload: Any) -> str:
     return _sha256_text(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str))
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    handle = tempfile.NamedTemporaryFile(
+        "w",
+        encoding="utf-8",
+        dir=path.parent,
+        prefix=f"{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    )
+    tmp = Path(handle.name)
+    try:
+        with handle:
+            handle.write(json.dumps(payload, indent=2, sort_keys=True) + "\n")
+        tmp.replace(path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
 
 
 def _git_text(repo_root: Path, args: list[str]) -> str | None:
@@ -473,9 +493,7 @@ def build_topology(
     if write:
         path = topology_cache_path(root)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        tmp.replace(path)
+        _atomic_write_json(path, payload)
     return TopologyBuildResult(payload, "fresh", metrics)
 
 

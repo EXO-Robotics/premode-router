@@ -13,12 +13,16 @@ It keeps `literal_symbol` as the default algorithm and passes pCodex state to ch
 ```bash
 pcodex install
 pcodex doctor
+pcodex first-run
+pcodex first-run --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
 pcodex setup --no-mcp
 pcodex status
 pcodex status --json
+pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
 pcodex on
 pcodex off
 pcodex tuned
@@ -51,6 +55,8 @@ If mode state is missing, pCodex reports the safe default `on`. Invalid state fa
 
 `pcodex doctor` reports local wrapper readiness. It does not print secrets or full environment dumps.
 
+`pcodex first-run` prints a content-free first-run receipt. The JSON form reports install provenance when an install manifest exists, public mode, plugin alias, inventory/topology/cache/lock summaries, one next action, and cleanup commands. It does not include raw prompts, source bodies, snippets, secrets, packet text, inventory path lists, topology path lists, or environment values.
+
 ## Setup
 
 `pcodex setup` is the recommended default path after install:
@@ -60,6 +66,24 @@ pcodex setup
 ```
 
 It runs local checks, optionally attempts isolated Codex MCP registration, runs one-step tuning unless `--skip-tune` is provided, writes `tuned` only when verification is `PASS`, writes `on` for skipped or non-PASS tuning, and prints a concise dashboard. Use `--json` for automation. Use `--no-mcp` to skip MCP registration. Real Codex config mutation requires the explicit `--real-codex-registration` flag.
+
+For first-run value, prefer `pcodex setup --skip-tune --no-mcp` so tuning and MCP are not prerequisites.
+
+## Cleanup
+
+Preview known repo-local generated state cleanup:
+
+```bash
+pcodex cleanup --local-state --dry-run
+```
+
+Apply cleanup:
+
+```bash
+pcodex cleanup --local-state --yes
+```
+
+Cleanup is limited to known generated state under `.premode/` and preserves `.pcodex/`, source files, `.gitignore`, `.premodeignore`, and user config.
 
 ## Tuning
 

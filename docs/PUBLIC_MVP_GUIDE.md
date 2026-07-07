@@ -19,12 +19,12 @@ Codex is the first supported runtime because:
 
 ## Public install story
 
-Current source-visible alpha install is from the public source checkout, not a package registry:
+Current source-visible alpha install is from an authorized source checkout, not a package registry:
 
 ```bash
-git clone https://github.com/EXO-Robotics/premode-router.git
 cd premode-router
 scripts/install_pcodex_from_source.sh
+pcodex first-run
 ```
 
 Future public package story, only after package publication exists:
@@ -74,7 +74,7 @@ Best demo script:
 ```bash
 premode detect --json
 premode compile "Fix the build" --profile lite --json
-pcodex "Fix the build"
+pcodex run --dry-run "Fix the build"
 ```
 
 Show:
