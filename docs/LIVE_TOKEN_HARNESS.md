@@ -59,12 +59,66 @@ PREMODE_ENABLE_LIVE_CODEX_SPEND_TEST=1
 
 ### live_matrix
 
-Runs a larger task suite. It is never default and requires both:
+Runs a task-matrix suite from `--task-matrix`. It is never default and requires
+both:
 
 ```bash
 PREMODE_ENABLE_LIVE_CODEX_SPEND_TEST=1
 PREMODE_ENABLE_LIVE_CODEX_MATRIX=1
 ```
+
+Without `--task-matrix`, `live_matrix` still runs the legacy single disposable
+pair. With `--task-matrix`, the harness creates one standard and one enhanced
+lane for each task, records randomized per-task lane order, and emits
+`premode.live_token_harness.matrix_result.v1`.
+
+## Task Matrix
+
+Matrix mode accepts:
+
+```bash
+premode lab live-token-harness \
+  --mode dry_run_mock \
+  --task-matrix /path/to/tasks.json \
+  --fixture-root /path/to/fixtures \
+  --json
+```
+
+Each task object must include:
+
+- `task_id`
+- `prompt_text`
+- either `fixture_path` or `fixture` with `--fixture-root`
+- optional `expected_files`
+- optional `expected_tests`
+- optional `forbidden_files`
+- optional `validation_command`
+
+Aggregate matrix results include `prompt_sha256`, not `prompt_text`.
+
+## Auth Bootstrap
+
+Live Codex lanes use isolated `HOME`, `TMPDIR`, `CODEX_HOME`, and
+`PCODEX_ALPHA_HOME`. Isolated homes do not automatically inherit the normal
+user Codex login. Live modes therefore perform an auth preflight before
+spending tokens.
+
+Supported auth bootstrap modes are selected with `PREMODE_CODEX_AUTH_MODE`:
+
+- `none`: default. No auth is copied or created; live execution is blocked.
+- `inherit_auth_cache`: copies the normal user's `.codex/auth.json` into each
+  isolated lane home only when `PREMODE_ALLOW_CODEX_AUTH_CACHE_COPY=1` is also
+  set.
+- `device_auth`: runs `codex login --device-auth` inside the lane home.
+- `api_key`: runs `codex login --with-api-key` from stdin using the process
+  environment.
+- `access_token`: runs `codex login --with-access-token` from stdin using the
+  process environment.
+
+`PREMODE_CODEX_AUTH_SOURCE_HOME` can override the source home for
+`inherit_auth_cache`. Auth file contents, token values, and environment values
+are never serialized into aggregate JSON or Markdown reports. Copied auth files
+are local lane secrets under the artifact tree.
 
 ## Usage Fields
 

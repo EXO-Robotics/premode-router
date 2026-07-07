@@ -264,6 +264,9 @@ def build_parser() -> argparse.ArgumentParser:
     live_token.add_argument("--model", default=None)
     live_token.add_argument("--effort", default=None)
     live_token.add_argument("--fixture-repo", default=None)
+    live_token.add_argument("--task-matrix", default=None)
+    live_token.add_argument("--fixture-root", default=None)
+    live_token.add_argument("--matrix-seed", type=int, default=None)
     live_token.add_argument("--json", action="store_true")
 
     hook = sub.add_parser("hook", help="Experimental/deferred surface; not part of the primary MVP workflow.")
@@ -576,7 +579,7 @@ def main(argv: list[str] | None = None) -> int:
             _print_json(report)
             return 0
         if args.lab_command == "live-token-harness":
-            from .live_token_harness import DEFAULT_PROMPT, render_harness_report, run_live_token_harness
+            from .live_token_harness import DEFAULT_PROMPT, render_harness_report, render_matrix_report, run_live_token_harness
 
             result = run_live_token_harness(
                 source_repo=repo,
@@ -587,9 +590,14 @@ def main(argv: list[str] | None = None) -> int:
                 model=args.model,
                 effort=args.effort,
                 fixture_repo=Path(args.fixture_repo) if args.fixture_repo else None,
+                task_matrix=Path(args.task_matrix) if args.task_matrix else None,
+                fixture_root=Path(args.fixture_root) if args.fixture_root else None,
+                matrix_seed=args.matrix_seed,
             )
             if args.json:
                 _print_json(result)
+            elif result.get("schema_version") == "premode.live_token_harness.matrix_result.v1":
+                print(render_matrix_report(result))
             else:
                 print(render_harness_report(result))
             return 0
