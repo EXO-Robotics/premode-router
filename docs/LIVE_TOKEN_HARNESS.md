@@ -142,6 +142,10 @@ When usage is unavailable, numeric usage fields remain `null`, the lane records
 an explicit `usage_unavailable_reason`, and the result must not fabricate token
 numbers.
 
+Live standard and enhanced lanes both request Codex JSONL output when the CLI
+advertises `--json`. The enhanced pCodex lane parses usage from the wrapped
+Codex execution result first, then falls back to the retained local JSONL log.
+
 ## Content Safety
 
 Aggregate reports record `prompt_sha256`, not the raw prompt. Raw source

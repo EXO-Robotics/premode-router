@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from premode import pcodex_bootstrap
 from premode.live_token_harness import (
     CODEX_AUTH_ALLOW_COPY_ENV,
     CODEX_AUTH_MODE_ENV,
@@ -175,6 +176,33 @@ def test_standard_live_command_shape_uses_workspace_write_ephemeral_json(repo: P
     assert "--ephemeral" in command
     assert "--json" in command
     assert command[-1] == "-"
+
+
+def test_pcodex_live_run_requests_json_usage(monkeypatch: pytest.MonkeyPatch, repo: Path) -> None:
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        pcodex_bootstrap,
+        "resolve_mode_state",
+        lambda *_args, **_kwargs: {"configured_mode": "on", "effective_mode": "on"},
+    )
+    monkeypatch.setattr(pcodex_bootstrap, "update_lockfile_from_resolver", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(pcodex_bootstrap, "record_runtime_telemetry", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(pcodex_bootstrap, "child_env_for_mode_state", lambda *_args, **_kwargs: {})
+
+    def fake_run_codex(_repo: Path, _prompt: str, _profile: str | None, options: object) -> dict[str, object]:
+        captured["options"] = options
+        return {"returncode": 0, "stdout": "", "stderr": "", "actual_usage": None}
+
+    monkeypatch.setattr(pcodex_bootstrap, "run_codex", fake_run_codex)
+
+    result = pcodex_bootstrap.run_enabled(repo, "Update the disposable file.", "lite")
+    options = captured["options"]
+
+    assert result["returncode"] == 0
+    assert getattr(options, "json") is True
+    assert getattr(options, "lane") == "pcodex"
+    assert getattr(options, "packet_strategy") == "literal_symbol"
 
 
 def test_matrix_aggregate_omits_raw_prompt_and_source_snippets(tmp_path: Path, repo: Path) -> None:

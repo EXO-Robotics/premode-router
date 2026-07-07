@@ -1760,6 +1760,7 @@ def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
         CodexOptions(
             dry_run=False,
             execute=True,
+            json=True,
             packet_version=PCODEX_PACKET_VERSION,
             packet_variant=PCODEX_PACKET_VARIANT,
             packet_strategy=PCODEX_PACKET_STRATEGY,

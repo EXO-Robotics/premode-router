@@ -1082,16 +1082,34 @@ def _empty_lane(lane: str, reason: str) -> dict[str, Any]:
 
 def _usage_fields(usage: dict[str, Any] | None, *, source: str) -> dict[str, Any]:
     usage = usage or {}
-    available = any(usage.get(key) is not None for key in ("input_tokens", "cached_input_tokens", "output_tokens", "total_tokens"))
+    input_tokens = _usage_value(usage, "input_tokens", "input_tokens_total", "prompt_tokens")
+    cached_input_tokens = _usage_value(usage, "cached_input_tokens", "input_tokens_cached", "cached_tokens")
+    output_tokens = _usage_value(usage, "output_tokens", "completion_tokens")
+    total_tokens = _usage_value(usage, "total_tokens")
+    available = any(value is not None for value in (input_tokens, cached_input_tokens, output_tokens, total_tokens))
     return {
         "usage_available": available,
         "usage_source": source if available else None,
-        "input_tokens": usage.get("input_tokens"),
-        "cached_input_tokens": usage.get("cached_input_tokens"),
-        "output_tokens": usage.get("output_tokens"),
-        "total_tokens": usage.get("total_tokens"),
+        "input_tokens": input_tokens,
+        "cached_input_tokens": cached_input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
         "usage_unavailable_reason": None if available else "no_parseable_usage_fields",
     }
+
+
+def _usage_value(usage: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = usage.get(key)
+        if value is not None:
+            return value
+    normalized = usage.get("normalized_tokens")
+    if isinstance(normalized, dict):
+        for key in keys:
+            value = normalized.get(key)
+            if value is not None:
+                return value
+    return None
 
 
 def _delta(standard: dict[str, Any], enhanced: dict[str, Any]) -> dict[str, Any]:

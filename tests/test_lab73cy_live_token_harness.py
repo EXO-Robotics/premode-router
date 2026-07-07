@@ -11,6 +11,7 @@ from premode.live_token_harness import (
     DEFAULT_PROMPT,
     LIVE_MATRIX_ENV,
     LIVE_SPEND_ENV,
+    _usage_fields,
     parse_usage_file,
     run_live_token_harness,
 )
@@ -123,6 +124,30 @@ def test_usage_fields_parse_synthetic_codex_jsonl(tmp_path: Path) -> None:
     assert usage["cached_input_tokens"] == 80
     assert usage["output_tokens"] == 10
     assert usage["total_tokens"] == 110
+
+
+def test_usage_fields_accept_pcodex_actual_usage_normalized_tokens() -> None:
+    usage = _usage_fields(
+        {
+            "normalized_tokens": {
+                "input_tokens": 140,
+                "cached_input_tokens": 30,
+                "output_tokens": 12,
+                "total_tokens": 152,
+            },
+            "input_tokens_total": 140,
+            "input_tokens_cached": 30,
+        },
+        source="pcodex_run_actual_usage",
+    )
+
+    assert usage["usage_available"] is True
+    assert usage["usage_source"] == "pcodex_run_actual_usage"
+    assert usage["input_tokens"] == 140
+    assert usage["cached_input_tokens"] == 30
+    assert usage["output_tokens"] == 12
+    assert usage["total_tokens"] == 152
+    assert usage["usage_unavailable_reason"] is None
 
 
 def test_usage_fields_are_null_when_no_usage_source_exists(tmp_path: Path) -> None:
