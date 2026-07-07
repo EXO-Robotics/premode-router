@@ -94,7 +94,7 @@ The pasteable bootstrap prompts should patch or create `.gitignore` with this bo
 .pcodex/
 ```
 
-Normal pCodex use may create `.premode/` and `.pcodex/` files, including local tuning outputs under `.premode/tuning/`. The setup report should mention that this generated local state is expected and should remain untracked unless the user deliberately versions reviewed tuning artifacts.
+Normal pCodex use may create `.premode/` and `.pcodex/` files, including `.premode/lcc.lock.json`, `.premode/out/cache_manifest.json`, and local tuning outputs under `.premode/tuning/`. The setup report should mention that this generated local state is expected and should remain untracked unless the user deliberately versions reviewed tuning artifacts.
 
 ## Generated Report
 

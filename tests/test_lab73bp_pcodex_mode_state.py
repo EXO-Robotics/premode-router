@@ -25,6 +25,11 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text.strip() + "\n", encoding="utf-8")
 
 
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def _make_repo(tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -42,6 +47,27 @@ def _state(repo: Path) -> dict:
 def _generate_tuning(repo: Path) -> Path:
     result = tuning.write_tuning_artifacts(repo)
     assert result["validation_status"] == "pass"
+    _write_json(
+        repo / ".premode" / "tuning" / "VERIFY_RESULTS.json",
+        {
+            "schema_version": "pcodex.tuning_verify.v1",
+            "status": "verified",
+            "verdict": "PASS",
+            "profile_validation_status": "PASS",
+            "evaluation_prompt_count": 1,
+            "general": {"packet_token_estimate": 100},
+            "tuned": {"packet_token_estimate": 80},
+            "delta": {"packet_token_estimate_change": -20},
+            "packet_boundary_safe": True,
+            "profile_validation_failures": [],
+            "notes": [],
+            "rows": [],
+            "artifacts": {
+                "VERIFY_REPORT": ".premode/tuning/VERIFY_REPORT.md",
+                "VERIFY_RESULTS": ".premode/tuning/VERIFY_RESULTS.json",
+            },
+        },
+    )
     return repo / ".premode" / "tuning" / "repo_profile.json"
 
 

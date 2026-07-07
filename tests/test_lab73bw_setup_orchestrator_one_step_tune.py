@@ -72,6 +72,11 @@ def _fake_tune_result(repo: Path, verdict: str) -> dict[str, Any]:
 def _generate_valid_profile(repo: Path) -> None:
     result = tuning.write_tuning_artifacts(repo)
     assert result["validation_status"] == "pass"
+    out = repo / ".premode" / "tuning"
+    out.joinpath("VERIFY_RESULTS.json").write_text(
+        json.dumps(_minimal_verify("PASS"), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
 
 def test_pcodex_tune_one_step_runs_static_validate_and_verify(

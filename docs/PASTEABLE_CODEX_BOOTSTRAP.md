@@ -63,6 +63,7 @@ from pathlib import Path
 p = Path(".gitignore")
 section = """# pCodex generated local state
 .premode/pcodex_state.json
+.premode/lcc.lock.json
 .premode/out/
 .premode/audit/
 .premode/metrics/

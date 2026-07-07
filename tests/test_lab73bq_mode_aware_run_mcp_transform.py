@@ -49,6 +49,27 @@ def _repo(tmp_path: Path) -> Path:
 def _generate_tuning(repo: Path) -> Path:
     result = tuning.write_tuning_artifacts(repo)
     assert result["validation_status"] == "pass"
+    _write_json(
+        repo / ".premode" / "tuning" / "VERIFY_RESULTS.json",
+        {
+            "schema_version": "pcodex.tuning_verify.v1",
+            "status": "verified",
+            "verdict": "PASS",
+            "profile_validation_status": "PASS",
+            "evaluation_prompt_count": 1,
+            "general": {"packet_token_estimate": 100},
+            "tuned": {"packet_token_estimate": 80},
+            "delta": {"packet_token_estimate_change": -20},
+            "packet_boundary_safe": True,
+            "profile_validation_failures": [],
+            "notes": [],
+            "rows": [],
+            "artifacts": {
+                "VERIFY_REPORT": ".premode/tuning/VERIFY_REPORT.md",
+                "VERIFY_RESULTS": ".premode/tuning/VERIFY_RESULTS.json",
+            },
+        },
+    )
     return repo / ".premode" / "tuning" / "repo_profile.json"
 
 

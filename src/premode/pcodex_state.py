@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from .lockfile import sha256_file
 from .tuning import TuningProfileError, load_compile_tuning_profile
 
 STATE_SCHEMA_VERSION = "pcodex.state.v1"
@@ -12,6 +13,14 @@ DEFAULT_ALGORITHM = "literal_symbol"
 DEFAULT_TUNING_PROFILE = ".premode/tuning/repo_profile.json"
 VALID_MODES = {"off", "on", "tuned"}
 VALID_EFFECTIVE_MODES = {"off", "on", "tuned"}
+EFFECTIVE_OFF_RAW = "OFF_RAW"
+EFFECTIVE_ON_GENERALIZED = "ON_GENERALIZED"
+EFFECTIVE_ON_TUNED_VERIFIED = "ON_TUNED_VERIFIED"
+EFFECTIVE_TUNED_STRICT = "TUNED_STRICT"
+EFFECTIVE_SAFE_PASSTHROUGH = "SAFE_PASSTHROUGH"
+PACKET_VERSION = "v5"
+PACKET_VARIANT = "tool_assisted_anchors_internal"
+PACKET_STRATEGY = "literal_symbol"
 
 
 class PcodexStateError(ValueError):
@@ -241,6 +250,87 @@ def _verify_results_for_profile(repo_root: Path, profile: Path | str) -> tuple[P
     return results_path, _display_path(repo_root, results_path)
 
 
+def _profile_hash(repo_root: Path, profile: Path | str | None) -> str | None:
+    if profile is None:
+        return None
+    return sha256_file(_resolve_profile_path(repo_root, profile))
+
+
+def _verify_hash(repo_root: Path, profile: Path | str | None) -> str | None:
+    if profile is None:
+        return None
+    results_path, _display = _verify_results_for_profile(repo_root, profile)
+    return sha256_file(results_path)
+
+
+def _last_verified_at(repo_root: Path, profile: Path | str | None) -> str | None:
+    if profile is None:
+        return None
+    results_path, _display = _verify_results_for_profile(repo_root, profile)
+    if not results_path.exists():
+        return None
+    try:
+        payload = json.loads(results_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = payload.get("checked_at") or payload.get("created_at") or payload.get("updated_at")
+    return str(value) if value else None
+
+
+def _state_summary(state: str, public_mode: str, stale_reason: str | None = None) -> str:
+    if state == EFFECTIVE_OFF_RAW:
+        return "pCodex is off; prompts pass through unchanged."
+    if state == EFFECTIVE_ON_TUNED_VERIFIED:
+        return "pCodex is on and using verified repo-local tuning."
+    if state == EFFECTIVE_ON_GENERALIZED:
+        return "pCodex is on and using generalized literal_symbol."
+    if state == EFFECTIVE_TUNED_STRICT:
+        return "pCodex tuned mode is strict and verified."
+    if state == EFFECTIVE_SAFE_PASSTHROUGH:
+        return "pCodex is preserving the raw prompt because LCC cannot safely compile."
+    return f"pCodex public mode {public_mode} resolved to {state}."
+
+
+def _resolver_metadata(
+    root: Path,
+    *,
+    public_mode: str,
+    effective_mode: str,
+    effective_state: str,
+    tuning_profile: str | None,
+    tuning: dict[str, Any],
+    fallback_reason: str | None = None,
+    safe_passthrough_reason: str | None = None,
+) -> dict[str, Any]:
+    stale_reason = None
+    if tuning_profile and tuning.get("verify") != "PASS":
+        stale_reason = str(tuning.get("fallback_reason") or f"verify_{str(tuning.get('verify') or 'missing').lower()}")
+    return {
+        "configured_mode": public_mode,
+        "effective_mode": effective_mode,
+        "effective_state": effective_state,
+        "effective_tuning_profile": tuning_profile if effective_state in {EFFECTIVE_ON_TUNED_VERIFIED, EFFECTIVE_TUNED_STRICT} else None,
+        "plugin_alias": DEFAULT_ALGORITHM,
+        "packet_version": PACKET_VERSION,
+        "packet_variant": PACKET_VARIANT,
+        "packet_strategy": PACKET_STRATEGY,
+        "tuning_profile_hash": _profile_hash(root, tuning_profile),
+        "verify_results_hash": _verify_hash(root, tuning_profile),
+        "last_verified_at": _last_verified_at(root, tuning_profile),
+        "stale_reason": stale_reason,
+        "fallback_reason": fallback_reason,
+        "safe_passthrough_reason": safe_passthrough_reason,
+        "user_visible_summary": _state_summary(effective_state, public_mode, stale_reason),
+        "debug_details": {
+            "public_mode": public_mode,
+            "effective_mode_legacy": effective_mode,
+            "tuning_verify": tuning.get("verify"),
+            "tuning_validation": tuning.get("validation"),
+            "state_machine_schema": "premode.effective_mode.v1",
+        },
+    }
+
+
 def inspect_tuning_status(repo_root: Path | str, profile: Path | str | None) -> dict[str, Any]:
     root = find_repo_root(repo_root)
     if profile is None:
@@ -316,22 +406,35 @@ def resolve_effective_mode(repo_root: Path | str, *, validate_tuned: bool = True
     configured_mode = str(state.get("mode") or "on")
     if state.get("state_status") == "invalid_default":
         tuning = inspect_tuning_status(root, None)
+        meta = _resolver_metadata(
+            root,
+            public_mode=configured_mode,
+            effective_mode="on",
+            effective_state=EFFECTIVE_SAFE_PASSTHROUGH,
+            tuning_profile=None,
+            tuning=tuning,
+            safe_passthrough_reason="invalid_pcodex_state",
+        )
         return {
             **state,
-            "configured_mode": configured_mode,
-            "effective_mode": "on",
-            "effective_tuning_profile": None,
+            **meta,
             "tuning": tuning,
             "fallback": {"active": False, "last_reason": None, "last_at": None},
             "telemetry": _telemetry_payload(state.get("telemetry")),
         }
     if configured_mode == "off":
         tuning = inspect_tuning_status(root, None)
+        meta = _resolver_metadata(
+            root,
+            public_mode="off",
+            effective_mode="off",
+            effective_state=EFFECTIVE_OFF_RAW,
+            tuning_profile=None,
+            tuning=tuning,
+        )
         return {
             **state,
-            "configured_mode": "off",
-            "effective_mode": "off",
-            "effective_tuning_profile": None,
+            **meta,
             "tuning": tuning,
             "fallback": _fallback_payload(state.get("fallback")),
             "telemetry": _telemetry_payload(state.get("telemetry")),
@@ -339,11 +442,20 @@ def resolve_effective_mode(repo_root: Path | str, *, validate_tuned: bool = True
     if configured_mode == "tuned":
         profile = str(state.get("tuning_profile") or DEFAULT_TUNING_PROFILE)
         tuning = inspect_tuning_status(root, profile)
+        verified = bool(tuning["profile_valid"] and tuning["verify"] == "PASS")
+        fallback_reason = None if verified else str(tuning.get("fallback_reason") or "tuned_not_verified")
+        meta = _resolver_metadata(
+            root,
+            public_mode="tuned",
+            effective_mode="tuned",
+            effective_state=EFFECTIVE_TUNED_STRICT,
+            tuning_profile=profile,
+            tuning=tuning,
+            fallback_reason=fallback_reason,
+        )
         return {
             **state,
-            "configured_mode": "tuned",
-            "effective_mode": "tuned" if tuning["profile_valid"] else "tuned",
-            "effective_tuning_profile": profile if tuning["profile_valid"] else None,
+            **meta,
             "tuning": tuning,
             "fallback": _fallback_payload(state.get("fallback")),
             "telemetry": _telemetry_payload(state.get("telemetry")),
@@ -358,11 +470,19 @@ def resolve_effective_mode(repo_root: Path | str, *, validate_tuned: bool = True
         "last_reason": str(fallback_reason) if fallback_reason else fallback_state["last_reason"],
         "last_at": fallback_state["last_at"],
     }
+    effective_state = EFFECTIVE_ON_TUNED_VERIFIED if use_tuned else EFFECTIVE_ON_GENERALIZED
+    meta = _resolver_metadata(
+        root,
+        public_mode="on",
+        effective_mode="tuned" if use_tuned else "on",
+        effective_state=effective_state,
+        tuning_profile=str(profile),
+        tuning=tuning,
+        fallback_reason=str(fallback_reason) if fallback_reason else None,
+    )
     return {
         **state,
-        "configured_mode": "on",
-        "effective_mode": "tuned" if use_tuned else "on",
-        "effective_tuning_profile": str(profile) if use_tuned else None,
+        **meta,
         "tuning": tuning,
         "fallback": fallback,
         "telemetry": _telemetry_payload(state.get("telemetry")),
@@ -408,6 +528,10 @@ def record_runtime_telemetry(
 def set_mode_tuned(repo_root: Path | str, profile: Path | str = DEFAULT_TUNING_PROFILE) -> dict[str, Any]:
     root = find_repo_root(repo_root)
     validation = validate_tuning_profile_for_mode(root, profile)
+    tuning = inspect_tuning_status(root, validation["profile_path"])
+    if tuning.get("verify") != "PASS":
+        reason = tuning.get("fallback_reason") or "tuning_not_verified"
+        raise PcodexStateError(f"Verified tuning is required for tuned mode: {reason}")
     state = _state_for_mode("tuned", tuning_profile=validation["profile_path"])
     path = write_pcodex_state(root, state)
     return {

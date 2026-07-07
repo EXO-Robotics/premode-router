@@ -24,6 +24,7 @@ htmlcov/
 
 # Pre-mode generated outputs
 .premode/pcodex_state.json
+.premode/lcc.lock.json
 .premode/out/
 .premode/audit/
 .premode/metrics/

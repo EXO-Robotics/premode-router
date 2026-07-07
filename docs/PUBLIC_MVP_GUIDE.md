@@ -19,13 +19,21 @@ Codex is the first supported runtime because:
 
 ## Public install story
 
-Future public story:
+Current source-visible alpha install is from the public source checkout, not a package registry:
+
+```bash
+git clone https://github.com/EXO-Robotics/premode-router.git
+cd premode-router
+scripts/install_pcodex_from_source.sh
+```
+
+Future public package story, only after package publication exists:
 
 ```bash
 pipx install premode-router
 cd my-repo
 premode setup
-pcodex "Fix the failing tests"
+pcodex run "Fix the failing tests"
 ```
 
 ## Value shown immediately
@@ -36,7 +44,7 @@ Pre-mode should print a short receipt:
 Detected: Python project at .
 Commands: pytest
 Context: 2 full-text files, 6 summaries, 42 manifest files
-Estimated context savings: 81%
+Estimated context reduction: measured for this local compile only
 Patch boundary: 4 allowed edit files
 Privacy: 3 files blocked, 0 secrets leaked
 ```

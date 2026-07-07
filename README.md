@@ -49,6 +49,7 @@ Current pCodex command surface:
 ```bash
 pcodex install
 pcodex doctor
+pcodex doctor --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
@@ -74,15 +75,19 @@ Mode meanings:
 - `on`: best safe available pCodex behavior
 - `tuned`: force tuned behavior or fail clearly
 
-`on` resolves to effective tuned behavior only when a valid profile exists and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. Otherwise, `on` falls back to generalized `literal_symbol`. `tuned` remains strict: invalid tuned state fails before `pcodex run` launches Codex, and MCP tuned failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
+The explicit effective states are `OFF_RAW`, `ON_GENERALIZED`, `ON_TUNED_VERIFIED`, `TUNED_STRICT`, and `SAFE_PASSTHROUGH`.
+
+`on` resolves to effective tuned behavior only when a valid profile exists and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. Otherwise, `on` falls back to generalized `literal_symbol`. `tuned` remains strict: missing, invalid, or unverified tuned state fails before `pcodex run` launches Codex, and MCP tuned failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
 
 `pcodex setup` is the recommended default configuration path. It runs local checks, optional isolated MCP registration, one-step tuning, safe mode selection, and prints a concise dashboard. Real Codex config mutation remains opt-in only.
 
 `pcodex tune` now runs static generation, validation, and verification by default. The `--static-only`, `--validate`, and `--verify` flags remain available for focused maintenance.
 
-`pcodex status` reports configured mode, effective mode, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
+`pcodex status` reports configured mode, effective mode, effective state, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, lockfile status, cache-manifest status, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
 
 `pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
+
+Local control-plane files include `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, and `.premode/out/cache_manifest.json`. These are generated/runtime files and must not store prompt text, source snippets, secrets, or file contents. They use hashes, mode names, timestamps, counters, and status reasons only.
 
 `pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
@@ -216,6 +221,8 @@ Smoke commands:
 - [AI agent start here](AI_START_HERE.md)
 - [AI operating manifest](premode.ai.json)
 - [Tuning guide](docs/TUNING.md)
+- [Incremental tuning design](docs/INCREMENTAL_TUNING.md)
+- [Content-free telemetry](docs/CONTENT_FREE_TELEMETRY.md)
 - [V5 literal-symbol strategy](docs/V5_LITERAL_SYMBOL.md)
 - [Plugin system](docs/PLUGIN_SYSTEM.md)
 - [pCodex tuning](docs/PCODEX_TUNING.md)

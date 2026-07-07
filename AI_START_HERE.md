@@ -77,6 +77,7 @@ Start with dry-run before real execution:
 
 ```bash
 pcodex doctor || true
+pcodex doctor --json
 pcodex status
 pcodex setup --no-mcp
 pcodex run --dry-run "<task>"
@@ -85,6 +86,14 @@ premode review-patch --since-compile
 ```
 
 Use terminal `pcodex` commands. Inspect `git diff --name-only` after real runs.
+
+Status JSON reports the public mode (`on`, `off`, or `tuned`) and the explicit effective state:
+
+- `OFF_RAW`: no Pre-mode transform.
+- `ON_GENERALIZED`: generalized `literal_symbol` packet.
+- `ON_TUNED_VERIFIED`: `on` mode using a verified repo-local profile.
+- `TUNED_STRICT`: strict tuned mode; invalid or unverified tuning fails.
+- `SAFE_PASSTHROUGH`: raw prompt passthrough when LCC cannot safely compile.
 
 ## 10. Manual Pre-mode compile/review workflow
 
@@ -172,6 +181,7 @@ Do not edit these by default:
 - `.premode/audit/`
 - `.premode/metrics/`
 - `.premode/pcodex_state.json`
+- `.premode/lcc.lock.json`
 - `.pcodex/`
 - `.agents/plugins/`
 - generated outputs
@@ -191,6 +201,8 @@ Generated/runtime paths include:
 - `.premode/metrics/`
 - `.premode/tuning/`
 - `.premode/pcodex_state.json`
+- `.premode/lcc.lock.json`
+- `.premode/out/cache_manifest.json`
 - `.pcodex/`
 - `PCODEX_SETUP_REPORT.md`
 - `dist/`
@@ -214,6 +226,7 @@ These surfaces are experimental, deferred, or not guaranteed:
 
 ```bash
 pcodex doctor || true
+pcodex doctor --json
 pcodex status
 pcodex status --json
 pcodex setup --no-mcp
@@ -237,6 +250,8 @@ codex --version
 - `AGENTS.md`: Codex-specific boundaries, routing, lab, and commit rules.
 - `README.md`: product overview, source install path, command reference, and claims boundary.
 - `docs/TUNING.md`: benchmark/tune/validate guide.
+- `docs/INCREMENTAL_TUNING.md`: tuning staleness and future incremental tuning design.
+- `docs/CONTENT_FREE_TELEMETRY.md`: content-free local state and telemetry boundary.
 - `docs/DAILY_USE.md`: pCodex daily terminal flow.
 - `docs/PASTEABLE_CODEX_BOOTSTRAP.md`: pasteable repo bootstrap prompt.
 - `docs/PRIVATE_ALPHA_INSTALL.md`: private alpha and source install details.

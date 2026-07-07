@@ -16,8 +16,13 @@ from typing import Any
 
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
+from .cache_manifest import read_cache_manifest, write_cache_manifest
+from .lockfile import read_lockfile, update_lockfile_from_resolver
 from .pcodex_state import (
     DEFAULT_TUNING_PROFILE,
+    EFFECTIVE_OFF_RAW,
+    EFFECTIVE_ON_GENERALIZED,
+    EFFECTIVE_SAFE_PASSTHROUGH,
     PcodexStateError,
     record_runtime_telemetry,
     resolve_effective_mode,
@@ -173,6 +178,41 @@ def plugin_alias_available() -> bool:
     except PluginAliasError:
         return False
     return True
+
+
+def _git_check_ignored(repo_root: Path, relative_path: str) -> bool:
+    try:
+        completed = subprocess.run(
+            ["git", "check-ignore", relative_path],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
+    paths = [
+        ".premode/pcodex_state.json",
+        ".premode/lcc.lock.json",
+        ".premode/out/cache_manifest.json",
+        ".premode/out/",
+        ".premode/audit/",
+        ".premode/metrics/",
+        ".premode/tuning/",
+        ".pcodex/",
+    ]
+    return {
+        path: {
+            "exists": (repo_root / path).exists(),
+            "git_ignored": _git_check_ignored(repo_root, path),
+        }
+        for path in paths
+    }
 
 
 def parse_codex_cli_version(text: str) -> str | None:
@@ -397,7 +437,9 @@ def compile_pcodex_packet(
     profile: str | None = "lite",
     *,
     tuning_profile: str | None = None,
+    mode_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    resolved_state = mode_state or resolve_effective_mode(repo_root)
     try:
         resolved = resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
         route = "plugin_alias"
@@ -423,7 +465,7 @@ def compile_pcodex_packet(
         tuning_profile=tuning_profile,
         **kwargs,
     )
-    return {
+    result = {
         "status": "compiled",
         "route": route,
         "premode_command": command,
@@ -437,6 +479,16 @@ def compile_pcodex_packet(
         "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
         "tuning_profile": tuning_profile,
     }
+    cache_manifest = write_cache_manifest(repo_root, resolved_state, {**compiled, **result})
+    result["cache_manifest"] = {key: value for key, value in cache_manifest.items() if key != "payload"}
+    result["lockfile"] = update_lockfile_from_resolver(
+        repo_root,
+        resolved_state,
+        cache_prefix_hash=cache_manifest.get("payload", {}).get("static_prefix_hash")
+        if isinstance(cache_manifest.get("payload"), dict)
+        else None,
+    )
+    return result
 
 
 def redact_text(text: str, limit: int = 800) -> str:
@@ -456,6 +508,11 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
     config = resolve_config(cwd)
     codex_cli = inspect_codex_cli()
     codex_config = inspect_codex_config()
+    state = resolve_effective_mode(repo_root)
+    lockfile = read_lockfile(repo_root)
+    cache_manifest = read_cache_manifest(repo_root)
+    tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
+    cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
     return {
         "status": "ok",
         "repo_root": str(repo_root),
@@ -469,9 +526,70 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "fallback_explicit_literal_symbol_available": True,
         "git_repo": (repo_root / ".git").exists(),
         "config": config.__dict__,
+        "configured_mode": state.get("configured_mode"),
+        "effective_mode": state.get("effective_mode"),
+        "effective_state": state.get("effective_state"),
+        "state_summary": state.get("user_visible_summary"),
+        "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+        "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
+        "cache_shape": {
+            "cache_candidate": cache_payload.get("cache_candidate"),
+            "static_prefix_hash_present": bool(cache_payload.get("static_prefix_hash")),
+            "total_tokens_estimate": cache_payload.get("total_tokens_estimate"),
+            "provider_guarantee": cache_payload.get("provider_hint", {}).get("guarantee")
+            if isinstance(cache_payload.get("provider_hint"), dict)
+            else None,
+        },
+        "tuning": {
+            "profile": tuning.get("profile"),
+            "validation": tuning.get("validation"),
+            "verify": tuning.get("verify"),
+        },
+        "fallback": state.get("fallback") if isinstance(state.get("fallback"), dict) else {},
+        "safe_passthrough_reason": state.get("safe_passthrough_reason"),
+        "stale_reason": state.get("stale_reason"),
+        "mcp": {"status": "unknown", "config_scope": "unknown"},
+        "savings": {"available": False, "reason": "not_enough_data"},
+        "generated_state_paths": generated_state_path_status(repo_root),
+        "native_codex_integration": {
+            "slash_commands": "not_native",
+            "installed_schema_discovery": "not_proven",
+            "automatic_internal_subagent_interception": "not_proven",
+            "automatic_mcp_invocation": "not_guaranteed",
+        },
         "algorithm": PCODEX_PACKET_STRATEGY,
         "secrets_printed": False,
     }
+
+
+def format_doctor(payload: dict[str, Any]) -> str:
+    codex_cli = payload.get("codex_cli") if isinstance(payload.get("codex_cli"), dict) else {}
+    lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
+    cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
+    cache_shape = payload.get("cache_shape") if isinstance(payload.get("cache_shape"), dict) else {}
+    generated_paths = payload.get("generated_state_paths") if isinstance(payload.get("generated_state_paths"), dict) else {}
+    ignored_count = sum(1 for item in generated_paths.values() if isinstance(item, dict) and item.get("git_ignored"))
+    lines = [
+        "pCodex doctor",
+        f"Repo root: {payload.get('repo_root')}",
+        f"Configured mode: {payload.get('configured_mode')}",
+        f"Effective mode: {payload.get('effective_mode')}",
+        f"Effective state: {payload.get('effective_state')}",
+        f"Summary: {payload.get('state_summary')}",
+        f"premode executable: {'available' if payload.get('premode_executable_available') else 'missing'}",
+        f"pcodex executable: {'available' if payload.get('pcodex_executable_available') else 'missing'}",
+        f"codex executable: {'available' if payload.get('codex_executable_available') else 'missing'}",
+        f"Codex CLI version: {codex_cli.get('version') or 'unknown'}",
+        f"literal_symbol plugin: {'available' if payload.get('plugin_alias_available') else 'missing'}",
+        f"LCC lockfile: {lockfile.get('status') or 'unknown'} ({lockfile.get('path') or '.premode/lcc.lock.json'})",
+        f"Cache manifest: {cache_manifest.get('status') or 'unknown'} ({cache_manifest.get('path') or '.premode/out/cache_manifest.json'})",
+        f"Cache candidate: {cache_shape.get('cache_candidate') if cache_shape else 'unknown'}",
+        f"Generated state git-ignore: {ignored_count}/{len(generated_paths)} paths ignored",
+        "Native Codex integration: slash commands, schema discovery, internal interception, and automatic MCP invocation are not assumed.",
+    ]
+    if codex_cli.get("version_warning"):
+        lines.append(f"Codex CLI warning: {codex_cli.get('version_warning')}")
+    return "\n".join(lines)
 
 
 def run_one_step_tune(repo_root: Path, *, out_dir: Path | None = None) -> dict[str, Any]:
@@ -685,6 +803,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         state["mode"] = configured_mode
         state["configured_mode"] = configured_mode
         state["effective_mode"] = effective_mode
+        state["effective_state"] = EFFECTIVE_ON_GENERALIZED if config.enabled else EFFECTIVE_OFF_RAW
         state["tuning_profile"] = None
         state["effective_tuning_profile"] = None
     tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
@@ -696,13 +815,26 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "config_scope": "unknown",
         "status": "unknown",
     }
+    try:
+        lockfile = update_lockfile_from_resolver(repo_root, state)
+    except Exception as exc:  # lockfile must not make status unusable
+        lockfile = {"status": "error", "path": ".premode/lcc.lock.json", "valid": False, "error": f"{type(exc).__name__}: {exc}"}
+    cache_manifest = read_cache_manifest(repo_root)
     return {
         "schema_version": "pcodex.status.v1",
         "enabled": bool(state.get("enabled")),
         "configured_mode": configured_mode,
         "effective_mode": effective_mode,
+        "effective_state": state.get("effective_state"),
+        "state_summary": state.get("user_visible_summary"),
         "mode": configured_mode,
         "algorithm": state.get("algorithm") or PCODEX_PACKET_STRATEGY,
+        "packet": {
+            "plugin_alias": state.get("plugin_alias"),
+            "version": state.get("packet_version"),
+            "variant": state.get("packet_variant"),
+            "strategy": state.get("packet_strategy"),
+        },
         "tuning": {
             "profile": tuning.get("profile"),
             "validation": tuning.get("validation"),
@@ -717,6 +849,8 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         },
         "telemetry": telemetry,
         "savings": {"available": False, "reason": "not_enough_data"},
+        "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+        "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
         "state_path": state.get("state_path"),
         "state_exists": state.get("state_exists"),
         "state_status": state.get("state_status"),
@@ -764,8 +898,10 @@ def child_env_for(repo_root: Path, config: PcodexConfig | None = None) -> dict[s
 
 
 def child_env_for_mode_state(repo_root: Path, mode_state: dict[str, Any]) -> dict[str, str]:
+    effective_state = str(mode_state.get("effective_state") or "")
+    enabled = effective_state != EFFECTIVE_OFF_RAW and str(mode_state.get("effective_mode") or mode_state.get("mode")) != "off"
     return {
-        CONFIG_ENV: "1" if str(mode_state.get("effective_mode") or mode_state.get("mode")) != "off" else "0",
+        CONFIG_ENV: "1" if enabled else "0",
         ALGORITHM_ENV: PCODEX_PACKET_STRATEGY,
         PACKET_STRATEGY_ENV: PCODEX_PACKET_STRATEGY,
         PROJECT_ROOT_ENV: str(repo_root.resolve()),
@@ -775,13 +911,12 @@ def child_env_for_mode_state(repo_root: Path, mode_state: dict[str, Any]) -> dic
 def resolve_mode_state(repo_root: Path, *, validate_tuned: bool = True, require_runnable: bool = False) -> dict[str, Any]:
     mode_state = resolve_effective_mode(repo_root, validate_tuned=validate_tuned)
     if mode_state.get("state_status") == "invalid_default":
-        message = mode_state.get("state_error") or "Invalid pCodex mode state"
-        if require_runnable:
-            raise PcodexStateError(str(message))
         return mode_state
     tuning = mode_state.get("tuning") if isinstance(mode_state.get("tuning"), dict) else {}
-    if require_runnable and mode_state.get("configured_mode") == "tuned" and not tuning.get("profile_valid"):
-        message = tuning.get("profile_error") or "Invalid pCodex tuning profile"
+    if require_runnable and mode_state.get("configured_mode") == "tuned" and (
+        not tuning.get("profile_valid") or tuning.get("verify") != "PASS"
+    ):
+        message = tuning.get("profile_error") or tuning.get("fallback_reason") or "Verified pCodex tuning profile is required"
         raise PcodexStateError(str(message))
     return mode_state
 
@@ -816,11 +951,13 @@ def set_enabled(cwd: Path | None, enabled: bool) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     path = write_repo_config(cwd, enabled=enabled)
     mode_result = set_mode_on(cwd) if enabled else set_mode_off(cwd)
+    lockfile = update_lockfile_from_resolver(_repo_root(cwd), resolve_effective_mode(cwd))
     return {
         "status": "enabled" if enabled else "disabled",
         **mode_result,
         "config_path": str(path),
         "legacy_config_path": str(path),
+        "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
     }
 
 
@@ -828,7 +965,14 @@ def set_tuned(cwd: Path | None, profile: str | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
     result = set_mode_tuned(cwd, profile or DEFAULT_TUNING_PROFILE)
     path = write_repo_config(cwd, enabled=True)
-    return {"status": "tuned", **result, "config_path": str(path), "legacy_config_path": str(path)}
+    lockfile = update_lockfile_from_resolver(_repo_root(cwd), resolve_effective_mode(cwd))
+    return {
+        "status": "tuned",
+        **result,
+        "config_path": str(path),
+        "legacy_config_path": str(path),
+        "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+    }
 
 
 def format_status(payload: dict[str, Any]) -> str:
@@ -861,6 +1005,7 @@ def format_status(payload: dict[str, Any]) -> str:
         f"pCodex: {'on' if payload.get('enabled') else 'off'}",
         f"Configured mode: {payload.get('configured_mode')}",
         f"Effective mode: {payload.get('effective_mode')}",
+        f"Effective state: {payload.get('effective_state')}",
         f"Algorithm: {payload.get('algorithm')}",
         f"Tuning: {tuning.get('verify') or tuning.get('validation') or 'missing'}",
         f"Tuning profile: {tuning.get('profile') or 'none'}",
@@ -871,6 +1016,10 @@ def format_status(payload: dict[str, Any]) -> str:
         f"Savings estimate: {savings_text}",
         f"State path: {payload.get('state_path')}",
     ]
+    lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
+    cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
+    lines.append(f"LCC lockfile: {lockfile.get('status') or 'unknown'}")
+    lines.append(f"Cache manifest: {cache_manifest.get('status') or 'unknown'}")
     if payload.get("state_status") != "loaded":
         lines.append(f"State status: {payload.get('state_status')}")
     if codex_cli.get("version_warning"):
@@ -921,6 +1070,7 @@ def run_dry_run(
     mode_state = resolve_mode_state(repo_root, validate_tuned=True, require_runnable=True)
     mode = str(mode_state.get("configured_mode") or mode_state["mode"])
     effective_mode = str(mode_state.get("effective_mode") or mode)
+    effective_state = str(mode_state.get("effective_state") or "")
     tuning_profile = _state_tuning_profile(mode_state)
     child_env = child_env_for_mode_state(repo_root, mode_state)
     fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
@@ -931,7 +1081,8 @@ def run_dry_run(
         "mode": mode,
         "configured_mode": mode,
         "effective_mode": effective_mode,
-        "transform_applied": effective_mode != "off",
+        "effective_state": effective_state,
+        "transform_applied": effective_mode != "off" and effective_state != EFFECTIVE_SAFE_PASSTHROUGH,
         "tuning_profile": tuning_profile,
         "tuning": mode_state.get("tuning"),
         "fallback": fallback,
@@ -944,9 +1095,80 @@ def run_dry_run(
         "raw_task_preview": redact_text(prompt),
         "codex_launch": "not_executed",
     }
+    if effective_state == EFFECTIVE_SAFE_PASSTHROUGH:
+        telemetry = record_runtime_telemetry(
+            repo_root,
+            configured_mode=mode,
+            effective_mode="safe_passthrough",
+            fallback_reason=mode_state.get("safe_passthrough_reason") or "safe_passthrough",
+        )
+        lockfile = update_lockfile_from_resolver(repo_root, mode_state)
+        invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
+        return {
+            **base,
+            "enabled": False,
+            "premode_command": None,
+            "codex_command": invocation.args,
+            "packet_path": None,
+            "final_prompt_preview": redact_text(prompt),
+            "telemetry": telemetry.get("telemetry"),
+            "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+            "safe_passthrough_reason": mode_state.get("safe_passthrough_reason"),
+        }
     if effective_mode != "off":
         runner = compile_runner or compile_pcodex_packet
-        compiled = run_compile_runner(runner, repo_root, prompt, profile, tuning_profile=tuning_profile)
+        try:
+            if runner is compile_pcodex_packet:
+                compiled = run_compile_runner(
+                    runner,
+                    repo_root,
+                    prompt,
+                    profile,
+                    tuning_profile=tuning_profile,
+                )
+            else:
+                compiled = run_compile_runner(runner, repo_root, prompt, profile, tuning_profile=tuning_profile)
+        except Exception as exc:
+            if mode == "tuned":
+                raise
+            fallback_state = {
+                **mode_state,
+                "effective_mode": "off",
+                "effective_state": EFFECTIVE_SAFE_PASSTHROUGH,
+                "safe_passthrough_reason": f"compile_failed:{type(exc).__name__}",
+            }
+            telemetry = record_runtime_telemetry(
+                repo_root,
+                configured_mode=mode,
+                effective_mode="safe_passthrough",
+                fallback_reason=f"compile_failed:{type(exc).__name__}",
+            )
+            lockfile = update_lockfile_from_resolver(repo_root, fallback_state)
+            invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
+            return {
+                **base,
+                "enabled": False,
+                "effective_mode": "off",
+                "effective_state": EFFECTIVE_SAFE_PASSTHROUGH,
+                "transform_applied": False,
+                "premode_command": None,
+                "codex_command": invocation.args,
+                "packet_path": None,
+                "final_prompt_preview": redact_text(prompt),
+                "telemetry": telemetry.get("telemetry"),
+                "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
+                "safe_passthrough_reason": f"compile_failed:{type(exc).__name__}",
+            }
+        if "cache_manifest" not in compiled:
+            cache_manifest = write_cache_manifest(repo_root, mode_state, compiled)
+            compiled["cache_manifest"] = {key: value for key, value in cache_manifest.items() if key != "payload"}
+            compiled["lockfile"] = update_lockfile_from_resolver(
+                repo_root,
+                mode_state,
+                cache_prefix_hash=cache_manifest.get("payload", {}).get("static_prefix_hash")
+                if isinstance(cache_manifest.get("payload"), dict)
+                else None,
+            )
         telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
         packet_path = _write_temp_packet(compiled["packet"])
         final_prompt = compose_final_prompt(prompt, compiled["packet"])
@@ -960,6 +1182,10 @@ def run_dry_run(
             "packet_sha256": compiled["packet_sha256"],
             "route": compiled["route"],
             "telemetry": telemetry.get("telemetry"),
+            "cache_manifest": compiled.get("cache_manifest"),
+            "lockfile": {key: value for key, value in compiled.get("lockfile", {}).items() if key != "payload"}
+            if isinstance(compiled.get("lockfile"), dict)
+            else None,
         }
     telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode)
     invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
@@ -970,6 +1196,7 @@ def run_dry_run(
         "packet_path": None,
         "final_prompt_preview": redact_text(prompt),
         "telemetry": telemetry.get("telemetry"),
+        "lockfile": {key: value for key, value in update_lockfile_from_resolver(repo_root, mode_state).items() if key != "payload"},
     }
 
 
@@ -980,6 +1207,7 @@ def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
     effective_mode = str(mode_state.get("effective_mode") or configured_mode)
     fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
     fallback_reason = str(fallback.get("last_reason")) if fallback.get("active") and fallback.get("last_reason") else None
+    update_lockfile_from_resolver(repo_root, mode_state)
     record_runtime_telemetry(repo_root, configured_mode=configured_mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
     child_env = child_env_for_mode_state(repo_root, mode_state)
     return run_codex(
@@ -1017,7 +1245,9 @@ def run_disabled(repo_root: Path, prompt: str, mode_state: dict[str, Any] | None
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pcodex")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("doctor")
+    doctor_parser = sub.add_parser("doctor")
+    doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
+    doctor_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
     status_parser = sub.add_parser("status")
@@ -1067,7 +1297,11 @@ def main(argv: list[str] | None = None) -> int:
     repo_arg = getattr(args, "repo", None) or getattr(args, "repo_root", None)
     repo_root = _repo_root(Path(repo_arg).resolve() if repo_arg else cwd)
     if args.command == "doctor":
-        print(json.dumps(doctor(repo_root), indent=2, sort_keys=True))
+        payload = doctor(repo_root)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_doctor(payload))
         return 0
     if args.command == "install":
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))

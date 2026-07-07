@@ -56,7 +56,7 @@ Expected first-run boundary:
 
 ## Generated Local State
 
-Normal pCodex use may create local state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
+Normal pCodex use may create local state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, `.premode/out/`, `.premode/out/cache_manifest.json`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
 
 These files should generally remain untracked. Only version tuning artifacts deliberately, after reviewing what they contain and why the repo should carry them.
 

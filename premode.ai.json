@@ -29,6 +29,7 @@
   },
   "setup": [
     "pcodex doctor || true",
+    "pcodex doctor --json",
     "pcodex setup --no-mcp",
     "pcodex status",
     "pcodex status --json"
@@ -37,6 +38,13 @@
     "pcodex run --dry-run \"<task>\"",
     "pcodex run \"<task>\"",
     "premode review-patch --since-compile"
+  ],
+  "effective_states": [
+    "OFF_RAW",
+    "ON_GENERALIZED",
+    "ON_TUNED_VERIFIED",
+    "TUNED_STRICT",
+    "SAFE_PASSTHROUGH"
   ],
   "manual_compile_review": [
     "premode compile --plugin literal_symbol \"<task>\" --profile lite --json",
@@ -71,6 +79,8 @@
     "AGENTS.md",
     "README.md",
     "docs/TUNING.md",
+    "docs/INCREMENTAL_TUNING.md",
+    "docs/CONTENT_FREE_TELEMETRY.md",
     "docs/DAILY_USE.md",
     "docs/PASTEABLE_CODEX_BOOTSTRAP.md",
     "docs/CLAIMS_AND_LIMITATIONS.md"
@@ -80,6 +90,7 @@
     ".premode/audit/",
     ".premode/metrics/",
     ".premode/pcodex_state.json",
+    ".premode/lcc.lock.json",
     ".pcodex/",
     ".agents/plugins/",
     "generated outputs",
@@ -89,6 +100,8 @@
     ".premode/out/",
     ".premode/audit/",
     ".premode/metrics/",
+    ".premode/lcc.lock.json",
+    ".premode/out/cache_manifest.json",
     ".pcodex/",
     "PCODEX_SETUP_REPORT.md"
   ],

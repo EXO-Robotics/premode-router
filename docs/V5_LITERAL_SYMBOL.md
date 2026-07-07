@@ -63,6 +63,8 @@ Excluded from model-facing content:
 
 Strategy diagnostics, rejected anchors, fallback metadata, plugin metadata, and benchmark notes stay out of band in JSON results, tests, or lab reports. They should not be rendered into the model-facing packet unless explicitly requested by a non-default debug flag.
 
+The pCodex control plane may write local out-of-band files such as `.premode/lcc.lock.json` and `.premode/out/cache_manifest.json`. These files are not model-facing packet content and must remain content-free: hashes, status fields, counters, timestamps, and reasons are allowed; prompt text, source snippets, secrets, validation guidance, commands, or planner metadata are not.
+
 ## Fallback And Comparison Baseline
 
 `ranked_paths_plus_anchors` remains the fallback and comparison baseline. It is not replaced as a historical comparison point.

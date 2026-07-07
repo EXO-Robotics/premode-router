@@ -73,9 +73,19 @@ These verdicts do not guarantee live Codex task success or token savings. Tuned 
 
 `on` mode uses tuned behavior only when `.premode/tuning/repo_profile.json` is valid and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. If the profile is missing, invalid, not verified, `NEEDS_ADJUSTMENT`, or `FAIL`, `on` safely falls back to generalized `literal_symbol`.
 
-`tuned` mode remains strict. It requires a valid tuning profile and fails clearly when the profile is missing or invalid.
+`tuned` mode remains strict. It requires a valid tuning profile and `.premode/tuning/VERIFY_RESULTS.json` verdict `PASS`; it fails clearly when the profile is missing, invalid, or unverified.
 
-`pcodex status` reports configured mode, effective mode, tuning status, fallback state, local telemetry counters, and savings-estimate availability. Fallback telemetry stores counters and reasons only; it must not store prompts, source snippets, secrets, or file contents.
+`pcodex status` reports configured mode, effective mode, explicit effective state, tuning status, fallback state, local telemetry counters, lockfile/cache-manifest status, and savings-estimate availability. Fallback telemetry stores counters and reasons only; it must not store prompts, source snippets, secrets, or file contents.
+
+Effective states:
+
+- `OFF_RAW`: no Pre-mode transform.
+- `ON_GENERALIZED`: generalized `literal_symbol` packet.
+- `ON_TUNED_VERIFIED`: `on` mode using verified repo-local tuning.
+- `TUNED_STRICT`: strict tuned mode.
+- `SAFE_PASSTHROUGH`: raw prompt passthrough when LCC cannot safely compile.
+
+Generated control-plane files include `.premode/lcc.lock.json` and `.premode/out/cache_manifest.json`. They are local, ignored runtime state and contain hashes/status only.
 
 ## Safety Boundary
 

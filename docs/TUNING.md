@@ -88,6 +88,8 @@ pcodex run --dry-run "<representative task>"
 
 `pcodex status --json` reports configured mode, effective mode, tuning state, fallback state, and related local status.
 
+Strict `pcodex tuned` requires a valid profile plus `.premode/tuning/VERIFY_RESULTS.json` verdict `PASS`. General `pcodex on` may use verified tuning, but falls back to generalized `literal_symbol` when tuning is missing, stale, invalid, or not verified.
+
 ## 7. Benchmark-assisted tuning loop
 
 Benchmarking is measurement. It helps compare packet size, budget status, and expected file/test hits.
@@ -205,4 +207,4 @@ git diff --cached --stat
 git diff --cached --check
 ```
 
-Commit only intentional source, tests, docs, examples, or reviewed tuning artifacts. Do not stage `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, `.premode/pcodex_state.json`, `.pcodex/`, runtime caches, or unrelated generated output.
+Commit only intentional source, tests, docs, examples, or reviewed tuning artifacts. Do not stage `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, `.pcodex/`, runtime caches, or unrelated generated output.

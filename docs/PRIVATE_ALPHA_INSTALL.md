@@ -136,7 +136,7 @@ Dry run reports the planned wrapper behavior without executing Codex.
 
 ## Generated Local State
 
-Normal pCodex use may create repo-local generated state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/out/`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
+Normal pCodex use may create repo-local generated state under `.premode/` and `.pcodex/`, including `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, `.premode/out/`, `.premode/out/cache_manifest.json`, `.premode/audit/`, `.premode/metrics/`, and `.premode/tuning/`.
 
 These paths should generally stay untracked. Version tuning artifacts only when deliberately reviewed and useful for the repository. The pasteable bootstrap prompts add a bounded `.gitignore` section for this state and do not blanket-ignore all `.premode/`.
 
