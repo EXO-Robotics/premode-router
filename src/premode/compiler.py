@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Iterable
@@ -16,6 +17,7 @@ from .config import load_config, premode_dir
 from .git_state import scan_git_state
 from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
+from .inventory import InventoryMetrics, refresh_inventory_if_needed
 from .log_scanner import scan_logs
 from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps
@@ -2806,12 +2808,20 @@ def _enforce_central_context_constraints_impact_map(
         )
 
 
-def ensure_index(repo_root: Path, profile_name: str | None = None, *, record: bool = True) -> dict[str, Any]:
+def ensure_index(
+    repo_root: Path,
+    profile_name: str | None = None,
+    *,
+    record: bool = True,
+    inventory: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    inventory_paths = inventory.get("paths") if isinstance(inventory, dict) and isinstance(inventory.get("paths"), list) else None
+    inventory_source = str(inventory.get("inventory_source") or "") if isinstance(inventory, dict) else None
     if not record:
-        return index_project(repo_root, profile_name, write=False)
+        return index_project(repo_root, profile_name, write=False, inventory_paths=inventory_paths, inventory_source=inventory_source)
     idx = load_index(repo_root)
     if idx is None:
-        idx = index_project(repo_root, profile_name)
+        idx = index_project(repo_root, profile_name, inventory_paths=inventory_paths, inventory_source=inventory_source)
     return idx
 
 
@@ -3566,15 +3576,25 @@ def select_context(
     context_only: bool = False,
     record: bool = True,
 ) -> dict[str, Any]:
+    compile_start = time.perf_counter()
     record_artifacts = record
     cfg = load_config(repo_root)
     caps = resolve_profile(profile_name, cfg)
-    idx = ensure_index(repo_root, caps.name, record=record_artifacts)
+    inventory_result = refresh_inventory_if_needed(repo_root, policy="write" if record_artifacts else "read_only")
+    inventory = inventory_result.inventory if inventory_result.freshness == "fresh" else None
+    inventory_metrics: InventoryMetrics = inventory_result.metrics
+    inventory_paths = inventory.get("paths") if isinstance(inventory, dict) and isinstance(inventory.get("paths"), list) else None
+    inventory_detection_paths = None
+    if isinstance(inventory, dict):
+        path_items = inventory.get("paths") if isinstance(inventory.get("paths"), list) else []
+        marker_items = inventory.get("marker_paths") if isinstance(inventory.get("marker_paths"), list) else []
+        inventory_detection_paths = [str(path) for path in [*path_items, *marker_items] if path]
+    idx = ensure_index(repo_root, caps.name, record=record_artifacts, inventory=inventory)
     sanitized = sanitize_prompt(raw_prompt)
     kws = prompt_keywords(sanitized)
     raw_entries = list(idx.get("entries", []))
     entries, secret_path_summary = _filter_secret_entries(raw_entries)
-    project_detection = detect_projects(repo_root, entries=entries, cwd=Path.cwd(), prompt=sanitized)
+    project_detection = detect_projects(repo_root, entries=entries, cwd=Path.cwd(), prompt=sanitized, inventory_paths=inventory_detection_paths)
     selected_child_root = _selected_child_root(repo_root, project_detection)
     eligible_readable_bytes = sum(int(e.get("bytes", 0) or 0) for e in entries)
     eligible_readable_tokens = max(1, eligible_readable_bytes // 4)
@@ -3591,7 +3611,7 @@ def select_context(
     locator_result: LocateResult | None = None
     locator_error: str | None = None
     try:
-        locator_result = locate_files(repo_root, raw_prompt, max_files=8)
+        locator_result = locate_files(repo_root, raw_prompt, max_files=8, inventory_paths=inventory_paths)
     except Exception as exc:
         locator_error = str(exc)
     locator_evidence = _compact_locator_evidence(locator_result, error=locator_error)
@@ -4076,6 +4096,14 @@ def select_context(
         "full_repo_reduction_percent": None,
         "estimated_savings_vs_eligible_repo_percent": None,
     }
+    metrics.update(inventory_metrics.to_dict())
+    metrics["inventory_cache_path"] = ".premode/inventory/files.json"
+    metrics["inventory_file_count"] = int(inventory.get("file_count") or 0) if isinstance(inventory, dict) else 0
+    metrics["inventory_fallback_reason"] = inventory.get("fallback_reason") if isinstance(inventory, dict) else None
+    metrics["files_content_read"] = sum(int(item.get("bytes_read", 0) or 0) > 0 for item in full_text_files)
+    metrics["bytes_read"] = sum(int(item.get("bytes_read", 0) or 0) for item in full_text_files)
+    metrics["files_stat_checked"] = len(entries)
+    metrics["compile_ms"] = int((time.perf_counter() - compile_start) * 1000)
 
     manifest = {
         "created_at": timestamp_iso(),
@@ -4117,6 +4145,16 @@ def select_context(
         "estimated_raw_candidate_tokens": max(1, eligible_readable_bytes // 4),
         "estimated_compiled_context_tokens": full_tokens + summary_tokens + manifest_tokens,
         "metrics": metrics,
+        "inventory": {
+            "state": inventory_result.freshness,
+            "source": inventory.get("inventory_source") if isinstance(inventory, dict) else None,
+            "file_count": int(inventory.get("file_count") or 0) if isinstance(inventory, dict) else 0,
+            "cache_hit": bool(inventory_metrics.inventory_cache_hit),
+            "full_walk_performed": bool(inventory_metrics.full_walk_performed),
+            "freshness": inventory_result.freshness,
+            "fallback_reason": inventory.get("fallback_reason") if isinstance(inventory, dict) else None,
+            "cache_path": ".premode/inventory/files.json",
+        },
         "repo_map_summary": compact_repo_map_summary(repo_map, profile_name=caps.name, impact_map=impact_map) if repo_map else None,
         "impact_map": impact_map,
         **semantic_buckets,
@@ -6506,6 +6544,7 @@ def compile_prompt(
         "redaction_summary": manifest["redaction_summary"],
         "total_selected_bytes": manifest["total_selected_bytes"],
         "metrics": manifest["metrics"],
+        "inventory": manifest.get("inventory"),
         "repo_map_summary": manifest.get("repo_map_summary"),
         "impact_map": manifest.get("impact_map"),
         "candidate_edit_files": manifest.get("candidate_edit_files"),

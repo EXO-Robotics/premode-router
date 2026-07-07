@@ -645,7 +645,9 @@ def _role_for_path(rel_path: str) -> str:
     return "source"
 
 
-def _iter_repo_files(repo_root: Path) -> list[Path]:
+def _iter_repo_files(repo_root: Path, inventory_paths: list[str] | None = None) -> list[Path]:
+    if inventory_paths is not None:
+        return [repo_root / rel for rel in inventory_paths]
     ignore = IgnoreMatcher.from_repo(repo_root)
     files: list[Path] = []
     for path in repo_root.rglob("*"):
@@ -2168,12 +2170,12 @@ def _selected_dependency_relations(relations: list[FileRelation], selected_paths
     return compact[:24]
 
 
-def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8) -> LocateResult:
+def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_paths: list[str] | None = None) -> LocateResult:
     repo_root = Path(repo_root)
     evidence = extract_prompt_evidence(prompt)
 
     file_evidences: list[_FileEvidence] = []
-    for path in _iter_repo_files(repo_root):
+    for path in _iter_repo_files(repo_root, inventory_paths):
         file = _file_evidence(repo_root, path)
         if file is None:
             continue

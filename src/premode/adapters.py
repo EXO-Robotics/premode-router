@@ -672,15 +672,24 @@ def openclaw_policy_from_detection(detection: dict[str, Any]) -> dict[str, Any] 
         ],
     }
 
-def detect_projects(repo_root: Path, entries: list[dict[str, Any]] | None = None, cwd: Path | None = None, prompt: str | None = None) -> dict[str, Any]:
+def detect_projects(
+    repo_root: Path,
+    entries: list[dict[str, Any]] | None = None,
+    cwd: Path | None = None,
+    prompt: str | None = None,
+    inventory_paths: list[str] | None = None,
+) -> dict[str, Any]:
     if entries is None:
-        rel_paths = _iter_repo_paths(repo_root)
+        rel_paths = list(inventory_paths) if inventory_paths is not None else _iter_repo_paths(repo_root)
     else:
         # Indexed entries are readable files only. Merge filesystem-level root
         # markers so compile-time detection does not lose directory markers such
         # as `.xcodeproj` and then fall back to source frequency.
         rel_paths = [str(e.get("path", "")) for e in entries]
-        rel_paths.extend(_iter_filesystem_root_markers(repo_root))
+        if inventory_paths is not None:
+            rel_paths.extend(str(path) for path in inventory_paths)
+        else:
+            rel_paths.extend(_iter_filesystem_root_markers(repo_root))
         rel_paths = sorted({p for p in rel_paths if p})
     rel_set = set(rel_paths)
     lower_paths = [p.lower() for p in rel_paths]

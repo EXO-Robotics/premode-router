@@ -17,6 +17,7 @@ from typing import Any
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
 from .cache_manifest import read_cache_manifest, write_cache_manifest
+from .inventory import refresh_inventory_if_needed, summarize_inventory
 from .lockfile import read_lockfile, update_lockfile_from_resolver
 from .pcodex_state import (
     DEFAULT_TUNING_PROFILE,
@@ -204,6 +205,7 @@ def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
         ".premode/audit/",
         ".premode/metrics/",
         ".premode/tuning/",
+        ".premode/inventory/",
         ".pcodex/",
     ]
     return {
@@ -511,6 +513,7 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
     state = resolve_effective_mode(repo_root)
     lockfile = read_lockfile(repo_root)
     cache_manifest = read_cache_manifest(repo_root)
+    inventory = summarize_inventory(repo_root)
     tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
     cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
     return {
@@ -532,6 +535,7 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "state_summary": state.get("user_visible_summary"),
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
         "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
+        "inventory": inventory,
         "cache_shape": {
             "cache_candidate": cache_payload.get("cache_candidate"),
             "static_prefix_hash_present": bool(cache_payload.get("static_prefix_hash")),
@@ -566,6 +570,7 @@ def format_doctor(payload: dict[str, Any]) -> str:
     codex_cli = payload.get("codex_cli") if isinstance(payload.get("codex_cli"), dict) else {}
     lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
     cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
+    inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
     cache_shape = payload.get("cache_shape") if isinstance(payload.get("cache_shape"), dict) else {}
     generated_paths = payload.get("generated_state_paths") if isinstance(payload.get("generated_state_paths"), dict) else {}
     ignored_count = sum(1 for item in generated_paths.values() if isinstance(item, dict) and item.get("git_ignored"))
@@ -583,6 +588,7 @@ def format_doctor(payload: dict[str, Any]) -> str:
         f"literal_symbol plugin: {'available' if payload.get('plugin_alias_available') else 'missing'}",
         f"LCC lockfile: {lockfile.get('status') or 'unknown'} ({lockfile.get('path') or '.premode/lcc.lock.json'})",
         f"Cache manifest: {cache_manifest.get('status') or 'unknown'} ({cache_manifest.get('path') or '.premode/out/cache_manifest.json'})",
+        f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('source') or 'none'}, {inventory.get('file_count') or 0} files",
         f"Cache candidate: {cache_shape.get('cache_candidate') if cache_shape else 'unknown'}",
         f"Generated state git-ignore: {ignored_count}/{len(generated_paths)} paths ignored",
         "Native Codex integration: slash commands, schema discovery, internal interception, and automatic MCP invocation are not assumed.",
@@ -820,6 +826,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     except Exception as exc:  # lockfile must not make status unusable
         lockfile = {"status": "error", "path": ".premode/lcc.lock.json", "valid": False, "error": f"{type(exc).__name__}: {exc}"}
     cache_manifest = read_cache_manifest(repo_root)
+    inventory = summarize_inventory(repo_root)
     return {
         "schema_version": "pcodex.status.v1",
         "enabled": bool(state.get("enabled")),
@@ -851,6 +858,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "savings": {"available": False, "reason": "not_enough_data"},
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
         "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
+        "inventory": inventory,
         "state_path": state.get("state_path"),
         "state_exists": state.get("state_exists"),
         "state_status": state.get("state_status"),
@@ -949,28 +957,39 @@ def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]
 
 def set_enabled(cwd: Path | None, enabled: bool) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
     path = write_repo_config(cwd, enabled=enabled)
     mode_result = set_mode_on(cwd) if enabled else set_mode_off(cwd)
-    lockfile = update_lockfile_from_resolver(_repo_root(cwd), resolve_effective_mode(cwd))
+    inventory = None
+    if enabled:
+        inventory_result = refresh_inventory_if_needed(repo_root, policy="write")
+        inventory = summarize_inventory(repo_root, inventory_result.inventory)
+    lockfile = update_lockfile_from_resolver(repo_root, resolve_effective_mode(cwd))
     return {
         "status": "enabled" if enabled else "disabled",
         **mode_result,
         "config_path": str(path),
         "legacy_config_path": str(path),
+        "inventory": inventory,
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
     }
 
 
 def set_tuned(cwd: Path | None, profile: str | None = None) -> dict[str, Any]:
     cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    inventory = summarize_inventory(repo_root)
+    if str(inventory.get("state") or "").startswith("stale_") or inventory.get("state") == "invalid":
+        raise PcodexStateError(f"Inventory is {inventory.get('state')}; refresh inventory before enabling strict tuned mode")
     result = set_mode_tuned(cwd, profile or DEFAULT_TUNING_PROFILE)
     path = write_repo_config(cwd, enabled=True)
-    lockfile = update_lockfile_from_resolver(_repo_root(cwd), resolve_effective_mode(cwd))
+    lockfile = update_lockfile_from_resolver(repo_root, resolve_effective_mode(cwd))
     return {
         "status": "tuned",
         **result,
         "config_path": str(path),
         "legacy_config_path": str(path),
+        "inventory": inventory,
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
     }
 
@@ -1018,8 +1037,13 @@ def format_status(payload: dict[str, Any]) -> str:
     ]
     lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
     cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
+    inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
     lines.append(f"LCC lockfile: {lockfile.get('status') or 'unknown'}")
     lines.append(f"Cache manifest: {cache_manifest.get('status') or 'unknown'}")
+    lines.append(
+        f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('source') or 'none'}, "
+        f"{inventory.get('file_count') or 0} files"
+    )
     if payload.get("state_status") != "loaded":
         lines.append(f"State status: {payload.get('state_status')}")
     if codex_cli.get("version_warning"):

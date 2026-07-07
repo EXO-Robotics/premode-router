@@ -30,6 +30,7 @@ htmlcov/
 .premode/metrics/
 .premode/tuning/
 .premode/index/
+.premode/inventory/
 .pcodex/
 usage_ledger.jsonl
 *.jsonl
