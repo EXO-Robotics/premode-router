@@ -256,6 +256,15 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("prompt")
     compare.add_argument("--provider", default="mock")
     compare.add_argument("--model", default=None)
+    live_token = lab_sub.add_parser("live-token-harness", help="Run the standard-vs-enhanced live token harness.")
+    live_token.add_argument("--mode", choices=["dry_run_mock", "live_minimal", "live_matrix"], default="dry_run_mock")
+    live_token.add_argument("--artifact-root", default="/private/tmp/premode_labs/lab_7_3cy_live_token_harness_recovery")
+    live_token.add_argument("--prompt", default=None)
+    live_token.add_argument("--prompt-id", default="disposable_smoke")
+    live_token.add_argument("--model", default=None)
+    live_token.add_argument("--effort", default=None)
+    live_token.add_argument("--fixture-repo", default=None)
+    live_token.add_argument("--json", action="store_true")
 
     hook = sub.add_parser("hook", help="Experimental/deferred surface; not part of the primary MVP workflow.")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
@@ -565,6 +574,24 @@ def main(argv: list[str] | None = None) -> int:
                 "recommendation": "deterministic",
             }
             _print_json(report)
+            return 0
+        if args.lab_command == "live-token-harness":
+            from .live_token_harness import DEFAULT_PROMPT, render_harness_report, run_live_token_harness
+
+            result = run_live_token_harness(
+                source_repo=repo,
+                artifact_root=Path(args.artifact_root),
+                mode=args.mode,
+                prompt=args.prompt or DEFAULT_PROMPT,
+                prompt_id=args.prompt_id,
+                model=args.model,
+                effort=args.effort,
+                fixture_repo=Path(args.fixture_repo) if args.fixture_repo else None,
+            )
+            if args.json:
+                _print_json(result)
+            else:
+                print(render_harness_report(result))
             return 0
     if args.command == "hook":
         if args.hook_command == "user-prompt-submit":
