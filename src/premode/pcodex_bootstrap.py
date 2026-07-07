@@ -19,6 +19,7 @@ from .compiler import compile_prompt
 from .cache_manifest import read_cache_manifest, write_cache_manifest
 from .inventory import refresh_inventory_if_needed, summarize_inventory
 from .lockfile import read_lockfile, update_lockfile_from_resolver
+from .topology import refresh_topology_if_needed, summarize_topology
 from .pcodex_state import (
     DEFAULT_TUNING_PROFILE,
     EFFECTIVE_OFF_RAW,
@@ -206,6 +207,7 @@ def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
         ".premode/metrics/",
         ".premode/tuning/",
         ".premode/inventory/",
+        ".premode/topology/",
         ".pcodex/",
     ]
     return {
@@ -514,6 +516,7 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
     lockfile = read_lockfile(repo_root)
     cache_manifest = read_cache_manifest(repo_root)
     inventory = summarize_inventory(repo_root)
+    topology = summarize_topology(repo_root)
     tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
     cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
     return {
@@ -536,6 +539,7 @@ def doctor(cwd: Path | None = None) -> dict[str, Any]:
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
         "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
         "inventory": inventory,
+        "topology": topology,
         "cache_shape": {
             "cache_candidate": cache_payload.get("cache_candidate"),
             "static_prefix_hash_present": bool(cache_payload.get("static_prefix_hash")),
@@ -571,6 +575,7 @@ def format_doctor(payload: dict[str, Any]) -> str:
     lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
     cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
     inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
+    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
     cache_shape = payload.get("cache_shape") if isinstance(payload.get("cache_shape"), dict) else {}
     generated_paths = payload.get("generated_state_paths") if isinstance(payload.get("generated_state_paths"), dict) else {}
     ignored_count = sum(1 for item in generated_paths.values() if isinstance(item, dict) and item.get("git_ignored"))
@@ -589,6 +594,7 @@ def format_doctor(payload: dict[str, Any]) -> str:
         f"LCC lockfile: {lockfile.get('status') or 'unknown'} ({lockfile.get('path') or '.premode/lcc.lock.json'})",
         f"Cache manifest: {cache_manifest.get('status') or 'unknown'} ({cache_manifest.get('path') or '.premode/out/cache_manifest.json'})",
         f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('source') or 'none'}, {inventory.get('file_count') or 0} files",
+        f"Topology: {topology.get('state') or 'unknown'}, {topology.get('repo_shape') or 'unknown'}, {topology.get('node_count') or 0} nodes, primary {topology.get('primary_node') or 'none'}",
         f"Cache candidate: {cache_shape.get('cache_candidate') if cache_shape else 'unknown'}",
         f"Generated state git-ignore: {ignored_count}/{len(generated_paths)} paths ignored",
         "Native Codex integration: slash commands, schema discovery, internal interception, and automatic MCP invocation are not assumed.",
@@ -827,6 +833,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         lockfile = {"status": "error", "path": ".premode/lcc.lock.json", "valid": False, "error": f"{type(exc).__name__}: {exc}"}
     cache_manifest = read_cache_manifest(repo_root)
     inventory = summarize_inventory(repo_root)
+    topology = summarize_topology(repo_root)
     return {
         "schema_version": "pcodex.status.v1",
         "enabled": bool(state.get("enabled")),
@@ -859,6 +866,7 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
         "cache_manifest": {key: value for key, value in cache_manifest.items() if key != "payload"},
         "inventory": inventory,
+        "topology": topology,
         "state_path": state.get("state_path"),
         "state_exists": state.get("state_exists"),
         "state_status": state.get("state_status"),
@@ -961,9 +969,12 @@ def set_enabled(cwd: Path | None, enabled: bool) -> dict[str, Any]:
     path = write_repo_config(cwd, enabled=enabled)
     mode_result = set_mode_on(cwd) if enabled else set_mode_off(cwd)
     inventory = None
+    topology = None
     if enabled:
         inventory_result = refresh_inventory_if_needed(repo_root, policy="write")
         inventory = summarize_inventory(repo_root, inventory_result.inventory)
+        topology_result = refresh_topology_if_needed(repo_root, inventory=inventory_result.inventory, policy="write")
+        topology = summarize_topology(repo_root, topology_result.topology)
     lockfile = update_lockfile_from_resolver(repo_root, resolve_effective_mode(cwd))
     return {
         "status": "enabled" if enabled else "disabled",
@@ -971,6 +982,7 @@ def set_enabled(cwd: Path | None, enabled: bool) -> dict[str, Any]:
         "config_path": str(path),
         "legacy_config_path": str(path),
         "inventory": inventory,
+        "topology": topology,
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
     }
 
@@ -984,12 +996,14 @@ def set_tuned(cwd: Path | None, profile: str | None = None) -> dict[str, Any]:
     result = set_mode_tuned(cwd, profile or DEFAULT_TUNING_PROFILE)
     path = write_repo_config(cwd, enabled=True)
     lockfile = update_lockfile_from_resolver(repo_root, resolve_effective_mode(cwd))
+    topology = summarize_topology(repo_root)
     return {
         "status": "tuned",
         **result,
         "config_path": str(path),
         "legacy_config_path": str(path),
         "inventory": inventory,
+        "topology": topology,
         "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
     }
 
@@ -1038,11 +1052,16 @@ def format_status(payload: dict[str, Any]) -> str:
     lockfile = payload.get("lockfile") if isinstance(payload.get("lockfile"), dict) else {}
     cache_manifest = payload.get("cache_manifest") if isinstance(payload.get("cache_manifest"), dict) else {}
     inventory = payload.get("inventory") if isinstance(payload.get("inventory"), dict) else {}
+    topology = payload.get("topology") if isinstance(payload.get("topology"), dict) else {}
     lines.append(f"LCC lockfile: {lockfile.get('status') or 'unknown'}")
     lines.append(f"Cache manifest: {cache_manifest.get('status') or 'unknown'}")
     lines.append(
         f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('source') or 'none'}, "
         f"{inventory.get('file_count') or 0} files"
+    )
+    lines.append(
+        f"Topology: {topology.get('state') or 'unknown'}, {topology.get('repo_shape') or 'unknown'}, "
+        f"{topology.get('node_count') or 0} nodes, primary {topology.get('primary_node') or 'none'}"
     )
     if payload.get("state_status") != "loaded":
         lines.append(f"State status: {payload.get('state_status')}")

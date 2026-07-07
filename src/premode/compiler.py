@@ -53,6 +53,7 @@ from .router import (
 )
 from .safe_reader import safe_read, is_secret_name
 from .timeutil import timestamp_iso
+from .topology import refresh_topology_if_needed, select_project_nodes
 from .tuning import TuningProfileError, apply_compile_tuning_profile
 
 PACKET_V2_MARKER = "PREMODE_COMPILED_PACKET_V2"
@@ -3583,6 +3584,9 @@ def select_context(
     inventory_result = refresh_inventory_if_needed(repo_root, policy="write" if record_artifacts else "read_only")
     inventory = inventory_result.inventory if inventory_result.freshness == "fresh" else None
     inventory_metrics: InventoryMetrics = inventory_result.metrics
+    topology_result = refresh_topology_if_needed(repo_root, inventory=inventory, policy="write" if record_artifacts else "read_only")
+    topology = topology_result.topology if topology_result.freshness == "fresh" else None
+    topology_metrics = topology_result.metrics
     inventory_paths = inventory.get("paths") if isinstance(inventory, dict) and isinstance(inventory.get("paths"), list) else None
     inventory_detection_paths = None
     if isinstance(inventory, dict):
@@ -3641,6 +3645,21 @@ def select_context(
     enforce_child_context_boundary = bool(selected_child_root)
 
     dirty_paths = _dirty_paths_from_git(git_state)
+    topology_selection = select_project_nodes(
+        raw_prompt,
+        repo_root,
+        topology,
+        cwd=Path.cwd(),
+        dirty_files=sorted(dirty_paths),
+    ) if isinstance(topology, dict) else {
+        "selected_nodes": [],
+        "primary_node": None,
+        "selection_reason": topology_result.freshness,
+        "signal_scores": {},
+        "ambiguous": False,
+        "fallback_used": True,
+        "confidence": 0.0,
+    }
     # Resolve prompt path mentions from the raw prompt before high-entropy
     # redaction can obscure long repo paths. The extractor only accepts tokens
     # that match indexed repo paths or known source/log extensions.
@@ -4097,12 +4116,20 @@ def select_context(
         "estimated_savings_vs_eligible_repo_percent": None,
     }
     metrics.update(inventory_metrics.to_dict())
+    metrics.update(topology_metrics.to_dict())
     metrics["inventory_cache_path"] = ".premode/inventory/files.json"
     metrics["inventory_file_count"] = int(inventory.get("file_count") or 0) if isinstance(inventory, dict) else 0
     metrics["inventory_fallback_reason"] = inventory.get("fallback_reason") if isinstance(inventory, dict) else None
     metrics["files_content_read"] = sum(int(item.get("bytes_read", 0) or 0) > 0 for item in full_text_files)
     metrics["bytes_read"] = sum(int(item.get("bytes_read", 0) or 0) for item in full_text_files)
     metrics["files_stat_checked"] = len(entries)
+    metrics["topology_cache_path"] = ".premode/topology/repo_topology.json"
+    metrics["topology_repo_shape"] = topology.get("repo_shape") if isinstance(topology, dict) else None
+    metrics["topology_primary_node"] = topology_selection.get("primary_node")
+    metrics["topology_selected_node_count"] = len(topology_selection.get("selected_nodes") or [])
+    metrics["topology_selection_confidence"] = topology_selection.get("confidence")
+    metrics["topology_selection_ambiguous"] = topology_selection.get("ambiguous")
+    metrics["topology_selection_fallback_used"] = topology_selection.get("fallback_used")
     metrics["compile_ms"] = int((time.perf_counter() - compile_start) * 1000)
 
     manifest = {
@@ -4155,6 +4182,17 @@ def select_context(
             "fallback_reason": inventory.get("fallback_reason") if isinstance(inventory, dict) else None,
             "cache_path": ".premode/inventory/files.json",
         },
+        "topology": {
+            "state": topology_result.freshness,
+            "repo_shape": topology.get("repo_shape") if isinstance(topology, dict) else None,
+            "node_count": len(topology.get("nodes") or []) if isinstance(topology, dict) else 0,
+            "primary_node": topology_selection.get("primary_node"),
+            "freshness": topology_result.freshness,
+            "fallback_used": bool(topology_selection.get("fallback_used")),
+            "cache_hit": bool(topology_metrics.topology_cache_hit),
+            "cache_path": ".premode/topology/repo_topology.json",
+        },
+        "project_node_selection": topology_selection,
         "repo_map_summary": compact_repo_map_summary(repo_map, profile_name=caps.name, impact_map=impact_map) if repo_map else None,
         "impact_map": impact_map,
         **semantic_buckets,
@@ -6545,6 +6583,8 @@ def compile_prompt(
         "total_selected_bytes": manifest["total_selected_bytes"],
         "metrics": manifest["metrics"],
         "inventory": manifest.get("inventory"),
+        "topology": manifest.get("topology"),
+        "project_node_selection": manifest.get("project_node_selection"),
         "repo_map_summary": manifest.get("repo_map_summary"),
         "impact_map": manifest.get("impact_map"),
         "candidate_edit_files": manifest.get("candidate_edit_files"),
