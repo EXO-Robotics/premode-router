@@ -39,3 +39,6 @@ premode = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+markers = [
+  "external_fixtures: tests that require explicitly enabled local external repositories",
+]

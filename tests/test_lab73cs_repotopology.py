@@ -309,7 +309,16 @@ def test_v5_literal_symbol_packet_and_alias_surfaces_remain_stable(tmp_path: Pat
     build_topology(repo, build_inventory(repo).inventory)
     after = compile_prompt(repo, "Fix src/app.py", "lite", record_artifacts=False, **LITERAL_SYMBOL_KWARGS)
     assert after["packet"] == before["packet"]
-    for forbidden in ("<TASK_CLASS>", "<SUPPORT_RELATIONS>", "do-not-edit", "<TOPOLOGY>", "Topology:"):
+    for forbidden in (
+        "<TASK_CLASS>",
+        "<SUPPORT_RELATIONS>",
+        "do-not-edit",
+        "<TOPOLOGY>",
+        "Topology:",
+        "inventory",
+        "release_gate",
+        "external_fixtures",
+    ):
         assert forbidden not in after["packet"]
 
     assert cli.main(["compile", "Fix src/app.py", "--repo", str(repo), "--plugin", "literal_symbol", "--json", "--no-record"]) == 0

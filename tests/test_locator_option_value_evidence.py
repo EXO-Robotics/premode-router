@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -263,10 +264,139 @@ def test_rich_cli_option_value_compile_includes_docs_and_tests_as_evidence(repo:
     assert not any("should_error" in signal or "should_fallback" in signal for signal in emitted_signals)
 
 
+def test_hermetic_rich_like_cli_compile_retrieves_theme_option_value_evidence(repo: Path) -> None:
+    _write(
+        repo / "pyproject.toml",
+        """
+        [project]
+        name = "rich-like-cli"
+        version = "0.1.0"
+        """,
+    )
+    _write(repo / "src" / "rich_like_cli" / "__init__.py", "")
+    _write(
+        repo / "src" / "rich_like_cli" / "options.py",
+        """
+        import click
+
+        from .theme import resolve_theme
+
+        @click.command()
+        @click.option("--theme", default="ansi_dark", metavar="THEME", help="Syntax theme name.")
+        def main(theme):
+            return resolve_theme(theme)
+        """,
+    )
+    _write(
+        repo / "src" / "rich_like_cli" / "theme.py",
+        """
+        DEFAULT_THEME = "ansi_dark"
+        ALLOWED_THEMES = {"ansi_dark", "monokai", "dracula"}
+
+        def resolve_theme(theme):
+            if theme in ALLOWED_THEMES:
+                return theme
+            return DEFAULT_THEME
+        """,
+    )
+    _write(
+        repo / "src" / "rich_like_cli" / "console.py",
+        """
+        from rich.syntax import Syntax
+
+        def render(code, theme):
+            return Syntax(code, "python", theme=theme)
+        """,
+    )
+    _write(
+        repo / "tests" / "test_theme_option.py",
+        """
+        from rich_like_cli.theme import DEFAULT_THEME, resolve_theme
+
+        def test_theme_option_accepts_known_value():
+            assert resolve_theme("monokai") == "monokai"
+
+        def test_theme_option_falls_back_to_default():
+            assert resolve_theme("unknown") == DEFAULT_THEME
+        """,
+    )
+    _write(
+        repo / "docs" / "theme.md",
+        """
+        # Theme option
+
+        Use `--theme monokai` to choose a syntax theme.
+        Unknown values fall back to the default `ansi_dark` theme.
+        """,
+    )
+    _prepare(repo)
+
+    result = compile_prompt(
+        repo,
+        "Fix the CLI theme option evidence lookup for --theme monokai so unsupported themes fall back to the default.",
+        "lite",
+        record=False,
+    )
+
+    candidates = _manifest_paths(result["candidate_edit_files"])
+    all_context = _all_context_paths(result)
+    assert "src/rich_like_cli/options.py" in candidates
+    assert "src/rich_like_cli/theme.py" in candidates
+    assert "tests/test_theme_option.py" in all_context
+    assert "docs/theme.md" in all_context
+    assert "docs/theme.md" not in candidates
+    locator = result["locator_evidence"]
+    emitted_signals = [
+        signal
+        for section in ("primary_files", "support_files", "verification_files")
+        for file in locator[section]
+        for signal in file["matched_signals"]
+    ]
+    assert "option_decl:--theme" in emitted_signals
+    assert "option_use:theme" in emitted_signals
+    assert any(signal.startswith("option_default:") and "ansi_dark" in signal for signal in emitted_signals)
+    assert any(signal.startswith("option_value_evidence:") and "default" in signal for signal in emitted_signals)
+    assert any("monokai" in signal for signal in emitted_signals)
+    assert "/private/tmp/premode_labs/external_repos/rich-cli" not in result["packet"]
+
+
+def _external_rich_cli_repo() -> Path:
+    return Path(os.environ.get("PREMODE_RICH_CLI_REPO", "/private/tmp/premode_labs/external_repos/rich-cli"))
+
+
+def _skip_unless_external_fixtures_enabled() -> None:
+    if os.environ.get("PREMODE_ENABLE_EXTERNAL_FIXTURES") != "1":
+        pytest.skip("external fixture tests require PREMODE_ENABLE_EXTERNAL_FIXTURES=1")
+
+
+def _skip_unless_usable_rich_cli_clone(repo: Path) -> None:
+    required = [
+        repo / ".git" / "config",
+        repo / "pyproject.toml",
+        repo / "src" / "rich_cli" / "__main__.py",
+    ]
+    missing = [path.relative_to(repo).as_posix() for path in required if not path.exists()]
+    if missing:
+        pytest.skip(f"local Rich-CLI clone is unavailable or incomplete: missing {', '.join(missing)}")
+    completed = subprocess.run(
+        ["git", "rev-parse", "--is-inside-work-tree"],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if completed.returncode != 0 or completed.stdout.strip() != "true":
+        pytest.skip("local Rich-CLI fixture is not a usable git worktree")
+
+
+@pytest.mark.external_fixtures
 def test_rich_cli_compile_only_retrieves_theme_option_evidence_if_local_clone_exists() -> None:
-    repo = Path("/private/tmp/premode_labs/external_repos/rich-cli")
+    _skip_unless_external_fixtures_enabled()
+    repo = _external_rich_cli_repo()
     if not repo.exists():
-        pytest.skip("local Rich-CLI clone not available")
+        pytest.skip(f"local Rich-CLI clone not available: {repo}")
+    _skip_unless_usable_rich_cli_clone(repo)
 
     result = compile_prompt(repo, RICH_PROMPT, "lite", record=False)
 
