@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1110" viewBox="0 0 1440 1110" role="img" aria-labelledby="title desc">
+<title id="title">Local Context Compiler Lab 7 savings and algorithm growth</title>
+<desc id="desc">Private and public savings lines on one chronological lab timeline, plus a package growth bar chart.</desc>
+<defs><filter id="shadow" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#0d1b2a" flood-opacity="0.10"/></filter></defs>
+<rect width="1440" height="1110" fill="#f6f7f2"/>
+<rect x="44" y="38" width="1352" height="1028" rx="18" fill="#ffffff" filter="url(#shadow)"/>
+<text x="72.0" y="92.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="34" font-weight="800" fill="#16202a" text-anchor="start" class="">Local Context Compiler: Lab 7 Savings vs Algorithm Growth</text>
+<text x="72.0" y="126.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="18" font-weight="500" fill="#54616f" text-anchor="start" class="">Private repos found the big wins first. Public validation dipped, then came back green with Lab 7.3AH.</text>
+<rect x="72" y="158" width="305" height="70" rx="8" fill="#f8faf7" stroke="#dfe5dd"/>
+<text x="90.0" y="183.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#607066" text-anchor="start" class="">Private peak</text>
+<text x="90.0" y="212.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="800" fill="#17251f" text-anchor="start" class="">41.8%</text>
+<text x="180.0" y="210.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">7.3L RoboTriage average</text>
+<rect x="398" y="158" width="305" height="70" rx="8" fill="#f8faf7" stroke="#dfe5dd"/>
+<text x="416.0" y="183.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#607066" text-anchor="start" class="">Public comeback</text>
+<text x="416.0" y="212.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="800" fill="#17251f" text-anchor="start" class="">17.0%</text>
+<text x="506.0" y="210.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">7.3AH clean same-run win</text>
+<rect x="724" y="158" width="305" height="70" rx="8" fill="#f8faf7" stroke="#dfe5dd"/>
+<text x="742.0" y="183.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#607066" text-anchor="start" class="">AH matrix</text>
+<text x="742.0" y="212.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="800" fill="#17251f" text-anchor="start" class="">36/36</text>
+<text x="832.0" y="210.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">zero leakage/scope issues</text>
+<rect x="1050" y="158" width="305" height="70" rx="8" fill="#f8faf7" stroke="#dfe5dd"/>
+<text x="1068.0" y="183.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#607066" text-anchor="start" class="">Package growth</text>
+<text x="1068.0" y="212.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="27" font-weight="800" fill="#17251f" text-anchor="start" class="">33.7k</text>
+<text x="1158.0" y="210.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">package LOC in live tree</text>
+<text x="92.0" y="280.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="800" fill="#18232d" text-anchor="start" class="">Savings over standard Codex runs</text>
+<text x="92.0" y="304.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">Percent token savings, one chronological lab timeline. AG is historical-reference; AH is the clean same-run result.</text>
+<rect x="92" y="316" width="875" height="424" fill="#fbfcfa" stroke="#d6ded6" rx="8"/>
+<line x1="92" y1="740.0" x2="967" y2="740.0" stroke="#e7ece6" stroke-width="1"/>
+<text x="78.0" y="745.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500" fill="#76837b" text-anchor="end" class="">0%</text>
+<line x1="92" y1="645.8" x2="967" y2="645.8" stroke="#e7ece6" stroke-width="1"/>
+<text x="78.0" y="650.8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500" fill="#76837b" text-anchor="end" class="">10%</text>
+<line x1="92" y1="551.6" x2="967" y2="551.6" stroke="#e7ece6" stroke-width="1"/>
+<text x="78.0" y="556.6" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500" fill="#76837b" text-anchor="end" class="">20%</text>
+<line x1="92" y1="457.3" x2="967" y2="457.3" stroke="#e7ece6" stroke-width="1"/>
+<text x="78.0" y="462.3" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500" fill="#76837b" text-anchor="end" class="">30%</text>
+<line x1="92" y1="363.1" x2="967" y2="363.1" stroke="#e7ece6" stroke-width="1"/>
+<text x="78.0" y="368.1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="500" fill="#76837b" text-anchor="end" class="">40%</text>
+<line x1="92" y1="740" x2="967" y2="740" stroke="#aab5ad" stroke-width="1.4"/>
+<rect x="893.0" y="324" width="68" height="408" rx="6" fill="#0f766e" fill-opacity="0.07"/>
+<text x="957.0" y="342.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="800" fill="#0f766e" text-anchor="end" class="">7.3AH: clean same-run win, 36/36 pass</text>
+<polyline points="132.0,585.5 276.5,445.1 348.8,709.8 421.1,346.2" fill="none" stroke="#14845b" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+<polyline points="204.3,733.4 493.4,730.6 565.6,615.6 637.9,736.7 710.2,497.8 782.5,556.3 854.7,423.4 927.0,579.8" fill="none" stroke="#2f6fbd" stroke-width="4.5" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="132.0" cy="585.5" r="8" fill="#14845b" stroke="#ffffff" stroke-width="3"/>
+<text x="132.0" y="567.5" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">16.4%</text>
+<text x="132.0" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.2F2</text>
+<circle cx="204.3" cy="733.4" r="8" fill="#b42318" stroke="#fff1f0" stroke-width="3"/>
+<text x="204.3" y="715.4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">0.7%</text>
+<text x="204.3" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.2O.1</text>
+<circle cx="276.5" cy="445.1" r="8" fill="#14845b" stroke="#ffffff" stroke-width="3"/>
+<text x="276.5" y="427.1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">31.3%</text>
+<text x="276.5" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3D</text>
+<circle cx="348.8" cy="709.8" r="8" fill="#14845b" stroke="#ffffff" stroke-width="3"/>
+<text x="332.8" y="714.8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="end" class="">3.2%</text>
+<text x="348.8" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3H</text>
+<circle cx="421.1" cy="346.2" r="8" fill="#14845b" stroke="#ffffff" stroke-width="3"/>
+<text x="421.1" y="328.2" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">41.8%</text>
+<text x="421.1" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3L</text>
+<circle cx="493.4" cy="730.6" r="7" fill="#2f6fbd" stroke="#ffffff" stroke-width="3"/>
+<text x="493.4" y="712.6" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">1.0%</text>
+<text x="493.4" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3W</text>
+<circle cx="565.6" cy="615.6" r="7" fill="#2f6fbd" stroke="#ffffff" stroke-width="3"/>
+<text x="565.6" y="597.6" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">13.2%</text>
+<text x="565.6" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3Y</text>
+<circle cx="637.9" cy="736.7" r="8" fill="#d97706" stroke="#fff7ed" stroke-width="3"/>
+<text x="621.9" y="730.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="end" class="">0.3%</text>
+<text x="637.9" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3AA</text>
+<circle cx="710.2" cy="497.8" r="7" fill="#2f6fbd" stroke="#ffffff" stroke-width="3"/>
+<text x="710.2" y="479.8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">25.7%</text>
+<text x="710.2" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3AD</text>
+<circle cx="782.5" cy="556.3" r="7" fill="#2f6fbd" stroke="#ffffff" stroke-width="3"/>
+<text x="766.5" y="561.3" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="end" class="">19.5%</text>
+<text x="782.5" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3AE-R</text>
+<circle cx="854.7" cy="423.4" r="8" fill="#111827" stroke="#fef3c7" stroke-width="3"/>
+<text x="854.7" y="405.4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">33.6%</text>
+<text x="854.7" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3AG</text>
+<circle cx="927.0" cy="579.8" r="9" fill="#0f766e" stroke="#ccfbf1" stroke-width="3"/>
+<text x="927.0" y="561.8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="800" fill="#17212b" text-anchor="middle" class="">17.0%</text>
+<text x="927.0" y="768.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3AH</text>
+<circle cx="99" cy="799" r="7" fill="#14845b"/>
+<text x="114.0" y="804.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#2f3b35" text-anchor="start" class="">Private repo runs</text>
+<circle cx="253" cy="799" r="7" fill="#2f6fbd"/>
+<text x="268.0" y="804.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#2f3b35" text-anchor="start" class="">Public repo runs</text>
+<circle cx="400" cy="799" r="7" fill="#d97706"/>
+<text x="415.0" y="804.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#2f3b35" text-anchor="start" class="">Caveated telemetry</text>
+<circle cx="561" cy="799" r="7" fill="#111827"/>
+<text x="576.0" y="804.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#2f3b35" text-anchor="start" class="">Historical reference</text>
+<circle cx="737" cy="799" r="7" fill="#b42318"/>
+<text x="752.0" y="804.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="700" fill="#2f3b35" text-anchor="start" class="">Failed patch quality</text>
+<text x="1020.0" y="280.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="20" font-weight="800" fill="#18232d" text-anchor="start" class="">Algorithm package growth</text>
+<text x="1020.0" y="304.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="500" fill="#667482" text-anchor="start" class="">Tracked LOC in the package/lab surface.</text>
+<rect x="1020" y="316" width="312" height="424" fill="#fbfcfa" stroke="#d6ded6" rx="8"/>
+<rect x="1033.0" y="572.2" width="26.0" height="113.8" rx="6" fill="#596b5f"/>
+<text x="1046.0" y="563.2" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">11,153</text>
+<text x="1046.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">v0.2.6.6</text>
+<rect x="1085.0" y="553.4" width="26.0" height="132.6" rx="6" fill="#596b5f"/>
+<text x="1098.0" y="544.4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">12,997</text>
+<text x="1098.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">v0.2.6.14</text>
+<rect x="1137.0" y="534.4" width="26.0" height="151.6" rx="6" fill="#596b5f"/>
+<text x="1150.0" y="525.4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">14,857</text>
+<text x="1150.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">v0.2.6.20</text>
+<rect x="1189.0" y="525.8" width="26.0" height="160.2" rx="6" fill="#596b5f"/>
+<text x="1202.0" y="516.8" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">15,703</text>
+<text x="1202.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">v0.2.6.23</text>
+<rect x="1241.0" y="374.1" width="26.0" height="311.9" rx="6" fill="#596b5f"/>
+<text x="1254.0" y="365.1" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">30,576</text>
+<text x="1254.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">7.3T</text>
+<rect x="1293.0" y="342.0" width="26.0" height="344.0" rx="6" fill="#17251f"/>
+<text x="1306.0" y="333.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" font-weight="800" fill="#3e4a42" text-anchor="middle" class="">33,718</text>
+<text x="1306.0" y="716.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="10" font-weight="700" fill="#526070" text-anchor="middle" class="">current</text>
+<rect x="72" y="850" width="1296" height="168" rx="8" fill="#f8faf7" stroke="#dfe5dd"/>
+<line x1="1000" y1="866" x2="1000" y2="1002" stroke="#dfe5dd" stroke-width="1"/>
+<text x="92.0" y="882.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="800" fill="#18232d" text-anchor="start" class="">Source notes</text>
+<text x="92.0" y="908.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">7.3AH: literal-symbol same-run confirmation, +17.0% vs standard, +11.7% vs ranked paths plus anchors, 36/36 pass.</text>
+<text x="92.0" y="932.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">7.3AG: candidate screen only, +33.6% vs AE-R historical standard and +17.5% vs historical plus-anchors reference.</text>
+<text x="92.0" y="956.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">7.3AE-R: repaired public matrix, 48/48 pass; plus-anchors lane beat standard by roughly 19.5%.</text>
+<text x="92.0" y="980.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">7.3AA stays caveated: original matrix telemetry lacked clean uncached token fields.</text>
+<text x="92.0" y="1004.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">Private and public lines share one timeline but stay separate series; private savings are not public proof.</text>
+<text x="1024.0" y="882.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="16" font-weight="800" fill="#18232d" text-anchor="start" class="">Story read</text>
+<text x="1024.0" y="908.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">1. Private wins were larger but less publishable.</text>
+<text x="1024.0" y="932.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">2. Public runs dipped during telemetry repair.</text>
+<text x="1024.0" y="956.0" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="13" font-weight="600" fill="#526070" text-anchor="start" class="">3. Lab 7.3AH puts the public line green again.</text>
+</svg>
