@@ -40,6 +40,7 @@ pcodex on
 pcodex status
 pcodex first-run
 pcodex first-run --json
+pcodex status --advisory --json
 pcodex run --dry-run "Hypothetical setup verification task. Do not modify files."
 ```
 
@@ -97,6 +98,16 @@ Status JSON reports the public mode (`on`, `off`, or `tuned`) and the explicit e
 - `ON_TUNED_VERIFIED`: `on` mode using a verified repo-local profile.
 - `TUNED_STRICT`: strict tuned mode; invalid or unverified tuning fails.
 - `SAFE_PASSTHROUGH`: raw prompt passthrough when LCC cannot safely compile.
+
+Read-only advisory receipts are available for paste-safe support:
+
+```bash
+pcodex status --advisory --json
+pcodex doctor --advisory --json
+pcodex first-run --advisory --json
+```
+
+Advisory mode may read existing state and report missing/stale state, but it must not write or repair `.premode/`, telemetry, cache manifests, lockfiles, inventory, topology, temp packets, MCP/Codex config, or runtime outputs. It does not launch Codex and does not prove native installed-Codex interception.
 
 ## 10. Manual Pre-mode compile/review workflow
 
@@ -250,8 +261,10 @@ pcodex doctor || true
 pcodex doctor --json
 pcodex status
 pcodex status --json
+pcodex status --advisory --json
 pcodex setup --skip-tune --no-mcp
 pcodex first-run --json
+pcodex first-run --advisory --json
 pcodex run --dry-run "Hypothetical troubleshooting task. Do not modify files."
 premode detect --json
 premode benchmark --profile lite --json

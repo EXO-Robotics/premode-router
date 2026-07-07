@@ -7,6 +7,7 @@ from typing import Any
 
 from .lockfile import sha256_file
 from .tuning import TuningProfileError, load_compile_tuning_profile
+from .write_policy import WritePolicy, resolve_write_policy
 
 STATE_SCHEMA_VERSION = "pcodex.state.v1"
 DEFAULT_ALGORITHM = "literal_symbol"
@@ -495,8 +496,18 @@ def record_runtime_telemetry(
     configured_mode: str,
     effective_mode: str,
     fallback_reason: str | None = None,
+    policy: WritePolicy | str | None = None,
 ) -> dict[str, Any]:
     root = find_repo_root(repo_root)
+    write_policy = resolve_write_policy(policy)
+    if not write_policy.can_write_telemetry or not write_policy.can_write_runtime_state:
+        return {
+            "fallback": {"active": bool(fallback_reason), "last_reason": fallback_reason, "last_at": None},
+            "telemetry": _telemetry_payload(None),
+            "status": "skipped_no_write",
+            "write_policy": write_policy.name,
+            "writes_performed": False,
+        }
     state = read_pcodex_state(root)
     state.pop("_state_status", None)
     state.pop("_state_error", None)

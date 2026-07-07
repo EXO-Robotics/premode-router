@@ -15,6 +15,7 @@ from .ignore import IgnoreMatcher
 from .paths import normalize_for_manifest
 from .safe_reader import is_secret_name
 from .timeutil import timestamp_iso
+from .write_policy import WritePolicy, resolve_write_policy
 
 INVENTORY_SCHEMA_VERSION = "premode.git_file_inventory.v1"
 INVENTORY_REL_PATH = Path(".premode") / "inventory" / "files.json"
@@ -358,7 +359,15 @@ def _build_payload(
     }
 
 
-def build_inventory(repo_root: Path | str, force: bool = False, *, write: bool = True) -> InventoryBuildResult:
+def build_inventory(
+    repo_root: Path | str,
+    force: bool = False,
+    *,
+    write: bool = True,
+    policy: WritePolicy | str | None = None,
+) -> InventoryBuildResult:
+    resolved_policy = resolve_write_policy(policy)
+    write = write and resolved_policy.can_write_inventory
     root = Path(repo_root)
     metrics = InventoryMetrics(inventory_cache_miss=True)
     ignore = IgnoreMatcher.from_repo(root)
@@ -444,8 +453,12 @@ def inventory_is_fresh(repo_root: Path | str, inventory: dict[str, Any] | None) 
     return "fresh"
 
 
-def refresh_inventory_if_needed(repo_root: Path | str, policy: str = "write") -> InventoryBuildResult:
+def refresh_inventory_if_needed(repo_root: Path | str, policy: WritePolicy | str = "write") -> InventoryBuildResult:
     root = Path(repo_root)
+    policy_name = str(policy).strip().lower().replace("-", "_")
+    if policy_name not in {"write", "read_only", "no_write"}:
+        resolved_policy = resolve_write_policy(policy)
+        policy_name = "write" if resolved_policy.can_write_inventory else "no_write"
     existing = load_inventory(root)
     freshness = inventory_is_fresh(root, existing)
     metrics = InventoryMetrics(inventory_freshness=freshness)
@@ -454,11 +467,11 @@ def refresh_inventory_if_needed(repo_root: Path | str, policy: str = "write") ->
         metrics.inventory_source = str(existing.get("inventory_source") or "unknown")
         metrics.files_listed = int(existing.get("file_count") or 0)
         return InventoryBuildResult(existing, freshness, metrics)
-    if policy in {"read_only", "no_write"}:
+    if policy_name in {"read_only", "no_write"}:
         metrics.inventory_cache_miss = True
         metrics.inventory_source = str((existing or {}).get("inventory_source") or "missing")
         return InventoryBuildResult(existing, freshness, metrics)
-    result = build_inventory(root, write=policy != "no_write")
+    result = build_inventory(root, write=policy_name != "no_write")
     result.freshness = "fresh"
     result.metrics.inventory_freshness = "fresh"
     return result

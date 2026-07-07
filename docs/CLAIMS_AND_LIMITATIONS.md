@@ -13,6 +13,7 @@ This document defines the public wording boundary for the current private pCodex
 - pCodex supports three repo-local modes: `off`, `on`, and `tuned`.
 - pCodex provides `pcodex first-run` and `pcodex first-run --json` for content-free first-run receipts.
 - pCodex provides `pcodex cleanup --local-state --dry-run` and `pcodex cleanup --local-state --yes` for known repo-local generated state.
+- pCodex provides read-only/no-write advisory receipts with `pcodex status --advisory`, `pcodex doctor --advisory`, and `pcodex first-run --advisory`.
 - `on` means best safe available pCodex behavior: it uses tuned behavior only when a valid profile exists and local verifier verdict is `PASS`; otherwise it uses generalized `literal_symbol`.
 - `tuned` is strict and fails clearly when a tuning profile is missing or invalid.
 - `pcodex status` reports configured mode, effective mode, tuning, MCP, fallback, local telemetry, and savings-estimate availability.
@@ -34,6 +35,7 @@ This document defines the public wording boundary for the current private pCodex
 - Hosted Codex UI integration.
 - Public package release readiness.
 - PyPI or pipx package availability unless a package has actually been published.
+- No local reads in advisory mode; advisory mode is a no-write/no-mutation claim.
 
 ## Required Wording Discipline
 

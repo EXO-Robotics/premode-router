@@ -13,14 +13,20 @@ It keeps `literal_symbol` as the default algorithm and passes pCodex state to ch
 ```bash
 pcodex install
 pcodex doctor
+pcodex doctor --advisory
+pcodex doctor --advisory --json
 pcodex first-run
 pcodex first-run --json
+pcodex first-run --advisory
+pcodex first-run --advisory --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
 pcodex setup --no-mcp
 pcodex status
 pcodex status --json
+pcodex status --advisory
+pcodex status --advisory --json
 pcodex cleanup --local-state --dry-run
 pcodex cleanup --local-state --yes
 pcodex on
@@ -56,6 +62,8 @@ If mode state is missing, pCodex reports the safe default `on`. Invalid state fa
 `pcodex doctor` reports local wrapper readiness. It does not print secrets or full environment dumps.
 
 `pcodex first-run` prints a content-free first-run receipt. The JSON form reports install provenance when an install manifest exists, public mode, plugin alias, inventory/topology/cache/lock summaries, one next action, and cleanup commands. It does not include raw prompts, source bodies, snippets, secrets, packet text, inventory path lists, topology path lists, or environment values.
+
+Use `--advisory` with `status`, `doctor`, or `first-run` for read-only/no-write support receipts. Advisory commands report missing or stale state without refreshing it, include `writes_performed=false`, and do not create `.premode/`, lockfiles, cache manifests, inventory, topology, telemetry, audit, metrics, temp packets, MCP registration, Codex config/home, install state, or runtime outputs. Advisory mode does not launch Codex.
 
 ## Setup
 

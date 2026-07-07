@@ -57,6 +57,12 @@ pcodex setup --skip-tune
 pcodex setup --no-mcp
 pcodex status
 pcodex status --json
+pcodex status --advisory
+pcodex status --advisory --json
+pcodex doctor --advisory
+pcodex doctor --advisory --json
+pcodex first-run --advisory
+pcodex first-run --advisory --json
 pcodex on
 pcodex off
 pcodex tuned
@@ -85,6 +91,8 @@ The explicit effective states are `OFF_RAW`, `ON_GENERALIZED`, `ON_TUNED_VERIFIE
 `pcodex tune` now runs static generation, validation, and verification by default. The `--static-only`, `--validate`, and `--verify` flags remain available for focused maintenance.
 
 `pcodex status` reports configured mode, effective mode, effective state, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, lockfile status, cache-manifest status, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
+
+`pcodex status --advisory`, `pcodex doctor --advisory`, and `pcodex first-run --advisory` are read-only/no-write support surfaces. They may inspect existing state and report missing/stale state, but they do not create `.premode/`, refresh caches, write lockfiles, write telemetry/audit/metrics, write temp packets, register MCP, alter Codex config, repair state, or launch Codex. The JSON receipts include `writes_performed=false`, `would_write`, and `would_refresh` fields and are designed to be paste-safe.
 
 `pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
 
@@ -178,6 +186,7 @@ Daily-use starter flow:
 pcodex status
 pcodex setup --skip-tune --no-mcp
 pcodex status --json
+pcodex status --advisory --json
 pcodex first-run --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 pcodex run "Edit only a disposable test file. Do not modify any other files."

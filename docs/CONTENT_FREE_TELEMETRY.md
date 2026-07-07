@@ -108,6 +108,14 @@ The provider hint is not a provider guarantee. It must not claim real prompt-cac
 
 They should avoid printing secrets, prompt bodies, source contents, or long local config values.
 
+## Advisory Receipt Boundary
+
+`pcodex status --advisory`, `pcodex doctor --advisory`, and `pcodex first-run --advisory` are stricter support receipts. They are read-only/no-write commands: they may inspect existing state, but they must not create or repair `.premode/`, lockfiles, cache manifests, inventory, topology, telemetry, audit, metrics, temp packets, MCP registration, Codex config/home, install manifests, or runtime outputs.
+
+Advisory receipts are paste-safe and content-free. They may report schema version, command name, LCC version, install provenance summary, repo root hash, repo name, public mode, plugin alias, state statuses/counts, generated-state existence counts, readiness, `writes_performed=false`, `would_write`, and `would_refresh`. They must not include raw prompts, prompt excerpts, source snippets, source bodies, secrets, environment variable values, full packet text, inventory path lists, topology path lists, full filesystem path lists, raw command logs, or tracebacks by default.
+
+Advisory mode is a no-write/no-mutation claim. It is not a no-read claim, and it does not prove native installed-Codex interception.
+
 ## Future Uses
 
 Future telemetry may support weight tuning, stale-profile detection, noisy-path suppression, source-test mapping confidence, savings estimates, cache stability scores, cache-friendly routing, or local performance receipts. Any future use must preserve the same content-free boundary and must not become a model-facing planning layer.

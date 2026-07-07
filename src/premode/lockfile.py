@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from typing import Any
+from .write_policy import WritePolicy, resolve_write_policy
 
 from . import __version__
 
@@ -205,8 +206,21 @@ def update_lockfile_from_resolver(
     resolved: dict[str, Any],
     *,
     cache_prefix_hash: str | None = None,
+    policy: WritePolicy | str | None = None,
 ) -> dict[str, Any]:
     root = find_repo_root(repo_root)
     payload = lock_payload_from_resolver(root, resolved, cache_prefix_hash=cache_prefix_hash)
+    write_policy = resolve_write_policy(policy)
+    if not write_policy.can_write_lockfile:
+        path = lockfile_path(root)
+        return {
+            "status": "skipped_no_write",
+            "path": display_path(root, path),
+            "valid": False,
+            "payload": None,
+            "error": None,
+            "would_write": True,
+            "write_policy": write_policy.name,
+        }
     path = write_lockfile(root, payload)
     return {"status": "written", "path": display_path(root, path), "valid": True, "payload": payload, "error": None}

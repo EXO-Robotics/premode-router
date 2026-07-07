@@ -55,6 +55,20 @@ This path keeps the first value local and auditable:
 
 The exact user prompt remains the canonical task text at compile time.
 
+## Read-Only Advisory Receipts
+
+Use advisory mode when a reviewer, support contact, or AI company needs a paste-safe status surface without mutating local state:
+
+```bash
+pcodex status --advisory --json
+pcodex doctor --advisory --json
+pcodex first-run --advisory --json
+```
+
+Advisory mode may inspect existing repo state and run bounded read-only checks. It does not create `.premode/`, refresh inventory/topology, write lockfiles, write cache manifests, record telemetry, write temp packets, register MCP, alter Codex config/home, launch Codex, or repair state. It reports missing or stale state with `writes_performed=false`, `would_write`, and `would_refresh` fields.
+
+Advisory mode is a no-write/no-mutation claim, not a no-read claim. Run the normal first-run path above to create or repair local state.
+
 ## Receipt Shape
 
 `pcodex first-run --json` emits a content-free receipt with this shape:
@@ -167,6 +181,7 @@ This removes the isolated install root created by that installer. It does not ed
 - If `pcodex` is not found, add the install root `bin` directory to `PATH` or call `~/.pcodex-alpha/bin/pcodex`.
 - If `doctor` reports missing Codex CLI, first-run receipt and dry-run still work, but real Codex runs need Codex CLI repaired.
 - If inventory or topology is missing/stale, `pcodex run --dry-run` refreshes local generated state before spending tokens.
+- If support only needs a paste-safe receipt, use `pcodex status --advisory --json`; it reports missing/stale state without repairing it.
 - If a real run fails, inspect the repo diff before debugging pCodex.
 
 ## Not Active Yet

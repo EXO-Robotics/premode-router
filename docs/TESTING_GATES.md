@@ -14,6 +14,8 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q -m "not external_fixtures"
 ```
 
+No-write advisory coverage is part of the default gate through `tests/test_lab73cu_no_write_advisory.py`. It uses disposable pytest repos and asserts that advisory commands do not create or mutate repo state.
+
 ## Optional External Fixture Gate
 
 External fixture tests may use local public repository clones when explicitly provided. They are skipped by default and require both the `external_fixtures` pytest marker and an opt-in environment variable.

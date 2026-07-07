@@ -17,6 +17,7 @@ from .locator import extract_prompt_evidence
 from .paths import normalize_for_manifest
 from .safe_reader import is_secret_name
 from .timeutil import timestamp_iso
+from .write_policy import WritePolicy, resolve_write_policy
 
 TOPOLOGY_SCHEMA_VERSION = "repotopology.v1"
 TOPOLOGY_REL_PATH = Path(".premode") / "topology" / "repo_topology.json"
@@ -448,8 +449,11 @@ def build_topology(
     force: bool = False,
     *,
     write: bool = True,
+    policy: WritePolicy | str | None = None,
 ) -> TopologyBuildResult:
     del force
+    resolved_policy = resolve_write_policy(policy)
+    write = write and resolved_policy.can_write_topology
     start = time.perf_counter()
     root = Path(repo_root)
     if inventory is None:
@@ -553,9 +557,13 @@ def refresh_topology_if_needed(
     repo_root: Path | str,
     *,
     inventory: dict[str, Any] | None = None,
-    policy: str = "write",
+    policy: WritePolicy | str = "write",
 ) -> TopologyBuildResult:
     root = Path(repo_root)
+    policy_name = str(policy).strip().lower().replace("-", "_")
+    if policy_name not in {"write", "read_only", "no_write"}:
+        resolved_policy = resolve_write_policy(policy)
+        policy_name = "write" if resolved_policy.can_write_topology else "no_write"
     existing = load_topology(root)
     freshness = topology_is_fresh(root, existing, inventory)
     metrics = TopologyMetrics(topology_freshness=freshness)
@@ -564,12 +572,12 @@ def refresh_topology_if_needed(
         metrics.topology_source = str(existing.get("topology_source") or "unknown")
         metrics.topology_node_count = len(existing.get("nodes") or [])
         return TopologyBuildResult(existing, freshness, metrics)
-    if policy in {"read_only", "no_write"}:
+    if policy_name in {"read_only", "no_write"}:
         metrics.topology_cache_miss = True
         metrics.topology_source = str((existing or {}).get("topology_source") or "missing")
         metrics.topology_node_count = len((existing or {}).get("nodes") or [])
         return TopologyBuildResult(existing, freshness, metrics)
-    return build_topology(root, inventory=inventory, write=policy != "no_write")
+    return build_topology(root, inventory=inventory, write=policy_name != "no_write")
 
 
 def summarize_topology(repo_root: Path | str, topology: dict[str, Any] | None = None) -> dict[str, Any]:

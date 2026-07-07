@@ -8,6 +8,7 @@ from typing import Any
 
 from . import __version__
 from .lockfile import display_path, find_repo_root, git_branch, git_head, sha256_text, utc_now
+from .write_policy import WritePolicy, resolve_write_policy
 
 CACHE_MANIFEST_SCHEMA_VERSION = "premode.lcc.cache_manifest.v1"
 CACHE_MANIFEST_REL_PATH = Path(".premode") / "out" / "cache_manifest.json"
@@ -140,10 +141,27 @@ def read_cache_manifest(repo_root: Path | str) -> dict[str, Any]:
     return {"status": "loaded", "path": display_path(root, path), "valid": True, "payload": validated, "error": None}
 
 
-def write_cache_manifest(repo_root: Path | str, resolved: dict[str, Any], compiled: dict[str, Any]) -> dict[str, Any]:
+def write_cache_manifest(
+    repo_root: Path | str,
+    resolved: dict[str, Any],
+    compiled: dict[str, Any],
+    *,
+    policy: WritePolicy | str | None = None,
+) -> dict[str, Any]:
     root = find_repo_root(repo_root)
     payload = build_cache_manifest(root, resolved, compiled)
     path = cache_manifest_path(root)
+    write_policy = resolve_write_policy(policy)
+    if not write_policy.can_write_cache_manifest:
+        return {
+            "status": "skipped_no_write",
+            "path": display_path(root, path),
+            "valid": False,
+            "payload": payload,
+            "error": None,
+            "would_write": True,
+            "write_policy": write_policy.name,
+        }
     path.parent.mkdir(parents=True, exist_ok=True)
     _atomic_write_json(path, validate_cache_manifest(payload))
     return {"status": "written", "path": display_path(root, path), "valid": True, "payload": payload, "error": None}
