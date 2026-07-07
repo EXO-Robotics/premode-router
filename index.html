@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pre-mode Router — Compile your context before you spend a token</title>
+    <meta
+      name="description"
+      content="Pre-mode Router is a source-available, local-first context compiler for coding agents. Your CPU builds a compact, tunable context packet before model tokens get spent."
+    />
+    <meta name="theme-color" content="#05070a" />
+    <script>
+      if ("scrollRestoration" in history) {
+        history.scrollRestoration = "manual";
+      }
+      if (window.location.hash === "#video") {
+        history.replaceState(null, "", window.location.pathname + window.location.search);
+      }
+    </script>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <div class="safety-banner">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      Local alpha — source install, conservative public benchmark, tune for your own repo
+    </div>
+
+    <header class="site-header" aria-label="Primary navigation">
+      <div class="header-inner">
+        <a class="brand" href="#top" aria-label="Pre-mode Router home">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Pre-mode</span>
+        </a>
+        <nav class="site-nav" aria-label="Sections">
+          <a href="#top">Overview</a>
+          <a href="#benchmarks">Benchmarks</a>
+          <a href="#workflow">How it works</a>
+          <a href="#cache">Caching</a>
+          <a href="#install">Get started</a>
+        </nav>
+        <a class="header-cta" href="https://github.com/EXO-Robotics/premode-router" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </header>
+
+    <main id="top">
+      <!-- ============ HERO ============ -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-inner">
+          <p class="hero-eyebrow reveal" data-reveal>
+            <span class="chip chip-accent">Source-available</span>
+            <span class="chip">Local-first</span>
+            <span class="chip">CPU-powered</span>
+            <span class="chip">Cache-friendly</span>
+          </p>
+          <h1 id="hero-title" class="reveal" data-reveal>
+            Your CPU is idle.<br />
+            <span class="grad-text">Your tokens aren't free.</span>
+          </h1>
+          <p class="hero-subtext reveal" data-reveal>
+            Pre-mode is a local-first context compiler for coding agents. It inspects your repo
+            locally, keeps your task exact, and hands the agent a compact packet — before model
+            tokens are spent.
+          </p>
+          <div class="button-row reveal" data-reveal>
+            <a class="button button-primary" href="https://github.com/EXO-Robotics/premode-router" target="_blank" rel="noopener">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+              </svg>
+              View on GitHub
+            </a>
+            <button class="button button-secondary" type="button" data-scroll-target="workflow">
+              See how it works
+            </button>
+          </div>
+
+          <div class="terminal reveal" data-reveal role="img" aria-label="Illustrative demo of the premode compile command running in a terminal">
+            <div class="terminal-bar">
+              <span class="term-dot red"></span>
+              <span class="term-dot yellow"></span>
+              <span class="term-dot green"></span>
+              <span class="terminal-title">premode — zsh</span>
+              <span class="terminal-note">illustrative demo</span>
+            </div>
+            <div class="terminal-body" data-terminal>
+              <div class="term-line"><span class="term-prompt">$</span> <span data-type-target></span><span class="term-caret" aria-hidden="true"></span></div>
+              <div class="term-out" data-term-out>
+                <div class="term-line dim" data-out-line><span class="term-glyph">▸</span> scanning repo structure <span class="term-fill"></span><span class="term-val">1,204 files</span></div>
+                <div class="term-line dim" data-out-line><span class="term-glyph">▸</span> ranking candidate files <span class="term-fill"></span><span class="term-val">6 primary</span></div>
+                <div class="term-line dim" data-out-line><span class="term-glyph">▸</span> locating related tests <span class="term-fill"></span><span class="term-val">3 anchors</span></div>
+                <div class="term-line dim" data-out-line><span class="term-glyph">▸</span> extracting literal symbols <span class="term-fill"></span><span class="term-val">12 anchors</span></div>
+                <div class="term-line ok" data-out-line><span class="term-glyph">✓</span> packet compiled locally — zero model tokens spent during prep</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ STATS ============ -->
+      <section class="stats" aria-label="Measured results">
+        <div class="stats-grid reveal" data-reveal data-stagger>
+          <div class="stat">
+            <strong><span data-count="17" data-suffix="%">0%</span></strong>
+            <span>reduction on measured public same-run matrix</span>
+          </div>
+          <div class="stat">
+            <strong>~<span data-count="40" data-suffix="%">0%</span></strong>
+            <span>repo-specific savings observed in private tuning</span>
+          </div>
+          <div class="stat">
+            <strong><span data-count="100" data-suffix="%">0%</span></strong>
+            <span>of prep runs on your local CPU</span>
+          </div>
+          <div class="stat">
+            <strong><span data-count="0">0</span></strong>
+            <span>changes to the prompt you already write</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BENCHMARKS ============ -->
+      <section class="section benchmarks" id="benchmarks" aria-labelledby="bench-title">
+        <div class="section-heading reveal" data-reveal>
+          <p class="eyebrow">Benchmarks</p>
+          <h2 id="bench-title">Less prompt bulk. <span class="grad-text">Better repo orientation.</span></h2>
+          <p>
+            Coding agents pay a context-discovery tax on repeated work in the same repo. Pre-mode
+            moves that prep local and hands the agent a smaller, better-aimed starting packet.
+          </p>
+        </div>
+        <figure class="graph-card reveal" data-reveal>
+          <img
+            class="savings-graph"
+            src="./lab7_savings_growth_graph_v2.svg"
+            alt="Lab 7 savings chart showing private savings, public savings, and package growth"
+            loading="lazy"
+          />
+          <figcaption>Lab 7 — measured savings vs. package growth across strategies</figcaption>
+        </figure>
+      </section>
+
+      <!-- ============ HOW IT WORKS ============ -->
+      <section class="section workflow-story" id="workflow" aria-labelledby="workflow-title" data-active-step="1">
+        <div class="workflow-sticky">
+          <div class="workflow-grid">
+            <div class="workflow-copy">
+              <p class="eyebrow">How it works</p>
+              <h2 id="workflow-title">From normal prompt to tuned packet</h2>
+              <div class="workflow-progress" aria-label="Workflow progress">
+                <span class="progress-rail" aria-hidden="true"><span class="progress-fill"></span></span>
+                <span class="progress-label">Step <strong data-progress-number>01</strong> / 04</span>
+              </div>
+              <div class="story-steps">
+                <article class="story-step is-active" data-story-step="1">
+                  <span>01 — Prompt</span>
+                  <h3>Start with your normal task</h3>
+                  <p>Write the prompt you'd already write. Pre-mode keeps it word-for-word — it never rewrites what you asked for.</p>
+                </article>
+                <article class="story-step" data-story-step="2">
+                  <span>02 — Inspect</span>
+                  <h3>Your CPU scans the repo</h3>
+                  <p>Locally, Pre-mode ranks the files, tests, and symbols the task actually touches — and skips the rest.</p>
+                </article>
+                <article class="story-step" data-story-step="3">
+                  <span>03 — Compile</span>
+                  <h3>Out comes a compact packet</h3>
+                  <p>What's useful gets packed into a small, stable packet — the same shape every time — and handed to your agent.</p>
+                </article>
+                <article class="story-step" data-story-step="4">
+                  <span>04 — Tune</span>
+                  <h3>Keep the strategy that wins</h3>
+                  <p>Benchmark strategies on your own prompts and keep the verified local profile that works best on your repo.</p>
+                </article>
+              </div>
+            </div>
+
+            <div class="workflow-panel-wrap" aria-label="Animated context packet preview">
+              <div class="workflow-panel">
+                <div class="panel-toolbar">
+                  <span>packet preview</span>
+                  <strong data-panel-state>Prompt</strong>
+                </div>
+                <div class="panel-grid" aria-hidden="true"></div>
+                <div class="product-state is-active" data-product-state="1">
+                  <div class="prompt-card">
+                    <span class="pc-label">your prompt</span>
+                    <p class="pc-text">"Fix the failing login test"</p>
+                    <span class="pc-note">kept word-for-word — never rewritten</span>
+                  </div>
+                </div>
+                <div class="product-state" data-product-state="2">
+                  <div class="scan-list">
+                    <div class="scan-row keep"><span class="sr-path">src/auth/login.py</span><span class="sr-tag primary">primary</span></div>
+                    <div class="scan-row keep"><span class="sr-path">src/auth/session.py</span><span class="sr-tag primary">primary</span></div>
+                    <div class="scan-row keep"><span class="sr-path">tests/test_login.py</span><span class="sr-tag test">test</span></div>
+                    <div class="scan-row keep"><span class="sr-path">login_attempt() · SESSION_TTL</span><span class="sr-tag anchor">anchors</span></div>
+                    <div class="scan-row skip"><span class="sr-path">docs/architecture.md</span><span class="sr-tag">skip</span></div>
+                    <div class="scan-row skip"><span class="sr-path">+ 1,198 more files</span><span class="sr-tag">skip</span></div>
+                  </div>
+                  <div class="panel-note">your cpu ranks what the task actually touches</div>
+                </div>
+                <div class="product-state" data-product-state="3">
+                  <div class="packet">
+                    <div class="pk-sec task"><span>task</span><strong>"Fix the failing login test"</strong></div>
+                    <div class="pk-sec files"><span>primary_files</span><strong>src/auth/login.py · src/auth/session.py</strong></div>
+                    <div class="pk-sec tests"><span>related_tests</span><strong>tests/test_login.py</strong></div>
+                    <div class="pk-sec anchors"><span>anchors</span><strong>login_attempt() · SESSION_TTL</strong></div>
+                  </div>
+                  <div class="panel-note">1,204 files in → one compact packet out</div>
+                </div>
+                <div class="product-state" data-product-state="4">
+                  <div class="bench">
+                    <div class="bench-row"><span>public matrix</span><span class="bar"><i style="--w: 34%"></i></span><strong>17%</strong></div>
+                    <div class="bench-row"><span>strategy b</span><span class="bar"><i style="--w: 52%"></i></span><strong>26%</strong></div>
+                    <div class="bench-row win"><span>tuned</span><span class="bar"><i style="--w: 80%"></i></span><strong>~40% ✓</strong></div>
+                  </div>
+                  <div class="panel-note">illustrative — benchmark your own prompts, keep the winner</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ CACHE ============ -->
+      <section class="section cache-section" id="cache" aria-labelledby="cache-title">
+        <div class="section-heading centered reveal" data-reveal>
+          <p class="eyebrow">Built for cache-friendly agent work</p>
+          <h2 id="cache-title">Smaller prompts save input cost. <span class="grad-text">Stable prompts preserve cache value.</span></h2>
+          <p>
+            Coding agents often lose value by sending noisy, shifting context on every run. Pre-mode keeps
+            your prompt exact, then compiles a stable packet structure around it — task, primary files,
+            related tests, and literal anchors — so repeated repo work is easier to compare, tune, and
+            cache efficiently.
+          </p>
+        </div>
+
+        <div class="cache-compare reveal" data-reveal data-stagger>
+          <div class="cache-col">
+            <header>without pre-mode</header>
+            <div class="cache-runs" aria-label="Three runs with shifting context">
+              <div class="cache-run">
+                <span class="cb noisy" style="flex: 2.2">tree</span>
+                <span class="cb noisy alt" style="flex: 1.1">log</span>
+                <span class="cb noisy warm" style="flex: 1.6">ctx</span>
+                <span class="cb noisy" style="flex: 0.8">diff</span>
+              </div>
+              <div class="cache-run">
+                <span class="cb noisy warm" style="flex: 1">ctx</span>
+                <span class="cb noisy" style="flex: 1.4">diff</span>
+                <span class="cb noisy alt" style="flex: 2.4">tree</span>
+                <span class="cb noisy" style="flex: 0.9">log</span>
+              </div>
+              <div class="cache-run">
+                <span class="cb noisy alt" style="flex: 1.3">log</span>
+                <span class="cb noisy" style="flex: 2.6">ctx</span>
+                <span class="cb noisy warm" style="flex: 0.7">diff</span>
+                <span class="cb noisy" style="flex: 1.2">tree</span>
+              </div>
+            </div>
+            <footer>shifting context — little lines up between runs</footer>
+          </div>
+
+          <div class="cache-col good">
+            <header>with pre-mode</header>
+            <div class="cache-runs" aria-label="Three runs with a stable packet shape">
+              <div class="cache-run">
+                <span class="cb task" style="flex: 1.4">task</span>
+                <span class="cb files" style="flex: 2">files</span>
+                <span class="cb tests" style="flex: 1.4">tests</span>
+                <span class="cb anchors" style="flex: 1">anchors</span>
+              </div>
+              <div class="cache-run">
+                <span class="cb task" style="flex: 1.4">task</span>
+                <span class="cb files" style="flex: 2">files</span>
+                <span class="cb tests" style="flex: 1.4">tests</span>
+                <span class="cb anchors" style="flex: 1">anchors</span>
+              </div>
+              <div class="cache-run">
+                <span class="cb task" style="flex: 1.4">task</span>
+                <span class="cb files" style="flex: 2">files</span>
+                <span class="cb tests" style="flex: 1.4">tests</span>
+                <span class="cb anchors" style="flex: 1">anchors</span>
+              </div>
+            </div>
+            <footer>stable packet shape — repeated work lines up</footer>
+          </div>
+        </div>
+
+        <div class="cache-points reveal" data-reveal data-stagger>
+          <div class="cache-point">
+            <strong>Exact prompt, preserved</strong>
+            <p>Your task text stays canonical — Pre-mode never rewrites what you asked for.</p>
+          </div>
+          <div class="cache-point">
+            <strong>Stable structure around it</strong>
+            <p>Task, primary files, related tests, and literal anchors in a predictable packet shape.</p>
+          </div>
+          <div class="cache-point">
+            <strong>Tuned for both</strong>
+            <p>Tuning is partly about finding the packet format that reduces input <em>and</em> preserves useful cache value.</p>
+          </div>
+        </div>
+
+        <p class="cache-disclaimer reveal" data-reveal>
+          Cache behavior depends on your agent and provider — Pre-mode is designed for reuse, not guaranteed cache hits.
+        </p>
+      </section>
+
+      <!-- ============ INSTALL ============ -->
+      <section class="section install" id="install" aria-labelledby="install-title">
+        <div class="section-heading centered reveal" data-reveal>
+          <p class="eyebrow">Get started</p>
+          <h2 id="install-title">Simple to start. <span class="grad-text">Detailed when you want it.</span></h2>
+          <p>
+            Everything runs on your machine, and the whole loop is three steps. The README covers
+            every command, flag, and strategy in depth.
+          </p>
+        </div>
+
+        <div class="start-steps reveal" data-reveal data-stagger>
+          <div class="start-step">
+            <span class="code-step">1</span>
+            <h3>Grab the code</h3>
+            <p>Clone it from GitHub and follow the README — setup takes a few minutes, all local.</p>
+          </div>
+          <div class="start-step">
+            <span class="code-step">2</span>
+            <h3>Compile a task</h3>
+            <p>Run the prompt you'd already write and get a compact context packet back locally.</p>
+          </div>
+          <div class="start-step">
+            <span class="code-step">3</span>
+            <h3>Tune for your repo</h3>
+            <p>Start from the generalized path, then verify a local profile that reduces input and preserves cache value on your repo.</p>
+          </div>
+        </div>
+
+        <div class="button-row centered install-actions reveal" data-reveal>
+          <a class="button button-primary" href="https://github.com/EXO-Robotics/premode-router" target="_blank" rel="noopener">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+              <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.42 7.42 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/>
+            </svg>
+            View on GitHub
+          </a>
+          <a class="button button-secondary" href="https://github.com/EXO-Robotics/premode-router#readme" target="_blank" rel="noopener">
+            Read the README
+          </a>
+        </div>
+      </section>
+
+      <!-- ============ USE CASES ============ -->
+      <section class="section use-cases" id="use-cases" aria-labelledby="use-case-title">
+        <div class="section-heading centered reveal" data-reveal>
+          <p class="eyebrow">Who it helps</p>
+          <h2 id="use-case-title">Built for people who ship <span class="grad-text">with agents, daily.</span></h2>
+          <p>
+            Pre-mode is most useful when the same repo comes up again and again, and every task pays a
+            context-discovery cost.
+          </p>
+        </div>
+        <div class="use-case-grid reveal" data-reveal data-stagger>
+          <article class="use-case-card">
+            <span class="uc-icon" aria-hidden="true">⌘</span>
+            <h3>Solo builders</h3>
+            <p>Put your local CPU to work before every coding-agent task and tune for your actual repo.</p>
+          </article>
+          <article class="use-case-card">
+            <span class="uc-icon" aria-hidden="true">⎇</span>
+            <h3>Repo-heavy teams</h3>
+            <p>Give agents a compact starting packet instead of repeating broad repo orientation work.</p>
+          </article>
+          <article class="use-case-card">
+            <span class="uc-icon" aria-hidden="true">⌂</span>
+            <h3>Private-code workflows</h3>
+            <p>Keep diagnostics and tuning metadata local while sending only the compact packet downstream.</p>
+          </article>
+          <article class="use-case-card">
+            <span class="uc-icon" aria-hidden="true">◎</span>
+            <h3>Cost-sensitive agent users</h3>
+            <p>Start with the generalized path and tune toward better local reductions where your repo supports it.</p>
+          </article>
+        </div>
+      </section>
+
+      <!-- ============ CTA ============ -->
+      <section class="cta-final reveal" data-reveal aria-labelledby="cta-title">
+        <div class="cta-glow" aria-hidden="true"></div>
+        <h2 id="cta-title">Put your CPU to work.<br /><span class="grad-text">Keep your tokens.</span></h2>
+        <p>Clone the repo, compile your first packet, and measure what your repo can reduce.</p>
+        <div class="button-row centered">
+          <a class="button button-primary" href="https://github.com/EXO-Robotics/premode-router" target="_blank" rel="noopener">
+            View on GitHub
+          </a>
+          <a class="button button-secondary" href="https://github.com/EXO-Robotics/premode-router#readme" target="_blank" rel="noopener">
+            Read the README
+          </a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-inner">
+        <a class="brand" href="#top">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Pre-mode Router</span>
+        </a>
+        <p>Source-available, local-first context compiler for coding agents. Local alpha.</p>
+        <nav aria-label="Footer">
+          <a href="#benchmarks">Benchmarks</a>
+          <a href="#workflow">How it works</a>
+          <a href="#cache">Caching</a>
+          <a href="#install">Get started</a>
+        </nav>
+      </div>
+    </footer>
+  </body>
+</html>
