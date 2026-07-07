@@ -219,6 +219,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--packet-variant", choices=v5_variants, default=None)
     bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
     bench.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only")
+    bench.add_argument("--cache-mode", choices=["strategy_isolated", "shared_cache"], default="strategy_isolated", help="Label benchmark cache discipline. Defaults to strategy-isolated rows.")
     bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
     bench.add_argument("--compile-modes", action="store_true", help="Include compile-only raw/v3 paths/v3 snippets/v2 mode comparisons.")
     bench.add_argument("--save-packets", action="store_true", help="Save last_packet artifacts while benchmarking. Off by default unless --include-review is used.")
@@ -509,6 +510,7 @@ def main(argv: list[str] | None = None) -> int:
             review_against=args.against,
             review_since_compile=args.since_compile,
             out_path=Path(args.out) if args.out else None,
+            cache_mode=args.cache_mode,
         )
         if plugin_resolution:
             result["plugin_alias_resolution"] = plugin_resolution

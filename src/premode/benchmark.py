@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 import json
 from pathlib import Path
+import platform
+import subprocess
 from typing import Any
 
+from . import __version__
 from .compiler import compile_prompt, estimate_tokens
 from .config import premode_dir
 from .review_patch import review_patch
@@ -201,6 +205,85 @@ def _case_expectation_paths(case: dict[str, Any], *keys: str) -> list[str]:
     for key in keys:
         items.extend(str(x) for x in case.get(key) or [])
     return _dedupe(items)
+
+
+def _sha256_text(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+
+
+def _git_text(repo_root: Path, args: list[str]) -> str | None:
+    try:
+        proc = subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, timeout=10)
+    except Exception:
+        return None
+    if proc.returncode != 0:
+        return None
+    return proc.stdout.strip()
+
+
+def _benchmark_harness_hash() -> str | None:
+    try:
+        return hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def _prompt_suite_hash(prompt_cases: list[dict[str, Any]], prompt_source: str) -> str:
+    payload = {"prompt_source": prompt_source, "prompts": prompt_cases}
+    return _sha256_text(json.dumps(payload, sort_keys=True, ensure_ascii=False))
+
+
+def _run_temperature(metrics: dict[str, Any]) -> str:
+    inventory_hit = metrics.get("inventory_cache_hit") is True
+    topology_hit = metrics.get("topology_cache_hit") is True
+    inventory_miss = metrics.get("inventory_cache_miss") is True
+    topology_miss = metrics.get("topology_cache_miss") is True
+    if inventory_hit and topology_hit:
+        return "warm"
+    if inventory_miss or topology_miss:
+        return "cold"
+    return "warm"
+
+
+def _expected_hit_at(selected: list[str], expected: list[str], limit: int) -> bool | None:
+    expected_paths = _dedupe(expected)
+    if not expected_paths:
+        return None
+    return any(any(_matches_path(path, exp) for exp in expected_paths) for path in selected[:limit])
+
+
+def _case_model_facing_leak_check(result: dict[str, Any], metrics: dict[str, Any]) -> dict[str, Any]:
+    check = result.get("model_facing_leakage_check") if isinstance(result.get("model_facing_leakage_check"), dict) else {}
+    leakage = bool(check.get("model_facing_diagnostic_leakage") or metrics.get("model_facing_diagnostic_leakage"))
+    return {
+        "passed": not leakage,
+        "model_facing_diagnostic_leakage": leakage,
+        "source": "compiler_model_facing_leakage_check",
+    }
+
+
+def _lane_metadata(
+    repo_root: Path,
+    *,
+    prompt_cases: list[dict[str, Any]],
+    prompt_source: str,
+) -> dict[str, Any]:
+    return {
+        "branch": _git_text(repo_root, ["branch", "--show-current"]),
+        "head": _git_text(repo_root, ["rev-parse", "HEAD"]),
+        "package_version": __version__,
+        "plugin_package_version": None,
+        "python_version": platform.python_version(),
+        "install_root": None,
+        "source_path": str(repo_root),
+        "source_dirty": bool(_git_text(repo_root, ["status", "--short"])),
+        "prompt_suite_hash": _prompt_suite_hash(prompt_cases, prompt_source),
+        "fixture_manifest_hash": None,
+        "benchmark_harness_hash": _benchmark_harness_hash(),
+        "public_clone_used": False,
+        "public_private_comparison_valid": False,
+        "comparison_invalid_reason": "public_unavailable",
+    }
 
 
 def _case_expectation_guard(
@@ -528,6 +611,7 @@ def _case_report(
     include_review: bool = False,
     review_against: str = 'main',
     review_since_compile: bool = False,
+    cache_mode: str = 'strategy_isolated',
 ) -> dict[str, Any]:
     result = compile_prompt(
         repo_root,
@@ -561,6 +645,7 @@ def _case_report(
     verification_order = [str((x or {}).get('command') if isinstance(x, dict) else x) for x in (impact.get('verification_order') or [])]
     eligible = int(metrics.get('eligible_readable_repo_tokens') or 0)
     packet_tokens = int(metrics.get('packet_total_tokens') or metrics.get('estimated_input_tokens') or 0)
+    packet = str(result.get('packet') or '')
     hard_budget = int((result.get('caps') or {}).get('hard_packet_token_budget') or 0)
     review_result = None
     if include_review:
@@ -609,6 +694,11 @@ def _case_report(
     cacheable_prefix_tokens = int(result.get('cacheable_prefix_tokens') or 0)
     dynamic_suffix_tokens = int(result.get('dynamic_suffix_tokens') or 0)
     cache_split_total = cacheable_prefix_tokens + dynamic_suffix_tokens
+    derived_cache_adjusted_input = (
+        round(dynamic_suffix_tokens + (0.10 * cacheable_prefix_tokens), 2)
+        if cache_split_total
+        else None
+    )
     budget_exceeded_by = int(metrics.get('budget_exceeded_by') or 0)
     budget_exceeded = bool(budget_exceeded_by)
     if budget_exceeded and int(metrics.get('policy_metadata_tokens') or 0) >= int(metrics.get('selected_context_tokens') or 0):
@@ -617,7 +707,48 @@ def _case_report(
         budget_reason = 'selected_context_or_repo_size'
     else:
         budget_reason = None
+    primary_node_expected = case.get('expected_primary_node')
+    primary_node_actual = metrics.get('topology_primary_node')
+    model_facing_leak_check = _case_model_facing_leak_check(result, metrics)
+    normalized_fields = {
+        'schema_version': 'premode.benchmark.case.v2',
+        'benchmark_kind': 'compile_only_harness_row',
+        'compile_only': True,
+        'live_codex_run': False,
+        'strategy': metrics.get('packet_strategy') or metrics.get('strategy_selected') or packet_strategy,
+        'cache_mode': cache_mode,
+        'run_temperature': _run_temperature(metrics),
+        'repo_shape': metrics.get('topology_repo_shape'),
+        'prompt_id': str(case.get('name') or 'prompt'),
+        'prompt_preserved': str(case['prompt']) in packet if packet else None,
+        'packet_total_tokens': packet_tokens,
+        'selected_context_tokens': metrics.get('selected_context_tokens'),
+        'eligible_repo_surface_tokens': eligible or None,
+        'derived_cache_adjusted_input': derived_cache_adjusted_input,
+        'derived_cache_adjusted_input_semantics': 'benchmark_derived_cache_shape_estimate_not_live_usage',
+        'live_input_tokens': None,
+        'live_cached_tokens': None,
+        'live_cost_savings': None,
+        'primary_files': likely_files,
+        'anchors_count': metrics.get('anchor_count'),
+        'expected_file_hit_at_1': _expected_hit_at(likely_files, expected_files, 1),
+        'expected_file_hit_at_3': _expected_hit_at(likely_files, expected_files, 3),
+        'expected_file_hit_at_5': _expected_hit_at(likely_files, expected_files, 5),
+        'expected_test_hit_at_5': _expected_hit_at(related_tests, expected_tests, 5),
+        'expected_primary_node_hit': (
+            None if primary_node_expected is None else str(primary_node_expected) == str(primary_node_actual)
+        ),
+        'packet_hash': metrics.get('packet_sha256') or result.get('compiled_packet_sha256'),
+        'static_prefix_hash': result.get('cacheable_prefix_sha256'),
+        'first_1024_hash': _sha256_text(packet[:1024]) if packet else None,
+        'model_facing_leak_check': model_facing_leak_check,
+        'fallback_used': metrics.get('topology_selection_fallback_used'),
+        'errors': [],
+        'warnings_out_of_band': [item.get('code') for item in expectation_guard.get('validation_warnings') or []],
+        'estimated_savings_alias_status': 'deprecated_compatibility_alias_for_full_repo_reduction_percent',
+    }
     return {
+        **normalized_fields,
         'name': str(case.get('name') or 'prompt'),
         'prompt': str(case['prompt']),
         'packet_version': result.get('packet_version'),
@@ -896,8 +1027,11 @@ def run_benchmark(
     review_against: str = 'main',
     review_since_compile: bool = False,
     out_path: Path | None = None,
+    cache_mode: str = 'strategy_isolated',
 ) -> dict[str, Any]:
     repo_root = Path(repo_root).resolve()
+    if cache_mode not in {'strategy_isolated', 'shared_cache'}:
+        raise ValueError(f"Unsupported cache_mode: {cache_mode}")
     prompt_cases, prompt_source = load_prompt_cases(repo_root, prompts_path)
     cases: list[dict[str, Any]] = []
     for case in prompt_cases:
@@ -917,6 +1051,7 @@ def run_benchmark(
                 include_review=include_review,
                 review_against=review_against,
                 review_since_compile=review_since_compile,
+                cache_mode=cache_mode,
             ))
             if compile_modes:
                 cases[-1]['compile_mode_comparison'] = compile_mode_comparison(
@@ -928,10 +1063,20 @@ def run_benchmark(
                 )
         except Exception as exc:
             cases.append({
+                'schema_version': 'premode.benchmark.case.v2',
+                'benchmark_kind': 'compile_only_harness_row',
+                'compile_only': True,
+                'live_codex_run': False,
                 'name': str(case.get('name') or 'prompt'),
+                'prompt_id': str(case.get('name') or 'prompt'),
                 'prompt': str(case.get('prompt') or ''),
                 'error': str(exc),
+                'errors': [str(exc)],
                 'benchmark_status': 'error',
+                'cache_mode': cache_mode,
+                'live_input_tokens': None,
+                'live_cached_tokens': None,
+                'live_cost_savings': None,
             })
     summary = _summarize_cases([c for c in cases if not c.get('error')])
     error_count = sum(1 for c in cases if c.get('error'))
@@ -944,8 +1089,29 @@ def run_benchmark(
     report = {
         'schema_version': 1,
         'benchmark_kind': 'premode_benchmark',
+        'compile_only': True,
+        'live_codex_run': False,
         'benchmark_status': benchmark_status,
         'repo_root': str(repo_root),
+        'lane_metadata': _lane_metadata(repo_root, prompt_cases=prompt_cases, prompt_source=prompt_source),
+        'public_private_comparison_valid': False,
+        'comparison_invalid_reason': 'public_unavailable',
+        'cache_mode': cache_mode,
+        'shared_cache_measured': cache_mode == 'shared_cache',
+        'live_input_tokens': None,
+        'live_cached_tokens': None,
+        'live_cost_savings': None,
+        'metric_semantics': {
+            'packet_total_tokens': 'estimated tokens in the actual model-facing packet',
+            'selected_context_tokens': 'estimated tokens in selected context before packet framing where available',
+            'eligible_repo_surface_tokens': 'estimated readable/tokenizable repo surface denominator',
+            'full_repo_reduction_percent': 'compile-time reduction versus eligible readable repo surface',
+            'estimated_savings_vs_eligible_repo_percent': 'deprecated_compatibility_alias_for_full_repo_reduction_percent',
+            'derived_cache_adjusted_input': 'benchmark-derived cache-shape estimate only; not live provider usage',
+            'live_input_tokens': 'not_measured_in_compile_only_benchmark',
+            'live_cached_tokens': 'not_measured_in_compile_only_benchmark',
+            'live_cost_savings': 'not_measured_in_compile_only_benchmark',
+        },
         'prompt_source': prompt_source,
         'profile': profile,
         'use_repo_map': bool(use_repo_map),
