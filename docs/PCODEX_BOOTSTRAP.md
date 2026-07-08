@@ -125,6 +125,8 @@ If the plugin alias is unavailable, pCodex falls back to the explicit equivalent
 
 `pcodex run --dry-run` does not execute Codex. It reports the current mode, whether a transform would be applied, the tuning profile when tuned mode is active, the planned Pre-mode command when applicable, planned Codex invocation, pCodex child environment keys, packet path when a packet is produced, and redacted prompt previews.
 
+Large-repo safety is automatic and metadata-only. For media-asset lookup prompts, pCodex uses a path/stat fast path that reports `context_selection_mode=asset_media_fast_path`, selected paths, candidate counts, and `content_reads=0`; it does not read image, blend, archive, or other media contents into the packet. For broad repository prompts that exceed the local selection budget, compile reports `compile_degraded=true` and `compile_degraded_reason=large_repo_budget_exceeded` in JSON while sending only the canonical user task as the model-facing packet. Normal code-edit tasks keep the default `literal_symbol` packet path.
+
 `pcodex run --dry-run` also reports configured and effective mode. `pcodex run` can invoke Codex locally. In effective `off` mode it sends the raw prompt. In effective `on` mode it compiles through generalized `literal_symbol`. In effective `tuned` mode it compiles with `--tuning`. Strict `tuned` mode validates the tuning profile before any Codex launch.
 
 Do not use `pcodex run` for private live tasks unless that execution is explicitly approved for the current task.

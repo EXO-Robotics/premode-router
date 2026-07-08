@@ -10,7 +10,7 @@ from .paths import normalize_for_manifest, safe_repo_path
 from .profiles import ResourceCaps
 
 BINARY_EXTENSIONS = {
-    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".gz", ".xz", ".7z",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".blend", ".pdf", ".zip", ".gz", ".xz", ".7z",
     ".mp3", ".mp4", ".m4a", ".mov", ".wav", ".aiff", ".dmg", ".xcarchive", ".p12",
     ".mobileprovision", ".sqlite", ".db", ".otf", ".ttf", ".woff", ".woff2",
 }
