@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from importlib import metadata
 import inspect
 import json
 import os
@@ -55,6 +56,7 @@ LOCAL_STATE_CLEANUP_TARGETS = [
     ".premode/lcc.lock.json",
     ".premode/out/cache_manifest.json",
     ".premode/out/",
+    ".premode/tuning/",
     ".premode/inventory/files.json",
     ".premode/inventory/",
     ".premode/topology/repo_topology.json",
@@ -413,11 +415,28 @@ def cleanup_local_state_plan(repo_root: Path | str) -> dict[str, Any]:
     }
 
 
-def cleanup_local_state(repo_root: Path | str, *, dry_run: bool = True) -> dict[str, Any]:
+def cleanup_local_state(repo_root: Path | str, *, dry_run: bool | None = None, yes: bool = False) -> dict[str, Any]:
+    if dry_run is None and not yes:
+        raise ValueError("pcodex cleanup --local-state requires --dry-run or --yes")
+    if dry_run is True and yes:
+        raise ValueError("pcodex cleanup --local-state requires exactly one of --dry-run or --yes")
+    effective_dry_run = bool(dry_run) if dry_run is not None else False
     root = _repo_root(Path(repo_root))
     plan = cleanup_local_state_plan(root)
-    if dry_run:
-        return plan
+    planned_paths = [str(item["path"]) for item in plan["actions"] if item["action"] == "remove"]
+    if effective_dry_run:
+        return {
+            **plan,
+            "status": "preview",
+            "repo_root": str(root),
+            "local_state_only": True,
+            "applied": False,
+            "planned_paths": planned_paths,
+            "deleted_paths": [],
+            "preserved": ["source files", ".gitignore", ".premodeignore", "repo .pcodex config", "global Codex config", "package source"],
+            "codex_launch": "not_executed",
+            "global_codex_config_mutation": False,
+        }
     removed: list[str] = []
     for action in plan["actions"]:
         if action["action"] != "remove":
@@ -434,6 +453,15 @@ def cleanup_local_state(repo_root: Path | str, *, dry_run: bool = True) -> dict[
         "dry_run": False,
         "writes_or_deletes": bool(removed),
         "removed": removed,
+        "status": "deleted",
+        "repo_root": str(root),
+        "local_state_only": True,
+        "applied": bool(yes or dry_run is False),
+        "planned_paths": planned_paths,
+        "deleted_paths": removed,
+        "preserved": ["source files", ".gitignore", ".premodeignore", "repo .pcodex config", "global Codex config", "package source"],
+        "codex_launch": "not_executed",
+        "global_codex_config_mutation": False,
     }
 
 
@@ -580,6 +608,10 @@ def paste_safe_receipt(
         "schema_version": "pcodex.advisory_receipt.v1",
         "command": command,
         "advisory": advisory,
+        "advisory_detail": advisory,
+        "writes_performed": False,
+        "codex_launch": "not_executed",
+        "global_codex_config_mutation": False,
         "lcc_version": payload.get("lcc_version") or __version__,
         "install": {
             "status": install.get("status"),
@@ -1516,6 +1548,142 @@ def status(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
     return payload
 
 
+def _git_commit(repo_root: Path) -> str | None:
+    if not (repo_root / ".git").exists():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    commit = completed.stdout.strip()
+    if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", commit):
+        return commit
+    return None
+
+
+def _git_dirty(repo_root: Path) -> bool | None:
+    if not (repo_root / ".git").exists():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return bool(completed.stdout.strip())
+
+
+def _distribution_provenance() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "package": "premode-router",
+        "package_version": __version__,
+        "console_script": "premode.cli:pcodex_main",
+        "distribution_available": False,
+    }
+    try:
+        distribution = metadata.distribution("premode-router")
+    except metadata.PackageNotFoundError:
+        return payload
+    payload["distribution_available"] = True
+    payload["package_version"] = distribution.version
+    direct_url = distribution.read_text("direct_url.json")
+    if direct_url:
+        try:
+            direct_url_payload = json.loads(direct_url)
+        except json.JSONDecodeError:
+            payload["direct_url_available"] = False
+        else:
+            payload["direct_url_available"] = True
+            payload["editable"] = bool((direct_url_payload.get("dir_info") or {}).get("editable", False))
+    else:
+        payload["direct_url_available"] = False
+    return payload
+
+
+def install_provenance(repo_root: Path) -> dict[str, Any]:
+    provenance = _distribution_provenance()
+    source_commit = _git_commit(repo_root)
+    if source_commit:
+        provenance["source_commit"] = source_commit
+    source_dirty = _git_dirty(repo_root)
+    if source_dirty is not None:
+        provenance["source_dirty"] = source_dirty
+    provenance["install_provenance_available"] = bool(
+        provenance.get("distribution_available") or provenance.get("source_commit")
+    )
+    return provenance
+
+
+def first_run(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]:
+    cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    mode_state = resolve_effective_mode(repo_root, validate_tuned=False)
+    provenance = install_provenance(repo_root)
+    return {
+        "schema_version": "pcodex.first_run.v1",
+        "status": "ok",
+        "repo_root": str(repo_root),
+        "public_mode": "source-visible private beta",
+        "plugin_alias": PCODEX_PLUGIN_ALIAS,
+        "plugin_alias_available": plugin_alias_available(),
+        "configured_mode": mode_state.get("configured_mode") or mode_state.get("mode") or "on",
+        "effective_mode": mode_state.get("effective_mode") or mode_state.get("mode") or "on",
+        "state_status": mode_state.get("state_status"),
+        "advisory": advisory,
+        "writes_performed": False,
+        "codex_launch": "not_executed",
+        "global_codex_config_mutation": False,
+        "install_provenance_available": bool(provenance.get("install_provenance_available")),
+        "install_provenance": provenance,
+        "next_action": "pcodex setup --skip-tune --no-mcp --json",
+        "cleanup_commands": [
+            "pcodex cleanup --local-state --dry-run",
+            "pcodex cleanup --local-state --yes",
+        ],
+    }
+
+
+def format_first_run(payload: dict[str, Any]) -> str:
+    lines = [
+        "pCodex first-run check complete.",
+        f"Mode: {payload.get('effective_mode')}",
+        f"State: {payload.get('state_status')}",
+        f"Plugin alias: {payload.get('plugin_alias')}",
+        f"Advisory: {str(payload.get('advisory')).lower()}",
+        f"Writes performed: {str(payload.get('writes_performed')).lower()}",
+        f"Codex launch: {payload.get('codex_launch')}",
+        f"Next action: {payload.get('next_action')}",
+        "Cleanup preview: pcodex cleanup --local-state --dry-run",
+    ]
+    return "\n".join(lines)
+
+
+def format_cleanup(payload: dict[str, Any]) -> str:
+    paths = payload.get("deleted_paths") if payload.get("applied") else payload.get("planned_paths")
+    path_lines = [f"  {path}" for path in paths] if paths else ["  none"]
+    return "\n".join(
+        [
+            f"pCodex cleanup {'applied' if payload.get('applied') else 'preview'}:",
+            *path_lines,
+            f"Codex launch: {payload.get('codex_launch')}",
+        ]
+    )
+
+
 def _format_mcp_status(mcp_result: dict[str, Any]) -> str:
     status_value = str(mcp_result.get("status") or "unknown")
     scope = str(mcp_result.get("config_scope") or "none")
@@ -1710,7 +1878,9 @@ def format_status(payload: dict[str, Any]) -> str:
 
 
 def format_advisory_receipt(payload: dict[str, Any], *, title: str = "pCodex advisory receipt") -> str:
-    advisory = payload.get("advisory") if isinstance(payload.get("advisory"), dict) else {}
+    advisory = payload.get("advisory_detail") if isinstance(payload.get("advisory_detail"), dict) else {}
+    if not advisory:
+        advisory = payload.get("advisory") if isinstance(payload.get("advisory"), dict) else {}
     state = payload.get("state") if isinstance(payload.get("state"), dict) else {}
     inventory = state.get("inventory") if isinstance(state.get("inventory"), dict) else {}
     topology = state.get("topology") if isinstance(state.get("topology"), dict) else {}
@@ -2335,7 +2505,10 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
+    except SystemExit as exc:
+        return int(exc.code or 0)
     cwd = Path.cwd()
     repo_arg = getattr(args, "repo", None) or getattr(args, "repo_root", None)
     repo_root = _repo_root(Path(repo_arg).resolve() if repo_arg else cwd)
@@ -2347,30 +2520,43 @@ def main(argv: list[str] | None = None) -> int:
             print(format_doctor(payload))
         return 0
     if args.command == "first-run":
-        payload = first_run_receipt(repo_root, advisory=args.advisory)
+        payload = first_run_receipt(repo_root, advisory=True) if args.advisory else first_run(repo_root, advisory=False)
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
-            print(format_first_run_receipt(payload))
+            print(format_first_run_receipt(payload) if args.advisory else format_first_run(payload))
         return 0
     if args.command == "cleanup":
         if not args.local_state:
-            print(json.dumps({"status": "error", "error": "--local-state is required", "scope": "none"}, indent=2, sort_keys=True), file=sys.stderr)
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": "pcodex cleanup requires --local-state",
+                        "codex_launch": "not_executed",
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
             return 2
-        payload = cleanup_local_state(repo_root, dry_run=not args.yes)
+        try:
+            payload = cleanup_local_state(
+                repo_root,
+                dry_run=True if args.dry_run else (False if args.yes else None),
+                yes=bool(args.yes),
+            )
+        except ValueError as exc:
+            print(
+                json.dumps({"status": "error", "error": str(exc), "codex_launch": "not_executed"}, indent=2, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 2
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
-            planned = [item for item in payload.get("actions", []) if isinstance(item, dict) and item.get("action") == "remove"]
-            print("pCodex cleanup local state")
-            print(f"Mode: {'dry-run' if payload.get('dry_run') else 'apply'}")
-            print(f"Scope: {payload.get('scope')}")
-            for item in planned:
-                print(f"  remove {item.get('path')}")
-            if payload.get("dry_run"):
-                print("No files were removed.")
-            else:
-                print(f"Removed: {len(payload.get('removed') or [])}")
+            print(format_cleanup(payload))
         return 0
     if args.command == "install":
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))

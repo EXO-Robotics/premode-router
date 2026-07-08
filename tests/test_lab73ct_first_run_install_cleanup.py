@@ -109,13 +109,13 @@ def test_first_run_cli_json_and_human_output(tmp_path: Path, monkeypatch: Any, c
 
     assert cli.pcodex_main(["first-run", "--repo-root", str(repo), "--json"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == "pcodex.first_run_receipt.v1"
-    assert payload["cleanup"]["dry_run_command"] == "pcodex cleanup --local-state --dry-run"
+    assert payload["schema_version"] == "pcodex.first_run.v1"
+    assert "pcodex cleanup --local-state --dry-run" in payload["cleanup_commands"]
 
     assert cli.pcodex_main(["first-run", "--repo-root", str(repo)]) == 0
     human = capsys.readouterr().out
-    assert "pCodex first-run receipt" in human
-    assert "Receipt is content-free" in human
+    assert "pCodex first-run check complete." in human
+    assert "Codex launch: not_executed" in human
 
 
 def test_source_install_manifest_schema_records_provenance(tmp_path: Path) -> None:

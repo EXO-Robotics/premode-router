@@ -615,34 +615,6 @@ if __name__ == "__main__":
 
 def pcodex_main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    bootstrap_commands = {
-        "install",
-        "doctor",
-        "first-run",
-        "status",
-        "setup",
-        "cleanup",
-        "on",
-        "off",
-        "tuned",
-        "tune",
-        "mcp-server",
-        "integrate",
-        "plugin",
-        "ui",
-        "compile",
-        "run",
-    }
-    if argv and argv[0] in bootstrap_commands:
-        from .pcodex_bootstrap import main as pcodex_bootstrap_main
+    from .pcodex_bootstrap import main as pcodex_bootstrap_main
 
-        return pcodex_bootstrap_main(argv)
-    if argv and argv[0] in {"-h", "--help"}:
-        from .pcodex_bootstrap import main as pcodex_bootstrap_main
-
-        return pcodex_bootstrap_main(argv)
-    if "--dry-run" not in argv and "--execute" not in argv:
-        argv.append("--execute")
-    if "--output-last-message" not in argv and "--no-save" not in argv:
-        argv.extend(["--output-last-message", ".premode/out/final.md"])
-    return main(["codex", *argv])
+    return pcodex_bootstrap_main(argv)

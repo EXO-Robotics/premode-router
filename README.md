@@ -51,6 +51,9 @@ Current pCodex command surface:
 pcodex install
 pcodex doctor
 pcodex doctor --json
+pcodex first-run
+pcodex first-run --json
+pcodex first-run --advisory --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
@@ -80,6 +83,8 @@ pcodex ui
 pcodex ui --json
 pcodex compile "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
+pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
 pcodex mcp-server
 ```
 
@@ -101,6 +106,8 @@ The explicit effective states are `OFF_RAW`, `ON_GENERALIZED`, `ON_TUNED_VERIFIE
 
 `pcodex status --advisory`, `pcodex doctor --advisory`, and `pcodex first-run --advisory` are read-only/no-write support surfaces. They may inspect existing state and report missing/stale state, but they do not create `.premode/`, refresh caches, write lockfiles, write telemetry/audit/metrics, write temp packets, register MCP, alter Codex config, repair state, or launch Codex. The JSON receipts include `writes_performed=false`, `would_write`, and `would_refresh` fields and are designed to be paste-safe.
 
+`pcodex first-run --json` reports install provenance, mode, plugin alias, next action, and cleanup commands without launching Codex or mutating global Codex config. `pcodex first-run --advisory --json` performs no writes.
+
 `pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
 
 Local control-plane files include `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, and `.premode/out/cache_manifest.json`. These are generated/runtime files and must not store prompt text, source snippets, secrets, or file contents. They use hashes, mode names, timestamps, counters, and status reasons only.
@@ -110,6 +117,8 @@ Local control-plane files include `.premode/pcodex_state.json`, `.premode/lcc.lo
 The repo-local Codex UX surface lives in `.agents/skills`, `.agents/plugins/marketplace.json`, and top-level `plugins/`. The pCodex plugin scaffold is local-only under `plugins/pcodex`; it is the intended discovery surface for a local Codex plugin marketplace and does not imply public marketplace publication or production approval.
 
 Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/resolve-pcodex.sh`, checking `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`. If none exists, the skill reports paste-safe setup guidance instead of a raw command-not-found error.
+
+`pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
 
 Terminal `pcodex` commands remain the guaranteed control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
 
@@ -147,16 +156,16 @@ From a source checkout, install pCodex into an isolated local environment from t
 cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
-~/.pcodex-alpha/bin/pcodex doctor
+~/.pcodex-alpha/bin/pcodex first-run --json
 ~/.pcodex-alpha/bin/pcodex setup --skip-tune --no-mcp
-~/.pcodex-alpha/bin/pcodex on
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex first-run
 ~/.pcodex-alpha/bin/pcodex first-run --json
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+~/.pcodex-alpha/bin/pcodex cleanup --local-state --dry-run
 ```
 
-The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It writes `~/.pcodex-alpha/install_manifest.json`, prunes generated/runtime state from the build source, does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It verifies the installed `pcodex` help, first-run, cleanup, and unknown-command fail-closed surface. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
 Current install means the source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
 
@@ -199,16 +208,18 @@ Daily-use starter flow:
 
 ```bash
 pcodex status
+pcodex first-run --json
 pcodex setup --skip-tune --no-mcp
 pcodex status --json
 pcodex status --advisory --json
 pcodex first-run --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+pcodex cleanup --local-state --dry-run
 pcodex run "Edit only a disposable test file. Do not modify any other files."
 git diff --name-only
 ```
 
-Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
+Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, use explicit `pcodex run` for any Codex execution, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
 
 For pasteable onboarding, use the bounded prompts in [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md) or [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md). These prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface; OpenCode commands are OpenCode-specific.
 
@@ -228,7 +239,7 @@ No-install module smoke:
 PYTHONPATH=src python -m premode.cli detect --json
 ```
 
-The console scripts like `premode` and `pcodex` require editable install.
+No-install module smoke works with `PYTHONPATH=src`; console scripts like `premode` and `pcodex` require an editable or source install.
 
 Smoke commands:
 
@@ -237,12 +248,14 @@ Smoke commands:
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
+.venv/bin/pcodex first-run --json
 .venv/bin/pcodex setup --no-mcp
 .venv/bin/pcodex status
 .venv/bin/pcodex status --json
 .venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
 .venv/bin/pcodex run --dry-run "Inspect hello.txt"
+.venv/bin/pcodex cleanup --local-state --dry-run
 .venv/bin/pcodex mcp-server --help
 ```
 
@@ -295,7 +308,7 @@ premode review-patch --since-compile
 premode benchmark --profile lite
 ```
 
-Estimated savings compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
+Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
 
 Use `premode review-patch` for local patch-boundary review. It is a human review aid, not automatic merge approval.
 

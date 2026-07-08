@@ -50,6 +50,8 @@ pcodex ui --json
 pcodex compile "Fix the failing test"
 pcodex run "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
+pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
 pcodex mcp-server
 ```
 
@@ -74,6 +76,18 @@ If mode state is missing, pCodex reports the safe default `on`. Invalid state fa
 `pcodex first-run` prints a content-free first-run receipt. The JSON form reports install provenance when an install manifest exists, public mode, plugin alias, inventory/topology/cache/lock summaries, one next action, and cleanup commands. It does not include raw prompts, source bodies, snippets, secrets, packet text, inventory path lists, topology path lists, or environment values.
 
 Use `--advisory` with `status`, `doctor`, or `first-run` for read-only/no-write support receipts. Advisory commands report missing or stale state without refreshing it, include `writes_performed=false`, and do not create `.premode/`, lockfiles, cache manifests, inventory, topology, telemetry, audit, metrics, temp packets, MCP registration, Codex config/home, install state, or runtime outputs. Advisory mode does not launch Codex.
+
+## First Run
+
+`pcodex first-run --json` reports the installed command surface, install provenance when available, mode state, plugin alias, one next action, and cleanup commands. It does not launch Codex and does not mutate global Codex config.
+
+Use advisory mode when checking a new machine or repo without writes:
+
+```bash
+pcodex first-run --advisory --json
+```
+
+Advisory first-run performs no writes.
 
 ## Setup
 
@@ -170,6 +184,24 @@ Large-repo safety is automatic and metadata-only. For media-asset lookup prompts
 
 Do not use `pcodex run` for private live tasks unless that execution is explicitly approved for the current task.
 
+Unknown `pcodex` subcommands fail closed. Prompt shorthand is not the supported command surface; use explicit `pcodex run` for any Codex execution.
+
+## Cleanup
+
+Preview bounded repo-local generated-state cleanup:
+
+```bash
+pcodex cleanup --local-state --dry-run
+```
+
+Apply the same bounded cleanup:
+
+```bash
+pcodex cleanup --local-state --yes
+```
+
+Cleanup is limited to documented generated pCodex/Pre-mode state under `.premode/`, such as mode state, tuning artifacts, packet output, audit output, metrics, and isolated MCP smoke state. It preserves source files, `.gitignore`, `.premodeignore`, repo `.pcodex` config, package source, and global Codex config. Cleanup fails closed unless exactly one of `--dry-run` or `--yes` is provided.
+
 ## Environment Propagation
 
 pCodex propagates wrapper state through:
@@ -185,7 +217,7 @@ The algorithm value is `literal_symbol`.
 
 ## MCP Server
 
-`pcodex mcp-server` starts the dependency-free stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
+`pcodex mcp-server` starts the stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
 
 The transform respects off/on/tuned state. `off` returns the raw prompt. `on` appends the generalized compact packet. `tuned` appends a tuned compact packet when the profile validates; tuned failure returns the raw prompt plus out-of-band error metadata.
 

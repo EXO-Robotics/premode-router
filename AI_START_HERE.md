@@ -18,7 +18,7 @@ This repository is proprietary and all rights reserved. Source visibility does n
 
 ## 4. Supported runtime
 
-The supported runtime is Codex CLI through explicit terminal commands. Terminal `pcodex` commands are the guaranteed control plane.
+The supported runtime is Codex CLI through explicit terminal commands. Terminal `pcodex` commands are the current control plane.
 
 Do not assume `/pcodex` slash commands, native hosted Codex UI integration, automatic MCP invocation, native installed-Codex schema discovery, or real internal Codex subagent interception.
 
@@ -40,9 +40,9 @@ Use `docs/FIRST_RUN.md` as the canonical private-beta first-run path. From a sou
 cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
-pcodex doctor
+pcodex doctor || true
+pcodex first-run --json
 pcodex setup --skip-tune --no-mcp
-pcodex on
 pcodex status
 pcodex first-run
 pcodex first-run --json
@@ -50,6 +50,7 @@ pcodex status --advisory --json
 pcodex integrate codex --dry-run
 pcodex ui --json
 pcodex run --dry-run "Hypothetical setup verification task. Do not modify files."
+pcodex cleanup --local-state --dry-run
 ```
 
 The source installer builds from the checked-out repo, prunes generated/runtime state from the temporary build copy, and writes `install_manifest.json` under the install root. It does not publish packages, does not install the pCodex packages from PyPI, does not run live Codex tasks, and does not mutate real Codex config unless explicitly asked through the installer option that does so.
@@ -90,8 +91,8 @@ Start with dry-run before real execution:
 pcodex doctor || true
 pcodex doctor --json
 pcodex status
-pcodex setup --skip-tune --no-mcp
 pcodex first-run --json
+pcodex setup --skip-tune --no-mcp
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
 premode review-patch --since-compile
@@ -274,6 +275,7 @@ pcodex setup --skip-tune --no-mcp
 pcodex first-run --json
 pcodex first-run --advisory --json
 pcodex run --dry-run "Hypothetical troubleshooting task. Do not modify files."
+pcodex cleanup --local-state --dry-run
 premode detect --json
 premode benchmark --profile lite --json
 git status --short

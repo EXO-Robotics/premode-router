@@ -1,6 +1,6 @@
 # pCodex Daily Use
 
-This is the current private-alpha terminal flow for a public source clone. It uses explicit `pcodex` commands and keeps real Codex config mutation opt-in.
+This is the current private-alpha terminal flow for a source checkout. It uses explicit `pcodex` commands and keeps real Codex config mutation opt-in.
 
 ## Install From Public Source Clone
 
