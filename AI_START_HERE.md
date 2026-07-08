@@ -22,6 +22,12 @@ The supported runtime is Codex CLI through explicit terminal commands. Terminal 
 
 Do not assume `/pcodex` slash commands, native hosted Codex UI integration, automatic MCP invocation, native installed-Codex schema discovery, or real internal Codex subagent interception.
 
+Repo-local Codex UX assets live under `.agents/skills`, `.agents/plugins/marketplace.json`, and top-level `plugins/`. The local pCodex plugin scaffold is discoverable from `plugins/pcodex` and is not a public marketplace publication or production approval.
+
+Use `pcodex integrate codex --dry-run` before writing these UX assets. `pcodex integrate codex --write` writes only repo-local skill/plugin/marketplace files. `pcodex integrate codex --write --with-mcp` adds only optional repo-local MCP scaffold/config messaging; MCP activation remains separate and user-approved, and global Codex config is not mutated by default.
+
+Repo-local pCodex skills use `.agents/skills/pcodex/bin/resolve-pcodex.sh` before running terminal commands. The resolver checks `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`, and otherwise prints paste-safe install guidance without writing files or launching Codex.
+
 ## 5. Python requirement
 
 Python `>=3.11` is required.
@@ -41,6 +47,8 @@ pcodex status
 pcodex first-run
 pcodex first-run --json
 pcodex status --advisory --json
+pcodex integrate codex --dry-run
+pcodex ui --json
 pcodex run --dry-run "Hypothetical setup verification task. Do not modify files."
 ```
 

@@ -1,0 +1,25 @@
+{
+  "capabilities": [
+    "skills",
+    "optional_mcp"
+  ],
+  "description": "Repo-local pCodex skills and optional MCP scaffold for terminal-first Codex workflows.",
+  "display_name": "pCodex",
+  "entrypoints": {
+    "skills": "skills"
+  },
+  "name": "pcodex",
+  "policy": {
+    "global_config_mutation": false,
+    "live_codex_launch": false,
+    "production_approval": false,
+    "publication": "repo_local_only"
+  },
+  "schema_version": "codex.plugin.v1",
+  "skills": "./skills/",
+  "source": {
+    "path": "plugins/pcodex",
+    "type": "local"
+  },
+  "version": "0.1.0-local"
+}

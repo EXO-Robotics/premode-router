@@ -71,6 +71,13 @@ pcodex tune
 pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
+pcodex integrate codex --dry-run
+pcodex integrate codex --write
+pcodex integrate codex --write --with-mcp
+pcodex plugin init --local-marketplace --dry-run
+pcodex plugin init --local-marketplace
+pcodex ui
+pcodex ui --json
 pcodex compile "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
 pcodex mcp-server
@@ -98,13 +105,21 @@ The explicit effective states are `OFF_RAW`, `ON_GENERALIZED`, `ON_TUNED_VERIFIE
 
 Local control-plane files include `.premode/pcodex_state.json`, `.premode/lcc.lock.json`, and `.premode/out/cache_manifest.json`. These are generated/runtime files and must not store prompt text, source snippets, secrets, or file contents. They use hashes, mode names, timestamps, counters, and status reasons only.
 
+## Codex-Native UX Surface
+
+The repo-local Codex UX surface lives in `.agents/skills`, `.agents/plugins/marketplace.json`, and top-level `plugins/`. The pCodex plugin scaffold is local-only under `plugins/pcodex`; it is the intended discovery surface for a local Codex plugin marketplace and does not imply public marketplace publication or production approval.
+
+Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/resolve-pcodex.sh`, checking `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`. If none exists, the skill reports paste-safe setup guidance instead of a raw command-not-found error.
+
+Terminal `pcodex` commands remain the guaranteed control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
+
 `pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
 ## Supported Claims
 
-On the measured public same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
+On the measured local same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
 
-This is a measured public same-run matrix result. It is not a universal token-savings guarantee.
+This is a measured local same-run matrix result. It is not a universal token-savings guarantee.
 
 ## Unsupported Claims
 
