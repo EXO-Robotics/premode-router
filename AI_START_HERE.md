@@ -36,9 +36,11 @@ cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 pcodex doctor || true
+pcodex first-run --json
 pcodex setup --no-mcp
 pcodex status
 pcodex run --dry-run "Hypothetical setup verification task. Do not modify files."
+pcodex cleanup --local-state --dry-run
 ```
 
 The source installer builds from the checked-out repo. It does not publish packages, does not install the pCodex packages from PyPI, does not run live Codex tasks, and does not mutate real Codex config unless explicitly asked through the installer option that does so.
@@ -78,6 +80,7 @@ Start with dry-run before real execution:
 ```bash
 pcodex doctor || true
 pcodex status
+pcodex first-run --json
 pcodex setup --no-mcp
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
@@ -216,8 +219,10 @@ These surfaces are experimental, deferred, or not guaranteed:
 pcodex doctor || true
 pcodex status
 pcodex status --json
+pcodex first-run --advisory --json
 pcodex setup --no-mcp
 pcodex run --dry-run "Hypothetical troubleshooting task. Do not modify files."
+pcodex cleanup --local-state --dry-run
 premode detect --json
 premode benchmark --profile lite --json
 git status --short

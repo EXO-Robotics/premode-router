@@ -98,9 +98,19 @@ run_cmd() {
 }
 
 run_smoke() {
+  local help_output
   run_cmd "$INSTALL_ROOT/bin/premode" --help
-  run_cmd "$INSTALL_ROOT/bin/pcodex" --help
+  help_output="$("$INSTALL_ROOT/bin/pcodex" --help)"
+  printf '%s\n' "$help_output"
+  [[ "$help_output" == *"first-run"* ]] || fail "installed pcodex --help is missing first-run"
+  [[ "$help_output" == *"cleanup"* ]] || fail "installed pcodex --help is missing cleanup"
   run_cmd "$INSTALL_ROOT/bin/pcodex" status
+  run_cmd "$INSTALL_ROOT/bin/pcodex" first-run --json
+  run_cmd "$INSTALL_ROOT/bin/pcodex" cleanup --local-state --dry-run
+  if "$INSTALL_ROOT/bin/pcodex" __definitely_unknown_command__ >/dev/null 2>&1; then
+    fail "installed pcodex accepted an unknown command"
+  fi
+  log "unknown-command fail-closed smoke passed"
 }
 
 run_isolated_mcp_smoke() {

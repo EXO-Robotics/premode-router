@@ -89,17 +89,10 @@ def test_compile_and_run_bootstrap_behavior_remains_unchanged(argv: list[str], m
     assert calls == [argv]
 
 
-def test_non_bootstrap_pcodex_command_still_uses_codex_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
-    wrapper_calls: list[list[str]] = []
+def test_non_command_pcodex_input_fails_closed_instead_of_using_codex_wrapper(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(cli, "main", lambda argv=None: pytest.fail("pcodex shorthand must not route to Codex wrapper"))
 
-    def fake_wrapper(argv: list[str] | None = None) -> int:
-        wrapper_calls.append(list(argv or []))
-        return 0
-
-    monkeypatch.setattr(cli, "main", fake_wrapper)
-
-    assert cli.pcodex_main(["Inspect hello.txt", "--dry-run", "--no-save"]) == 0
-    assert wrapper_calls == [["codex", "Inspect hello.txt", "--dry-run", "--no-save"]]
+    assert cli.pcodex_main(["Inspect hello.txt", "--dry-run", "--no-save"]) != 0
 
 
 def test_pcodex_mcp_server_registered_command_string_is_stable() -> None:

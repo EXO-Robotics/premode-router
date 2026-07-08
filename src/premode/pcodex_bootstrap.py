@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from importlib import metadata
 import inspect
 import json
 import os
@@ -14,6 +15,7 @@ import tempfile
 import tomllib
 from typing import Any
 
+from . import __version__
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
 from .pcodex_state import (
@@ -40,6 +42,14 @@ PROJECT_ROOT_ENV = "PCODEX_PROJECT_ROOT"
 PACKET_STRATEGY_ENV = "PCODEX_PACKET_STRATEGY"
 MIN_CODEX_CLI_VERSION = (0, 142, 5)
 MIN_CODEX_CLI_VERSION_TEXT = ".".join(str(part) for part in MIN_CODEX_CLI_VERSION)
+LOCAL_STATE_CLEANUP_TARGETS = (
+    ".premode/pcodex_state.json",
+    ".premode/pcodex_codex_home",
+    ".premode/tuning",
+    ".premode/out",
+    ".premode/audit",
+    ".premode/metrics",
+)
 
 
 @dataclass(frozen=True)
@@ -736,6 +746,192 @@ def status(cwd: Path | None = None) -> dict[str, Any]:
     }
 
 
+def _git_commit(repo_root: Path) -> str | None:
+    if not (repo_root / ".git").exists():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    commit = completed.stdout.strip()
+    if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", commit):
+        return commit
+    return None
+
+
+def _git_dirty(repo_root: Path) -> bool | None:
+    if not (repo_root / ".git").exists():
+        return None
+    try:
+        completed = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=repo_root,
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return bool(completed.stdout.strip())
+
+
+def _distribution_provenance() -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "package": "premode-router",
+        "package_version": __version__,
+        "console_script": "premode.cli:pcodex_main",
+        "distribution_available": False,
+    }
+    try:
+        distribution = metadata.distribution("premode-router")
+    except metadata.PackageNotFoundError:
+        return payload
+    payload["distribution_available"] = True
+    payload["package_version"] = distribution.version
+    direct_url = distribution.read_text("direct_url.json")
+    if direct_url:
+        try:
+            direct_url_payload = json.loads(direct_url)
+        except json.JSONDecodeError:
+            payload["direct_url_available"] = False
+        else:
+            payload["direct_url_available"] = True
+            payload["editable"] = bool((direct_url_payload.get("dir_info") or {}).get("editable", False))
+    else:
+        payload["direct_url_available"] = False
+    return payload
+
+
+def install_provenance(repo_root: Path) -> dict[str, Any]:
+    provenance = _distribution_provenance()
+    source_commit = _git_commit(repo_root)
+    if source_commit:
+        provenance["source_commit"] = source_commit
+    source_dirty = _git_dirty(repo_root)
+    if source_dirty is not None:
+        provenance["source_dirty"] = source_dirty
+    provenance["install_provenance_available"] = bool(
+        provenance.get("distribution_available") or provenance.get("source_commit")
+    )
+    return provenance
+
+
+def first_run(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]:
+    cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    mode_state = resolve_effective_mode(repo_root, validate_tuned=False)
+    provenance = install_provenance(repo_root)
+    return {
+        "schema_version": "pcodex.first_run.v1",
+        "status": "ok",
+        "repo_root": str(repo_root),
+        "public_mode": "source-visible private beta",
+        "plugin_alias": PCODEX_PLUGIN_ALIAS,
+        "plugin_alias_available": plugin_alias_available(),
+        "configured_mode": mode_state.get("configured_mode") or mode_state.get("mode") or "on",
+        "effective_mode": mode_state.get("effective_mode") or mode_state.get("mode") or "on",
+        "state_status": mode_state.get("state_status"),
+        "advisory": advisory,
+        "writes_performed": False,
+        "codex_launch": "not_executed",
+        "global_codex_config_mutation": False,
+        "install_provenance_available": bool(provenance.get("install_provenance_available")),
+        "install_provenance": provenance,
+        "next_action": "pcodex setup --skip-tune --no-mcp --json",
+        "cleanup_commands": [
+            "pcodex cleanup --local-state --dry-run",
+            "pcodex cleanup --local-state --yes",
+        ],
+    }
+
+
+def format_first_run(payload: dict[str, Any]) -> str:
+    lines = [
+        "pCodex first-run check complete.",
+        f"Mode: {payload.get('effective_mode')}",
+        f"State: {payload.get('state_status')}",
+        f"Plugin alias: {payload.get('plugin_alias')}",
+        f"Advisory: {str(payload.get('advisory')).lower()}",
+        f"Writes performed: {str(payload.get('writes_performed')).lower()}",
+        f"Codex launch: {payload.get('codex_launch')}",
+        f"Next action: {payload.get('next_action')}",
+        "Cleanup preview: pcodex cleanup --local-state --dry-run",
+    ]
+    return "\n".join(lines)
+
+
+def _cleanup_candidate(repo_root: Path, relative_path: str) -> Path:
+    candidate = repo_root / relative_path
+    resolved_repo = repo_root.resolve()
+    resolved_candidate = candidate.resolve(strict=False)
+    if resolved_candidate != resolved_repo and resolved_repo not in resolved_candidate.parents:
+        raise ValueError(f"refusing cleanup path outside repo: {relative_path}")
+    return candidate
+
+
+def cleanup_local_state(cwd: Path | None = None, *, dry_run: bool = False, yes: bool = False) -> dict[str, Any]:
+    if dry_run == yes:
+        raise ValueError("pcodex cleanup --local-state requires exactly one of --dry-run or --yes")
+    cwd = Path.cwd() if cwd is None else cwd
+    repo_root = _repo_root(cwd)
+    planned: list[str] = []
+    deleted: list[str] = []
+    for relative_path in LOCAL_STATE_CLEANUP_TARGETS:
+        candidate = _cleanup_candidate(repo_root, relative_path)
+        if not os.path.lexists(candidate):
+            continue
+        planned.append(relative_path)
+        if dry_run:
+            continue
+        if candidate.is_symlink() or candidate.is_file():
+            candidate.unlink()
+        elif candidate.is_dir():
+            shutil.rmtree(candidate)
+        deleted.append(relative_path)
+    return {
+        "schema_version": "pcodex.cleanup.v1",
+        "status": "preview" if dry_run else "deleted",
+        "repo_root": str(repo_root),
+        "local_state_only": True,
+        "dry_run": dry_run,
+        "applied": yes,
+        "planned_paths": planned,
+        "deleted_paths": deleted,
+        "preserved": [
+            "source files",
+            ".gitignore",
+            ".premodeignore",
+            "repo .pcodex config",
+            "global Codex config",
+            "package source",
+        ],
+        "codex_launch": "not_executed",
+        "global_codex_config_mutation": False,
+    }
+
+
+def format_cleanup(payload: dict[str, Any]) -> str:
+    paths = payload.get("deleted_paths") if payload.get("applied") else payload.get("planned_paths")
+    path_lines = [f"  {path}" for path in paths] if paths else ["  none"]
+    return "\n".join(
+        [
+            f"pCodex cleanup {'applied' if payload.get('applied') else 'preview'}:",
+            *path_lines,
+            f"Codex launch: {payload.get('codex_launch')}",
+        ]
+    )
+
+
 def _format_mcp_status(mcp_result: dict[str, Any]) -> str:
     status_value = str(mcp_result.get("status") or "unknown")
     scope = str(mcp_result.get("config_scope") or "none")
@@ -1018,6 +1214,17 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="pcodex")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("doctor")
+    first_run_parser = sub.add_parser("first-run")
+    first_run_parser.add_argument("--json", action="store_true", help="Print machine-readable first-run status.")
+    first_run_parser.add_argument("--advisory", action="store_true", help="Perform advisory-only checks with no writes.")
+    first_run_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    cleanup_parser = sub.add_parser("cleanup")
+    cleanup_parser.add_argument("--local-state", action="store_true", help="Clean only documented repo-local generated pCodex state.")
+    cleanup_mode = cleanup_parser.add_mutually_exclusive_group()
+    cleanup_mode.add_argument("--dry-run", action="store_true", help="Preview local generated state cleanup.")
+    cleanup_mode.add_argument("--yes", action="store_true", help="Apply local generated state cleanup.")
+    cleanup_parser.add_argument("--json", action="store_true", help="Print machine-readable cleanup result.")
+    cleanup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
     status_parser = sub.add_parser("status")
@@ -1062,12 +1269,50 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
+    try:
+        args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
+    except SystemExit as exc:
+        return int(exc.code or 0)
     cwd = Path.cwd()
     repo_arg = getattr(args, "repo", None) or getattr(args, "repo_root", None)
     repo_root = _repo_root(Path(repo_arg).resolve() if repo_arg else cwd)
     if args.command == "doctor":
         print(json.dumps(doctor(repo_root), indent=2, sort_keys=True))
+        return 0
+    if args.command == "first-run":
+        payload = first_run(repo_root, advisory=args.advisory)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_first_run(payload))
+        return 0
+    if args.command == "cleanup":
+        if not args.local_state:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": "pcodex cleanup requires --local-state",
+                        "codex_launch": "not_executed",
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            payload = cleanup_local_state(repo_root, dry_run=args.dry_run, yes=args.yes)
+        except ValueError as exc:
+            print(
+                json.dumps({"status": "error", "error": str(exc), "codex_launch": "not_executed"}, indent=2, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 2
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_cleanup(payload))
         return 0
     if args.command == "install":
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))

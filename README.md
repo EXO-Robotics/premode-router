@@ -49,6 +49,9 @@ Current pCodex command surface:
 ```bash
 pcodex install
 pcodex doctor
+pcodex first-run
+pcodex first-run --json
+pcodex first-run --advisory --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
@@ -65,6 +68,8 @@ pcodex tune --validate
 pcodex tune --verify
 pcodex compile "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
+pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
 pcodex mcp-server
 ```
 
@@ -82,7 +87,11 @@ Mode meanings:
 
 `pcodex status` reports configured mode, effective mode, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
 
+`pcodex first-run --json` reports install provenance, mode, plugin alias, next action, and cleanup commands without launching Codex or mutating global Codex config. `pcodex first-run --advisory --json` performs no writes.
+
 `pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
+
+`pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
 
 `pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 demonstrates the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
@@ -117,12 +126,14 @@ git clone https://github.com/EXO-Robotics/premode-router.git
 cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
+~/.pcodex-alpha/bin/pcodex first-run --json
 ~/.pcodex-alpha/bin/pcodex setup --no-mcp
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+~/.pcodex-alpha/bin/pcodex cleanup --local-state --dry-run
 ```
 
-The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It verifies the installed `pcodex` help, first-run, cleanup, and unknown-command fail-closed surface. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
 Current install means the public source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
 
@@ -165,14 +176,16 @@ Daily-use starter flow:
 
 ```bash
 pcodex status
+pcodex first-run --json
 pcodex setup --no-mcp
 pcodex status --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+pcodex cleanup --local-state --dry-run
 pcodex run "Edit only a disposable test file. Do not modify any other files."
 git diff --name-only
 ```
 
-Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
+Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, use explicit `pcodex run` for any Codex execution, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
 
 For pasteable onboarding, use the bounded prompts in [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md) or [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md). These prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface; OpenCode commands are OpenCode-specific.
 
@@ -192,7 +205,7 @@ No-install module smoke:
 PYTHONPATH=src python -m premode.cli detect --json
 ```
 
-The console scripts like `premode` and `pcodex` require editable install.
+No-install module smoke works with `PYTHONPATH=src`; console scripts like `premode` and `pcodex` require an editable or source install.
 
 Smoke commands:
 
@@ -201,12 +214,14 @@ Smoke commands:
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
+.venv/bin/pcodex first-run --json
 .venv/bin/pcodex setup --no-mcp
 .venv/bin/pcodex status
 .venv/bin/pcodex status --json
 .venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
 .venv/bin/pcodex run --dry-run "Inspect hello.txt"
+.venv/bin/pcodex cleanup --local-state --dry-run
 .venv/bin/pcodex mcp-server --help
 ```
 

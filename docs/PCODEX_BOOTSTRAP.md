@@ -13,6 +13,9 @@ It keeps `literal_symbol` as the default algorithm and passes pCodex state to ch
 ```bash
 pcodex install
 pcodex doctor
+pcodex first-run
+pcodex first-run --json
+pcodex first-run --advisory --json
 pcodex setup
 pcodex setup --json
 pcodex setup --skip-tune
@@ -30,6 +33,8 @@ pcodex tune --verify
 pcodex compile "Fix the failing test"
 pcodex run "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
+pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
 pcodex mcp-server
 ```
 
@@ -50,6 +55,18 @@ If mode state is missing, pCodex reports the safe default `on`. Invalid state fa
 `pcodex status` reports configured mode, effective mode, algorithm, tuning status/profile, MCP status, Codex CLI availability, fallback state, local telemetry counters, savings-estimate availability, and state path. `pcodex status --json` prints the same dashboard in machine-readable form with `schema_version: pcodex.status.v1`.
 
 `pcodex doctor` reports local wrapper readiness. It does not print secrets or full environment dumps.
+
+## First Run
+
+`pcodex first-run --json` reports the installed command surface, install provenance when available, mode state, plugin alias, one next action, and cleanup commands. It does not launch Codex and does not mutate global Codex config.
+
+Use advisory mode when checking a new machine or repo without writes:
+
+```bash
+pcodex first-run --advisory --json
+```
+
+Advisory first-run performs no writes.
 
 ## Setup
 
@@ -96,6 +113,24 @@ If the plugin alias is unavailable, pCodex falls back to the explicit equivalent
 `pcodex run --dry-run` also reports configured and effective mode. `pcodex run` can invoke Codex locally. In effective `off` mode it sends the raw prompt. In effective `on` mode it compiles through generalized `literal_symbol`. In effective `tuned` mode it compiles with `--tuning`. Strict `tuned` mode validates the tuning profile before any Codex launch.
 
 Do not use `pcodex run` for private live tasks unless that execution is explicitly approved for the current task.
+
+Unknown `pcodex` subcommands fail closed. Prompt shorthand is not the supported command surface; use explicit `pcodex run` for any Codex execution.
+
+## Cleanup
+
+Preview bounded repo-local generated-state cleanup:
+
+```bash
+pcodex cleanup --local-state --dry-run
+```
+
+Apply the same bounded cleanup:
+
+```bash
+pcodex cleanup --local-state --yes
+```
+
+Cleanup is limited to documented generated pCodex/Pre-mode state under `.premode/`, such as mode state, tuning artifacts, packet output, audit output, metrics, and isolated MCP smoke state. It preserves source files, `.gitignore`, `.premodeignore`, repo `.pcodex` config, package source, and global Codex config. Cleanup fails closed unless exactly one of `--dry-run` or `--yes` is provided.
 
 ## Environment Propagation
 

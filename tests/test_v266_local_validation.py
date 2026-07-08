@@ -123,7 +123,8 @@ def test_docs_v266_python_and_cache_kpi_clarity():
     assert "Python >=3.11 is required" in readme
     assert "tomllib requires Python 3.11+" in readme
     assert "PYTHONPATH=src python -m premode.cli detect --json" in readme
-    assert "console scripts like `premode` and `pcodex` require editable install" in readme
+    assert "console scripts like `premode` and `pcodex` require an editable or source install" in readme
+    assert "verifies the installed `pcodex` help, first-run, cleanup, and unknown-command fail-closed surface" in readme
     assert "Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface" in readme
     assert "Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching" in readme
     assert "total repo-token savings" in benchmark
