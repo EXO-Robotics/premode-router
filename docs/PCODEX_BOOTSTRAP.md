@@ -112,7 +112,7 @@ The algorithm value is `literal_symbol`.
 
 ## MCP Server
 
-`pcodex mcp-server` starts the dependency-free stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
+`pcodex mcp-server` starts the stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
 
 The transform respects off/on/tuned state. `off` returns the raw prompt. `on` appends the generalized compact packet. `tuned` appends a tuned compact packet when the profile validates; tuned failure returns the raw prompt plus out-of-band error metadata.
 

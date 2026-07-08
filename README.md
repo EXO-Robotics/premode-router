@@ -84,7 +84,7 @@ Mode meanings:
 
 `pcodex run`, `pcodex run --dry-run`, and the MCP transform respect effective mode. Their configured/effective mode details are reported out of band.
 
-`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
+`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 demonstrates the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
 ## Supported Claims
 
@@ -256,7 +256,7 @@ premode review-patch --since-compile
 premode benchmark --profile lite
 ```
 
-Estimated savings compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
+Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
 
 Use `premode review-patch` for local patch-boundary review. It is a human review aid, not automatic merge approval.
 

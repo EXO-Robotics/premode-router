@@ -18,7 +18,7 @@ This repository is proprietary and all rights reserved. Source visibility does n
 
 ## 4. Supported runtime
 
-The supported runtime is Codex CLI through explicit terminal commands. Terminal `pcodex` commands are the guaranteed control plane.
+The supported runtime is Codex CLI through explicit terminal commands. Terminal `pcodex` commands are the current control plane.
 
 Do not assume `/pcodex` slash commands, native hosted Codex UI integration, automatic MCP invocation, native installed-Codex schema discovery, or real internal Codex subagent interception.
 
