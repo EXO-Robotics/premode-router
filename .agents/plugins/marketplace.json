@@ -1,20 +1,36 @@
 {
-  "name": "local-pemode-marketplace",
   "interface": {
     "displayName": "Local Pre-mode Plugins"
   },
+  "name": "local-premode-marketplace",
   "plugins": [
     {
+      "category": "Developer Tools",
       "name": "premode-router",
-      "source": {
-        "source": "local",
-        "path": "./plugins/premode-router"
-      },
       "policy": {
-        "installation": "AVAILABLE",
-        "authentication": "ON_INSTALL"
+        "authentication": "ON_INSTALL",
+        "installation": "AVAILABLE"
       },
-      "category": "Developer Tools"
+      "source": {
+        "path": "./.agents/plugins/plugins/premode-router",
+        "source": "local"
+      }
+    },
+    {
+      "category": "Developer Tools",
+      "description": "Repo-local pCodex skills and optional MCP scaffold. Terminal pcodex remains the guaranteed control plane.",
+      "name": "pcodex",
+      "policy": {
+        "authentication": "NONE",
+        "globalConfigMutation": false,
+        "installation": "AVAILABLE",
+        "productionApproval": false,
+        "publication": "REPO_LOCAL_ONLY"
+      },
+      "source": {
+        "path": "./plugins/pcodex",
+        "source": "local"
+      }
     }
   ]
 }

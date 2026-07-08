@@ -1,0 +1,15 @@
+{
+  "pcodex": {
+    "activation": "optional_explicit_user_approved",
+    "args": [
+      "mcp-server"
+    ],
+    "command": "pcodex",
+    "enabled_by_default": false,
+    "notes": [
+      "Repo-local scaffold only.",
+      "Does not mutate ~/.codex/config.toml.",
+      "Does not prove automatic MCP invocation."
+    ]
+  }
+}

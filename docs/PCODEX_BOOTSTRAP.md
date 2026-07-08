@@ -37,6 +37,16 @@ pcodex tune
 pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
+pcodex integrate codex --dry-run
+pcodex integrate codex --dry-run --json
+pcodex integrate codex --write
+pcodex integrate codex --write --json
+pcodex integrate codex --write --with-mcp
+pcodex plugin init --local-marketplace --dry-run
+pcodex plugin init --local-marketplace
+pcodex plugin init --local-marketplace --json
+pcodex ui
+pcodex ui --json
 pcodex compile "Fix the failing test"
 pcodex run "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
@@ -76,6 +86,35 @@ pcodex setup
 It runs local checks, optionally attempts isolated Codex MCP registration, runs one-step tuning unless `--skip-tune` is provided, writes `tuned` only when verification is `PASS`, writes `on` for skipped or non-PASS tuning, and prints a concise dashboard. Use `--json` for automation. Use `--no-mcp` to skip MCP registration. Real Codex config mutation requires the explicit `--real-codex-registration` flag.
 
 For first-run value, prefer `pcodex setup --skip-tune --no-mcp` so tuning and MCP are not prerequisites.
+
+## Codex Integration
+
+Use `pcodex integrate codex --dry-run` to preview the repo-local Codex UX surface. The dry-run reports planned files, existing files, whether optional MCP scaffold messaging is skipped or included, and performs no writes.
+
+Use `pcodex integrate codex --write` to create or update only these repo-local paths:
+
+- `.agents/skills/pcodex*/SKILL.md`
+- `.agents/skills/pcodex/bin/resolve-pcodex.sh`
+- `plugins/pcodex/**`
+- `.agents/plugins/marketplace.json`
+
+The `.agents/skills` directory is the repo-local skill path for this integration. Top-level `plugins/` is the intended discovery surface for the local pCodex plugin marketplace. The marketplace entry is repo-scoped and does not imply public marketplace publication or production approval.
+
+Generated repo-local skills resolve the `pcodex` executable before running commands:
+
+1. `./.venv/bin/pcodex`
+2. `$HOME/.pcodex-alpha/bin/pcodex`
+3. `command -v pcodex`
+
+If no executable is found, the resolver prints paste-safe setup guidance and exits without writing files, launching Codex, printing secrets, or dumping the environment.
+
+Terminal `pcodex` remains the guaranteed control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit; `--with-mcp` writes only repo-local scaffold/config files and warning text. It does not mutate `~/.codex/config.toml`, register globally, invoke MCP automatically, or run live Codex.
+
+`pcodex plugin init --local-marketplace` creates or updates the local `plugins/pcodex` scaffold and `.agents/plugins/marketplace.json` without global mutation or publication.
+
+Codex plugin marketplace surfacing depends on Codex marketplace discovery. The repo-local `.agents/plugins/marketplace.json` file is safe to check in, but it does not by itself mutate global Codex config, install the plugin, enable the plugin, or prove that `/plugins` will show `pCodex` in every Codex build. Use `codex plugin marketplace add` only as an explicit, user-approved registration step.
+
+`pcodex ui` reads existing pCodex status/state and prints a local terminal dashboard. `pcodex ui --json` emits the stable `pcodex.ui.v1` schema and does not write by default.
 
 ## Cleanup
 

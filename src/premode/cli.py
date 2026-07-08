@@ -627,6 +627,9 @@ def pcodex_main(argv: list[str] | None = None) -> int:
         "tuned",
         "tune",
         "mcp-server",
+        "integrate",
+        "plugin",
+        "ui",
         "compile",
         "run",
     }
