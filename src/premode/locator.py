@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import posixpath
 import re
+import time
 from pathlib import Path
 
 from .ignore import IgnoreMatcher
@@ -11,6 +12,49 @@ from .safe_reader import is_probably_binary_path, is_secret_name
 
 
 MAX_LOCATOR_BYTES = 64_000
+MAX_IMPORT_SUFFIX_SCAN_PATHS = 1_200
+MAX_IMPORT_SUFFIX_INDEX_PATHS = 5_000
+MAX_RELATION_FILES = 1_200
+MAX_SAME_DIRECTORY_GROUP = 48
+MAX_SOURCE_TEST_PAIR_SCAN = 8_000
+MAX_ASSET_STAT_CANDIDATES = 256
+
+MEDIA_ASSET_EXTENSIONS = {
+    ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".blend",
+    ".mp4", ".mov", ".wav", ".mp3", ".aiff", ".ttf", ".otf", ".woff", ".woff2",
+}
+ARCHIVE_EXTENSIONS = {".zip", ".tar", ".gz", ".tgz", ".xz", ".7z", ".rar", ".dmg", ".xcarchive"}
+MEDIA_LOOKUP_TERMS = {"find", "locate", "show", "list", "identify", "where"}
+MEDIA_QUERY_TERMS = {
+    "png", "jpg", "jpeg", "webp", "gif", "svg", "image", "images", "sprite",
+    "sprites", "icon", "icons", "texture", "textures", "asset", "assets",
+    "blender", "blend", "media", "render", "renders",
+}
+MEDIA_RECENCY_TERMS = {"latest", "newest", "recent", "most", "current"}
+MEDIA_READ_ONLY_TERMS = {"readonly", "read", "only", "modify", "edit", "changes", "change", "files", "file"}
+MEDIA_CODE_EDIT_TERMS = {
+    "fix", "change", "update", "patch", "implement", "refactor", "debug",
+    "test", "tests", "failing", "error", "traceback", "function", "class",
+    "method", "symbol",
+}
+MEDIA_GENERIC_TERMS = (
+    MEDIA_LOOKUP_TERMS
+    | MEDIA_QUERY_TERMS
+    | MEDIA_RECENCY_TERMS
+    | MEDIA_READ_ONLY_TERMS
+    | {"do", "not", "no", "is", "the", "a", "an", "for", "to", "in", "of", "and"}
+)
+MEDIA_DIRECTORY_HINTS = {
+    "asset", "assets", "image", "images", "media", "texture", "textures",
+    "render", "renders", "sprite", "sprites", "icon", "icons", "art", "blender",
+}
+MEDIA_PRUNE_SEGMENTS = {
+    ".git", ".premode", ".agents", ".codex", ".venv", "node_modules",
+    "__pycache__", "archive", "archives", "snapshot", "snapshots", "backup",
+    "backups", "generated", "gen", "build", "dist", "target", "tmp", "cache",
+    ".cache", "_claw_output",
+}
+SIMPLE_TERM_RE = re.compile(r"[a-z0-9]+")
 
 ACTION_PHRASES = {
     "speed up",
@@ -232,6 +276,8 @@ class LocateResult:
     ambiguity_reasons: list[str]
     dependency_relations: list[FileRelation] = field(default_factory=list)
     typo_normalizations: dict[str, str] = field(default_factory=dict)
+    relation_degraded_reasons: list[str] = field(default_factory=list)
+    metadata: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass
@@ -634,7 +680,7 @@ def _role_for_path(rel_path: str) -> str:
         return "build"
     if "generated" in parts or "__generated__" in parts or ".generated." in lower or ".gen." in lower:
         return "generated"
-    if suffix in {".png", ".jpg", ".jpeg", ".gif", ".webp", ".pdf", ".zip", ".gz", ".mp3", ".mp4", ".mov", ".wav", ".ttf", ".otf"}:
+    if suffix in MEDIA_ASSET_EXTENSIONS | ARCHIVE_EXTENSIONS | {".pdf"}:
         return "asset"
     if role.is_test:
         return "test"
@@ -671,6 +717,205 @@ def _read_bounded(path: Path) -> str:
     if b"\x00" in data[:4096]:
         return ""
     return data[:MAX_LOCATOR_BYTES].decode("utf-8", errors="replace")
+
+
+def _simple_path_terms(value: str) -> set[str]:
+    return {term for term in SIMPLE_TERM_RE.findall(value.lower()) if len(term) >= 2}
+
+
+def is_media_lookup_prompt(prompt: str) -> bool:
+    text = (prompt or "").lower()
+    terms = _simple_path_terms(text)
+    if terms & MEDIA_CODE_EDIT_TERMS:
+        return False
+    has_lookup = bool(terms & MEDIA_LOOKUP_TERMS) or "where is" in text or "where's" in text
+    has_media = bool(terms & MEDIA_QUERY_TERMS)
+    return has_lookup and has_media
+
+
+def _media_prompt_wants_recency(prompt: str) -> bool:
+    text = (prompt or "").lower()
+    terms = _simple_path_terms(text)
+    return bool(terms & MEDIA_RECENCY_TERMS) or "most recent" in text
+
+
+def _media_prompt_extensions(prompt_terms: set[str]) -> set[str]:
+    out = {f".{term}" for term in prompt_terms if f".{term}" in MEDIA_ASSET_EXTENSIONS}
+    if "blender" in prompt_terms:
+        out.add(".blend")
+    return out
+
+
+def _media_domain_terms(prompt: str) -> set[str]:
+    terms = _simple_path_terms(prompt)
+    return {term for term in terms if len(term) >= 3 and term not in MEDIA_GENERIC_TERMS}
+
+
+def _media_path_is_pruned(rel_path: str) -> bool:
+    lower = rel_path.lower().replace("\\", "/").strip("/")
+    parts = [part for part in lower.split("/") if part]
+    name = parts[-1] if parts else lower
+    if is_secret_name(lower):
+        return True
+    if name.startswith(".env") or "secret" in name or "credential" in name or "token" in name:
+        return True
+    return any(part in MEDIA_PRUNE_SEGMENTS for part in parts)
+
+
+def _media_directory_hint_score(rel_path: str) -> int:
+    parts = [part for part in _simple_path_terms(posixpath.dirname(rel_path)) if part]
+    return 70 if any(part in MEDIA_DIRECTORY_HINTS for part in parts) else 0
+
+
+def _media_explicit_match(prompt_lower: str, rel_path: str) -> bool:
+    lower = rel_path.lower()
+    name = posixpath.basename(lower)
+    return lower in prompt_lower or name in prompt_lower
+
+
+def _media_confidence(selected: list[LocatedFile], uncovered_terms: list[str]) -> str:
+    if not selected:
+        return "low"
+    if uncovered_terms:
+        return "medium"
+    return "high"
+
+
+def locate_media_files(
+    repo_root: Path,
+    prompt: str,
+    *,
+    max_files: int = 8,
+    inventory_paths: list[str] | None = None,
+) -> LocateResult:
+    started = time.perf_counter()
+    repo_root = Path(repo_root)
+    prompt_lower = (prompt or "").lower()
+    prompt_terms = _simple_path_terms(prompt_lower)
+    wanted_extensions = _media_prompt_extensions(prompt_terms)
+    domain_terms = _media_domain_terms(prompt)
+    wants_recency = _media_prompt_wants_recency(prompt)
+    raw_paths = [
+        str(path).replace("\\", "/").strip("/")
+        for path in (inventory_paths if inventory_paths is not None else [path.relative_to(repo_root).as_posix() for path in _iter_repo_files(repo_root)])
+        if str(path).strip()
+    ]
+
+    candidate_count = 0
+    pruned_count = 0
+    stat_calls = 0
+    scored: list[dict[str, object]] = []
+    for rel in raw_paths:
+        suffix = Path(rel).suffix.lower()
+        if suffix not in MEDIA_ASSET_EXTENSIONS:
+            continue
+        candidate_count += 1
+        explicit = _media_explicit_match(prompt_lower, rel)
+        if _media_path_is_pruned(rel) and not explicit:
+            pruned_count += 1
+            continue
+        path_terms = _simple_path_terms(rel)
+        overlap = sorted(domain_terms & path_terms)
+        if domain_terms and not overlap and not explicit:
+            pruned_count += 1
+            continue
+        score = 100
+        signals = ["asset_media_fast_path", f"extension:{suffix.lstrip('.')}"]
+        if wanted_extensions:
+            if suffix in wanted_extensions:
+                score += 260
+                signals.append(f"extension_match:{suffix.lstrip('.')}")
+            else:
+                score -= 90
+        if explicit:
+            score += 600
+            signals.append("explicit_media_path_or_basename")
+        if overlap:
+            score += 135 * len(overlap)
+            signals.extend(f"filename_term:{term}" for term in overlap[:8])
+        dir_score = _media_directory_hint_score(rel)
+        if dir_score:
+            score += dir_score
+            signals.append("asset_directory_hint")
+        scored.append({
+            "path": rel,
+            "score": score,
+            "signals": signals,
+            "overlap_count": len(overlap),
+            "explicit": explicit,
+            "mtime_ns": None,
+        })
+
+    recency_pool = [
+        item for item in scored
+        if bool(item.get("explicit")) or int(item.get("overlap_count") or 0) > 0 or not domain_terms
+    ]
+    if not recency_pool:
+        recency_pool = scored
+    if wants_recency:
+        recency_candidates = sorted(recency_pool, key=lambda item: (-int(item.get("score") or 0), str(item.get("path") or "")))[:MAX_ASSET_STAT_CANDIDATES]
+        for item in recency_candidates:
+            try:
+                item["mtime_ns"] = int((repo_root / str(item["path"])).stat().st_mtime_ns)
+                stat_calls += 1
+            except OSError:
+                item["mtime_ns"] = 0
+            signals = list(item.get("signals") or [])
+            signals.append("mtime_recency_requested")
+            item["signals"] = signals
+    sortable = recency_pool
+    sortable.sort(
+        key=lambda item: (
+            -int(item.get("score") or 0),
+            -(int(item.get("mtime_ns") or 0) if wants_recency else 0),
+            str(item.get("path") or ""),
+        )
+    )
+    selected_items = sortable[:max(1, int(max_files or 8))]
+    selected = [
+        LocatedFile(
+            path=str(item["path"]),
+            score=int(item.get("score") or 0),
+            role="asset",
+            confidence="high" if int(item.get("score") or 0) >= 450 else "medium",
+            matched_signals=[str(signal) for signal in item.get("signals") or []],
+        )
+        for item in selected_items
+    ]
+    covered = sorted(
+        term
+        for term in domain_terms
+        if any(term in _simple_path_terms(file.path) for file in selected)
+    )
+    uncovered = sorted(domain_terms - set(covered))
+    ambiguity: list[str] = []
+    if pruned_count:
+        ambiguity.append("asset_candidates_pruned")
+    if len(selected) >= max_files and len(sortable) > len(selected):
+        ambiguity.append("result hit max_files cap")
+    metadata = {
+        "schema_version": "asset_media_fast_path.v1",
+        "context_selection_mode": "asset_media_fast_path",
+        "asset_fast_path_triggered": True,
+        "asset_fast_path_reason": "media_lookup_prompt",
+        "asset_candidate_count": candidate_count,
+        "asset_candidate_pruned_count": pruned_count,
+        "asset_selected_count": len(selected),
+        "asset_search_elapsed_ms": int((time.perf_counter() - started) * 1000),
+        "asset_stat_calls": stat_calls,
+        "content_reads": 0,
+    }
+    return LocateResult(
+        primary_files=selected,
+        support_files=[],
+        verification_files=[],
+        confidence=_media_confidence(selected, uncovered),
+        covered_prompt_terms=covered,
+        uncovered_prompt_terms=uncovered,
+        ambiguity_reasons=ambiguity,
+        dependency_relations=[],
+        metadata=metadata,
+    )
 
 
 def _extract_symbols(text: str) -> set[str]:
@@ -791,18 +1036,53 @@ def _candidate_import_paths(source_path: str, ref: str) -> list[str]:
     return _dedupe([path for path in expanded if path])
 
 
-def _resolve_import_ref(source_path: str, ref: str, path_index: set[str]) -> str | None:
-    for candidate in _candidate_import_paths(source_path, ref):
-        if candidate in path_index:
-            return candidate
-
-    # Python absolute imports may omit the repository package prefix in small repos.
+def _suffix_candidates_for_ref(source_path: str, ref: str) -> list[str]:
     suffix_candidates = []
     for candidate in _candidate_import_paths(source_path, ref):
         if Path(candidate).suffix:
             suffix_candidates.append(candidate)
         else:
             suffix_candidates.extend(candidate + ext for ext in LOCAL_IMPORT_EXTENSIONS if ext)
+    return _dedupe(suffix_candidates)
+
+
+def _build_import_suffix_lookup(path_index: set[str]) -> dict[str, list[str]] | None:
+    if len(path_index) > MAX_IMPORT_SUFFIX_INDEX_PATHS:
+        return None
+    suffix_lookup: dict[str, list[str]] = {}
+    for path in sorted(path_index):
+        parts = [part for part in path.split("/") if part]
+        for start in range(max(0, len(parts) - 6), len(parts)):
+            suffix = "/".join(parts[start:])
+            if not suffix or suffix == path:
+                continue
+            bucket = suffix_lookup.setdefault(suffix, [])
+            if len(bucket) < 3:
+                bucket.append(path)
+    return suffix_lookup
+
+
+def _resolve_import_ref(
+    source_path: str,
+    ref: str,
+    path_index: set[str],
+    *,
+    suffix_lookup: dict[str, list[str]] | None = None,
+) -> str | None:
+    for candidate in _candidate_import_paths(source_path, ref):
+        if candidate in path_index:
+            return candidate
+
+    # Python absolute imports may omit the repository package prefix in small repos.
+    suffix_candidates = _suffix_candidates_for_ref(source_path, ref)
+    if suffix_lookup is not None:
+        for candidate in suffix_candidates:
+            matches = suffix_lookup.get(candidate) or []
+            if len(matches) == 1:
+                return matches[0]
+        return None
+    if len(path_index) > MAX_IMPORT_SUFFIX_SCAN_PATHS:
+        return None
     for candidate in suffix_candidates:
         matches = sorted(path for path in path_index if path.endswith("/" + candidate))
         if len(matches) == 1:
@@ -847,22 +1127,38 @@ def _shared_prompt_terms(a: _FileEvidence, b: _FileEvidence, prompt_terms: list[
     return shared
 
 
-def _build_file_relations(files: list[_FileEvidence], prompt_terms: list[str]) -> list[FileRelation]:
-    path_index = {file.path for file in files}
-    by_path = {file.path: file for file in files}
+def _build_file_relations(
+    files: list[_FileEvidence],
+    prompt_terms: list[str],
+    *,
+    degraded_reasons: list[str] | None = None,
+) -> list[FileRelation]:
+    relation_files = files
+    if len(files) > MAX_RELATION_FILES:
+        relation_files = files[:MAX_RELATION_FILES]
+        if degraded_reasons is not None:
+            degraded_reasons.append("relation_file_count_cap")
+    path_index = {file.path for file in relation_files}
     relations: list[FileRelation] = []
     seen: set[tuple[str, str, str]] = set()
+    suffix_lookup = _build_import_suffix_lookup(path_index)
+    if suffix_lookup is None and degraded_reasons is not None:
+        degraded_reasons.append("import_suffix_lookup_path_cap")
 
-    for file in files:
+    for file in relation_files:
         for ref in file.import_refs:
-            target = _resolve_import_ref(file.path, ref, path_index)
+            target = _resolve_import_ref(file.path, ref, path_index, suffix_lookup=suffix_lookup)
             if target is not None:
                 _add_relation(relations, seen, file.path, target, "imports", 86)
                 _add_relation(relations, seen, target, file.path, "imported_by", 78)
 
     by_stem: dict[str, list[_FileEvidence]] = {}
-    for file in files:
+    stem_by_path: dict[str, str] = {}
+    name_terms_by_path: dict[str, set[str]] = {}
+    for file in relation_files:
         stem = _stem_key(file.path)
+        stem_by_path[file.path] = stem
+        name_terms_by_path[file.path] = _tokens_from_text(Path(file.path).stem)
         if len(stem) >= 4:
             by_stem.setdefault(stem, []).append(file)
     for stem, grouped in by_stem.items():
@@ -876,41 +1172,63 @@ def _build_file_relations(files: list[_FileEvidence], prompt_terms: list[str]) -
                 strength = 76 if relation == "adjacent_test" else 70
                 _add_relation(relations, seen, source.path, target.path, relation, strength)
 
-    for source in files:
-        source_dir = posixpath.dirname(source.path)
-        if not source_dir:
-            continue
-        source_name_terms = _tokens_from_text(Path(source.path).stem)
-        for target in files:
-            if source.path == target.path or posixpath.dirname(target.path) != source_dir:
-                continue
-            target_name_terms = _tokens_from_text(Path(target.path).stem)
-            shared_prompt = _shared_prompt_terms(source, target, prompt_terms)
-            if shared_prompt:
-                _add_relation(relations, seen, source.path, target.path, "same_directory", 46)
+    by_dir: dict[str, list[_FileEvidence]] = {}
+    for file in relation_files:
+        source_dir = posixpath.dirname(file.path)
+        if source_dir:
+            by_dir.setdefault(source_dir, []).append(file)
+    for source_dir, grouped in by_dir.items():
+        if len(grouped) > MAX_SAME_DIRECTORY_GROUP:
+            if degraded_reasons is not None:
+                degraded_reasons.append("same_directory_relation_group_cap")
+            grouped = grouped[:MAX_SAME_DIRECTORY_GROUP]
+        for source in grouped:
+            source_name_terms = name_terms_by_path.get(source.path, set())
+            for target in grouped:
+                if source.path == target.path:
+                    continue
+                target_name_terms = name_terms_by_path.get(target.path, set())
+                shared_prompt = _shared_prompt_terms(source, target, prompt_terms)
+                if shared_prompt:
+                    _add_relation(relations, seen, source.path, target.path, "same_directory", 46)
 
-            route_terms = {"route", "handler", "service", "settings", "user", "payload"}
-            helper_terms = {"helper", "state", "action", "component", "view", "screen", "page", "hook"}
-            if source_name_terms & {"handler", "route"} and target_name_terms & {"service", "helper"} and (source_name_terms | target_name_terms) & route_terms:
-                _add_relation(relations, seen, source.path, target.path, "route_helper", 66)
-            if source_name_terms & {"page", "screen", "view"} and target_name_terms & {"helper", "state", "actions", "action", "hook", "use"}:
-                _add_relation(relations, seen, source.path, target.path, "component_state_helper", 64)
-            if target_name_terms & {"page", "screen", "view"} and source_name_terms & {"helper", "state", "actions", "action", "hook", "use"}:
-                _add_relation(relations, seen, source.path, target.path, "component_state_helper", 58)
+                route_terms = {"route", "handler", "service", "settings", "user", "payload"}
+                if source_name_terms & {"handler", "route"} and target_name_terms & {"service", "helper"} and (source_name_terms | target_name_terms) & route_terms:
+                    _add_relation(relations, seen, source.path, target.path, "route_helper", 66)
+                if source_name_terms & {"page", "screen", "view"} and target_name_terms & {"helper", "state", "actions", "action", "hook", "use"}:
+                    _add_relation(relations, seen, source.path, target.path, "component_state_helper", 64)
+                if target_name_terms & {"page", "screen", "view"} and source_name_terms & {"helper", "state", "actions", "action", "hook", "use"}:
+                    _add_relation(relations, seen, source.path, target.path, "component_state_helper", 58)
 
     # Nearby tests that mention source stems are verification candidates even when
     # language-specific imports are too loose to resolve.
-    tests = [file for file in files if file.role == "test"]
-    sources = [file for file in files if file.role != "test"]
-    for source in sources:
-        source_stem = _stem_key(source.path)
-        if len(source_stem) < 4:
-            continue
-        for test in tests:
-            test_blob = " ".join(sorted(test.path_terms | test.content_terms | test.symbol_terms))
-            if source_stem in _stem_key(test.path) or source_stem in test_blob.replace(" ", ""):
-                _add_relation(relations, seen, source.path, test.path, "adjacent_test", 68)
-                _add_relation(relations, seen, test.path, source.path, "adjacent_source", 62)
+    tests = [file for file in relation_files if file.role == "test"]
+    sources = [file for file in relation_files if file.role != "test"]
+    pair_count = len(sources) * len(tests)
+    if pair_count > MAX_SOURCE_TEST_PAIR_SCAN:
+        if degraded_reasons is not None:
+            degraded_reasons.append("source_test_relation_pair_cap")
+        for source in sources:
+            source_stem = stem_by_path.get(source.path) or _stem_key(source.path)
+            if len(source_stem) < 4:
+                continue
+            for test in by_stem.get(source_stem, []):
+                if test.role == "test":
+                    _add_relation(relations, seen, source.path, test.path, "adjacent_test", 68)
+                    _add_relation(relations, seen, test.path, source.path, "adjacent_source", 62)
+    else:
+        test_blob_by_path = {
+            test.path: " ".join(sorted(test.path_terms | test.content_terms | test.symbol_terms)).replace(" ", "")
+            for test in tests
+        }
+        for source in sources:
+            source_stem = stem_by_path.get(source.path) or _stem_key(source.path)
+            if len(source_stem) < 4:
+                continue
+            for test in tests:
+                if source_stem in (stem_by_path.get(test.path) or _stem_key(test.path)) or source_stem in test_blob_by_path.get(test.path, ""):
+                    _add_relation(relations, seen, source.path, test.path, "adjacent_test", 68)
+                    _add_relation(relations, seen, test.path, source.path, "adjacent_source", 62)
 
     return relations
 
@@ -2186,7 +2504,12 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8) -> LocateR
     for file in file_evidences:
         direct_scores[file.path] = _score_file(file, evidence)
 
-    dependency_relations = _build_file_relations(file_evidences, important_terms)
+    relation_degraded_reasons: list[str] = []
+    dependency_relations = _build_file_relations(
+        file_evidences,
+        important_terms,
+        degraded_reasons=relation_degraded_reasons,
+    )
     anchor_paths = _direct_anchor_paths(direct_scores)
     proximity_only_paths = _apply_proximity_boosts(direct_scores, dependency_relations, anchor_paths)
 
@@ -2318,4 +2641,9 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8) -> LocateR
         ambiguity_reasons=_dedupe(ambiguity),
         dependency_relations=selected_relations,
         typo_normalizations=evidence.typo_normalizations,
+        relation_degraded_reasons=_dedupe(relation_degraded_reasons),
+        metadata={
+            "context_selection_mode": "normal_locator",
+            "relation_degraded_reasons": _dedupe(relation_degraded_reasons),
+        },
     )

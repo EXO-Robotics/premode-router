@@ -434,7 +434,7 @@ def compile_pcodex_packet(
         **kwargs,
     )
     return {
-        "status": "compiled",
+        "status": "compile_degraded" if compiled.get("compile_degraded") else "compiled",
         "route": route,
         "premode_command": command,
         "plugin_alias_resolution": plugin_resolution,
@@ -444,8 +444,14 @@ def compile_pcodex_packet(
         "packet_version": compiled.get("packet_version"),
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
+        "selected_paths": _selected_paths_from_compile_result(compiled),
         "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
         "tuning_profile": tuning_profile,
+        "context_selection_mode": compiled.get("context_selection_mode"),
+        "large_repo_safety": compiled.get("large_repo_safety"),
+        "asset_media_fast_path": compiled.get("asset_media_fast_path"),
+        "compile_degraded": bool(compiled.get("compile_degraded")),
+        "compile_degraded_reason": compiled.get("compile_degraded_reason"),
     }
 
 
@@ -458,6 +464,36 @@ def compose_final_prompt(raw_task: str, packet: str | None) -> str:
     if packet:
         return packet
     return raw_task
+
+
+def _selected_paths_from_compile_result(compiled: dict[str, Any]) -> list[str]:
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: Any) -> None:
+        path = value.get("path") if isinstance(value, dict) else value
+        text = str(path or "").strip()
+        key = text.lower()
+        if text and key not in seen:
+            selected.append(text)
+            seen.add(key)
+
+    for key in (
+        "selected_paths",
+        "primary_files",
+        "candidate_edit_files",
+        "likely_files",
+        "likely_edit_files",
+        "support_files",
+        "read_only_support_files",
+        "related_tests",
+        "verification_files",
+    ):
+        values = compiled.get(key)
+        if isinstance(values, list):
+            for item in values:
+                add(item)
+    return selected
 
 
 def doctor(cwd: Path | None = None) -> dict[str, Any]:
@@ -1149,13 +1185,20 @@ def run_dry_run(
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
         return {
             **base,
+            "status": "dry_run_degraded" if compiled.get("compile_degraded") else base["status"],
             "premode_command": compiled["premode_command"],
             "codex_command": invocation.args,
             "packet_path": packet_path,
             "final_prompt_preview": redact_text(final_prompt),
             "packet_sha256": compiled["packet_sha256"],
             "route": compiled["route"],
+            "selected_paths": _selected_paths_from_compile_result(compiled),
             "telemetry": telemetry.get("telemetry"),
+            "context_selection_mode": compiled.get("context_selection_mode"),
+            "large_repo_safety": compiled.get("large_repo_safety"),
+            "asset_media_fast_path": compiled.get("asset_media_fast_path"),
+            "compile_degraded": bool(compiled.get("compile_degraded")),
+            "compile_degraded_reason": compiled.get("compile_degraded_reason"),
         }
     telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode)
     invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))

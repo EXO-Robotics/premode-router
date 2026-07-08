@@ -42,7 +42,7 @@ from .repo_map import (
 )
 from .role_model import classify_path_role, infer_prompt_intent
 from .intake import intake_policy_from_detection, intake_score_delta
-from .locator import LocatedFile, LocateResult, is_scaffold_meta_term, locate_files
+from .locator import LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
 from .router import (
     acceptance_checks_for_intents,
     classify_task,
@@ -507,7 +507,7 @@ def _compact_locator_evidence(result: LocateResult | None, *, error: str | None 
         if error:
             payload["error"] = error[:180]
         return payload
-    return {
+    payload = {
         "confidence": result.confidence,
         "primary_files": [_compact_locator_file(file) for file in result.primary_files[:8]],
         "support_files": [_compact_locator_file(file) for file in result.support_files[:8]],
@@ -518,6 +518,119 @@ def _compact_locator_evidence(result: LocateResult | None, *, error: str | None 
         "typo_normalizations": dict(getattr(result, "typo_normalizations", {}) or {}),
         "ambiguity_reasons": list(result.ambiguity_reasons[:8]),
     }
+    relation_degraded = list(getattr(result, "relation_degraded_reasons", []) or [])
+    if relation_degraded:
+        payload["relation_degraded_reasons"] = relation_degraded[:8]
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict) and metadata:
+        safe_keys = {
+            "context_selection_mode",
+            "asset_fast_path_triggered",
+            "asset_fast_path_reason",
+            "asset_candidate_count",
+            "asset_candidate_pruned_count",
+            "asset_selected_count",
+            "asset_search_elapsed_ms",
+            "asset_stat_calls",
+            "content_reads",
+            "relation_degraded_reasons",
+        }
+        payload["locator_metadata"] = {key: metadata.get(key) for key in sorted(safe_keys) if key in metadata}
+    return payload
+
+
+_MEDIA_SHAPE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".blend", ".mp4", ".mov", ".wav", ".mp3"}
+_ARCHIVE_SHAPE_EXTENSIONS = {".zip", ".tar", ".gz", ".tgz", ".xz", ".7z", ".rar", ".dmg", ".xcarchive"}
+_GENERATED_RUNTIME_SEGMENTS = {
+    ".premode", ".agents", ".codex", "generated", "gen", "build", "dist",
+    "target", "tmp", "cache", ".cache", "archive", "archives", "snapshot",
+    "snapshots", "_claw_output", "node_modules", "__pycache__",
+}
+_LARGE_REPO_PATH_THRESHOLD = 10_000
+_ASSET_HEAVY_MEDIA_THRESHOLD = 100
+_ASSET_HEAVY_RATIO_THRESHOLD = 0.04
+_LARGE_REPO_BROAD_DEGRADE_THRESHOLD = 20_000
+
+
+def _repo_shape_from_inventory(inventory: dict[str, Any] | None, inventory_paths: list[str] | None) -> dict[str, Any]:
+    paths = [str(path).replace("\\", "/").strip("/") for path in (inventory_paths or []) if str(path).strip()]
+    media_count = 0
+    archive_count = 0
+    blend_count = 0
+    generated_runtime_count = 0
+    for path in paths:
+        lower = path.lower()
+        suffix = Path(lower).suffix
+        parts = [part for part in lower.split("/") if part]
+        if suffix in _MEDIA_SHAPE_EXTENSIONS:
+            media_count += 1
+        if suffix == ".blend":
+            blend_count += 1
+        if suffix in _ARCHIVE_SHAPE_EXTENSIONS:
+            archive_count += 1
+        if any(part in _GENERATED_RUNTIME_SEGMENTS for part in parts):
+            generated_runtime_count += 1
+    marker_paths = inventory.get("marker_paths") if isinstance(inventory, dict) and isinstance(inventory.get("marker_paths"), list) else []
+    nested_repo_count = sum(1 for path in marker_paths if str(path).endswith(".git"))
+    file_count = int(inventory.get("file_count") or len(paths)) if isinstance(inventory, dict) else len(paths)
+    media_ratio = round(media_count / max(1, file_count), 4)
+    return {
+        "path_count_estimate": file_count,
+        "media_file_count_estimate": media_count,
+        "blend_file_count_estimate": blend_count,
+        "archive_snapshot_count": archive_count,
+        "nested_repo_count": nested_repo_count,
+        "generated_runtime_estimate": generated_runtime_count,
+        "media_file_ratio": media_ratio,
+        "large_repo_detected": file_count >= _LARGE_REPO_PATH_THRESHOLD,
+        "asset_heavy_repo_detected": media_count >= _ASSET_HEAVY_MEDIA_THRESHOLD or (file_count >= 2_000 and media_ratio >= _ASSET_HEAVY_RATIO_THRESHOLD),
+    }
+
+
+def _specific_code_edit_prompt(raw_prompt: str) -> bool:
+    text = raw_prompt or ""
+    if re.search(r"(?i)\b(fix|change|update|patch|implement|refactor|debug|test|failing|error|traceback|function|class|method|symbol)\b", text):
+        return True
+    return bool(_extract_path_like_mentions_unindexed(text))
+
+
+def _large_repo_broad_degrade(raw_prompt: str, repo_shape: dict[str, Any]) -> bool:
+    if is_media_lookup_prompt(raw_prompt) or _specific_code_edit_prompt(raw_prompt):
+        return False
+    path_count = int(repo_shape.get("path_count_estimate") or 0)
+    if path_count < _LARGE_REPO_BROAD_DEGRADE_THRESHOLD:
+        return False
+    repo_shape["large_repo_detected"] = bool(repo_shape.get("large_repo_detected")) or path_count >= _LARGE_REPO_BROAD_DEGRADE_THRESHOLD
+    return True
+
+
+def _large_repo_safety_sidecar(
+    *,
+    repo_shape: dict[str, Any],
+    context_selection_mode: str,
+    compile_degraded: bool = False,
+    compile_degraded_reason: str | None = None,
+    fallback_strategy: str | None = None,
+    asset_metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    sidecar = {
+        "schema_version": "large_repo_safety.v1",
+        "context_selection_mode": context_selection_mode,
+        "compile_degraded": bool(compile_degraded),
+        "compile_degraded_reason": compile_degraded_reason,
+        "large_repo_detected": bool(repo_shape.get("large_repo_detected")),
+        "asset_heavy_repo_detected": bool(repo_shape.get("asset_heavy_repo_detected")),
+        "repo_shape": repo_shape,
+        "path_count_estimate": repo_shape.get("path_count_estimate"),
+        "media_file_count_estimate": repo_shape.get("media_file_count_estimate"),
+        "archive_snapshot_count": repo_shape.get("archive_snapshot_count"),
+        "nested_repo_count": repo_shape.get("nested_repo_count"),
+        "fallback_strategy": fallback_strategy,
+        "content_reads": 0 if context_selection_mode in {"asset_media_fast_path", "large_repo_degraded"} else None,
+    }
+    if asset_metadata:
+        sidecar["asset_media_fast_path"] = asset_metadata
+    return sidecar
 
 
 def _locator_context_fit_summary(locator_evidence: dict[str, Any]) -> dict[str, Any]:
@@ -1019,7 +1132,13 @@ def _locator_reconcile_impact_map(
     related_tests = list(reconciled.get("related_tests") or [])
 
     for file in locator_result.primary_files:
-        if not _locator_file_indexed_and_transportable(file.path, repo_root, indexed_paths, raw_prompt, prompt_forbidden_paths):
+        media_fast_path_file = "asset_media_fast_path" in set(file.matched_signals or []) and file.role == "asset"
+        if not media_fast_path_file and not _locator_file_indexed_and_transportable(file.path, repo_root, indexed_paths, raw_prompt, prompt_forbidden_paths):
+            continue
+        if media_fast_path_file:
+            item = _locator_bucket_item(file, tier="primary", kind="asset", reason="asset_media_fast_path")
+            _append_unique_path_item(read_only_support, item)
+            _append_unique_path_item(likely_files, item)
             continue
         promotes = _locator_promotes_to_candidate(file, locator_result.confidence, raw_prompt)
         if (file.role in {"config", "docs", "test"} or had_likely_edit or _locator_has_artifact_surface_evidence(file)) and promotes:
@@ -3588,10 +3707,56 @@ def select_context(
     mentioned_paths_for_log_gate = _extract_mentioned_paths(raw_prompt, entries)
     prompt_forbidden_paths = _extract_prompt_forbidden_paths(raw_prompt, entries)
     indexed_paths = {str(entry.get("path") or "").lower().strip("/") for entry in entries if entry.get("path")}
+    repo_shape_paths = [str(entry.get("path") or "") for entry in entries if entry.get("path")]
+    repo_shape = _repo_shape_from_inventory(None, repo_shape_paths)
     locator_result: LocateResult | None = None
     locator_error: str | None = None
+    prelocator_degraded = False
+    context_selection_mode = "normal_locator"
+    large_repo_safety = _large_repo_safety_sidecar(
+        repo_shape=repo_shape,
+        context_selection_mode=context_selection_mode,
+    )
     try:
-        locator_result = locate_files(repo_root, raw_prompt, max_files=8)
+        if is_media_lookup_prompt(raw_prompt):
+            locator_result = locate_media_files(repo_root, raw_prompt, max_files=8, inventory_paths=None)
+            context_selection_mode = "asset_media_fast_path"
+            large_repo_safety = _large_repo_safety_sidecar(
+                repo_shape=repo_shape,
+                context_selection_mode=context_selection_mode,
+                fallback_strategy="metadata_only_media_lookup",
+                asset_metadata=dict(locator_result.metadata or {}),
+            )
+        elif _large_repo_broad_degrade(raw_prompt, repo_shape):
+            prelocator_degraded = True
+            context_selection_mode = "large_repo_degraded"
+            locator_result = LocateResult(
+                primary_files=[],
+                support_files=[],
+                verification_files=[],
+                confidence="low",
+                covered_prompt_terms=[],
+                uncovered_prompt_terms=[],
+                ambiguity_reasons=["large_repo_budget_exceeded"],
+                metadata={
+                    "context_selection_mode": context_selection_mode,
+                    "content_reads": 0,
+                },
+            )
+            large_repo_safety = _large_repo_safety_sidecar(
+                repo_shape=repo_shape,
+                context_selection_mode=context_selection_mode,
+                compile_degraded=True,
+                compile_degraded_reason="large_repo_budget_exceeded",
+                fallback_strategy="json_only_structured_degrade",
+            )
+            entries = []
+        else:
+            locator_result = locate_files(repo_root, raw_prompt, max_files=8, inventory_paths=repo_shape_paths)
+            large_repo_safety = _large_repo_safety_sidecar(
+                repo_shape=repo_shape,
+                context_selection_mode=context_selection_mode,
+            )
     except Exception as exc:
         locator_error = str(exc)
     locator_evidence = _compact_locator_evidence(locator_result, error=locator_error)
@@ -3599,7 +3764,8 @@ def select_context(
     log_state = scan_logs(repo_root, caps, entries, allow_root_evidence=allow_log_root_evidence)
     classification = classify_task(sanitized, git_state, log_state)
     primary_intent = classification["primary_intent"]
-    repo_map = build_repo_map(repo_root, entries=entries, profile_name=caps.name) if use_repo_map else None
+    skip_repo_map = prelocator_degraded or (context_selection_mode == "asset_media_fast_path" and (repo_shape.get("large_repo_detected") or repo_shape.get("asset_heavy_repo_detected")))
+    repo_map = build_repo_map(repo_root, entries=entries, profile_name=caps.name) if use_repo_map and not skip_repo_map else None
     impact_map = task_impact_hints(raw_prompt, repo_map, prompt_forbidden_paths=prompt_forbidden_paths) if repo_map else None
     impact_map = _locator_reconcile_impact_map(
         impact_map,
@@ -4117,6 +4283,11 @@ def select_context(
         "estimated_raw_candidate_tokens": max(1, eligible_readable_bytes // 4),
         "estimated_compiled_context_tokens": full_tokens + summary_tokens + manifest_tokens,
         "metrics": metrics,
+        "context_selection_mode": context_selection_mode,
+        "large_repo_safety": large_repo_safety,
+        "asset_media_fast_path": large_repo_safety.get("asset_media_fast_path"),
+        "compile_degraded": bool(large_repo_safety.get("compile_degraded")),
+        "compile_degraded_reason": large_repo_safety.get("compile_degraded_reason"),
         "repo_map_summary": compact_repo_map_summary(repo_map, profile_name=caps.name, impact_map=impact_map) if repo_map else None,
         "impact_map": impact_map,
         **semantic_buckets,
@@ -5344,6 +5515,55 @@ def _v5_model_facing_leakage(packet: str) -> dict[str, Any]:
     }
 
 
+def _v5_asset_media_path_only_backbone(primary: list[str], related: list[str], support: list[str]) -> dict[str, Any]:
+    primary_paths = list((primary or support or [])[:8])
+    related_paths = list((related or [])[:8])
+    support_paths = list((support or [])[:8])
+    support_path_metadata = _path_values_for_packet(support_paths, limit=8)
+    return {
+        "packet_variant": "tool_assisted_anchors_internal",
+        "base_variant": "ranked_paths_plus_anchors",
+        "strategy_requested": "asset_media_fast_path",
+        "strategy_selected": "asset_media_fast_path",
+        "probe_mix": [],
+        "task_class": "asset_media_lookup",
+        "task_class_json_only": "asset_media_lookup",
+        "primary_files_before": primary_paths,
+        "primary_files_after": primary_paths,
+        "related_tests_before": related_paths,
+        "related_tests_after": related_paths,
+        "primary_files": primary_paths,
+        "related_tests": related_paths,
+        "support_files": support_paths,
+        "support_files_json_only": support_path_metadata,
+        "anchors_by_path": {},
+        "generated_anchors_by_path": {},
+        "anchors_generated": [],
+        "anchors_selected": [],
+        "anchors_rejected": [],
+        "internal_relations_json_only": [],
+        "support_relations": [],
+        "support_relation_count": 0,
+        "anchor_quality": {"status": "path_only_media_lookup"},
+        "discovery_stats": {
+            "discovery_wall_ms": 0,
+            "rg_call_count": 0,
+            "files_scanned_count": 0,
+            "lines_scanned_count": 0,
+            "bytes_scanned_count": 0,
+            "anchors_generated_count": 0,
+            "anchors_selected_count": 0,
+            "relations_generated_count": 0,
+            "relations_selected_count": 0,
+            "anchor_filter_reject_count": 0,
+            "discovery_error_count": 0,
+            "scan_limit_reached": False,
+            "asset_media_path_only": True,
+            "content_reads": 0,
+        },
+    }
+
+
 def _v5_metric_counts(manifest: dict[str, Any]) -> dict[str, int | bool | str]:
     variant = str(manifest.get("packet_variant") or PACKET_V5_DEFAULT_VARIANT)
     if variant in _v5_internal_anchor_variants():
@@ -5653,6 +5873,20 @@ def _harness_review_metadata_from_manifest(manifest: dict[str, Any]) -> dict[str
 
 def _render_packet_parts_from_manifest(manifest: dict[str, Any], selected: list[dict[str, Any]]) -> tuple[str, str | None, str | None]:
     marker = str(manifest.get("packet_marker") or PACKET_MARKER)
+    if manifest.get("compile_degraded"):
+        lines = [
+            marker,
+            "",
+            "## CANONICAL USER PROMPT",
+            "The exact user prompt below is the canonical task instruction.",
+            "",
+            "```text",
+            str(manifest.get("canonical_user_prompt") or ""),
+            "```",
+            "",
+        ]
+        packet = "\n".join(lines)
+        return packet, None, None
     if marker == PACKET_V5_MARKER:
         prefix = "\n".join(_v5_prefix_lines(str(manifest.get("packet_variant") or PACKET_V5_DEFAULT_VARIANT)))
         suffix = "\n".join(_v5_suffix_lines(manifest))
@@ -5947,14 +6181,17 @@ def build_compiled_packet(
         active_v5_variant = str(variant or PACKET_V5_DEFAULT_VARIANT)
         if active_v5_variant in _v5_tool_assisted_variants():
             primary, related, support = _v5_ranked_items(manifest, active_v5_variant)
-            backbone = build_tool_assisted_backbone(
-                repo_root,
-                raw_prompt,
-                manifest,
-                primary_files=primary,
-                related_tests=related,
-                support_files=support,
-            )
+            if manifest.get("context_selection_mode") == "asset_media_fast_path":
+                backbone = _v5_asset_media_path_only_backbone(primary, related, support)
+            else:
+                backbone = build_tool_assisted_backbone(
+                    repo_root,
+                    raw_prompt,
+                    manifest,
+                    primary_files=primary,
+                    related_tests=related,
+                    support_files=support,
+                )
             manifest["tool_assisted_backbone"] = backbone
             manifest["metrics"]["model_facing_evidence_tokens"] = 0
             manifest["metrics"].update(backbone.get("discovery_stats") or {})
@@ -5963,15 +6200,18 @@ def build_compiled_packet(
         elif active_v5_variant in _v5_internal_anchor_variants():
             primary, related, support = _v5_ranked_items(manifest, PACKET_VARIANT_RANKED_PATHS_PLUS_ANCHORS)
             strategy_name = str(packet_strategy or os.environ.get("PREMODE_V5_ANCHOR_STRATEGY") or "policy_by_prompt_type")
-            backbone = build_tool_assisted_anchors_internal(
-                repo_root,
-                raw_prompt,
-                manifest,
-                primary_files=primary,
-                related_tests=related,
-                support_files=support,
-                strategy=strategy_name,
-            )
+            if manifest.get("context_selection_mode") == "asset_media_fast_path":
+                backbone = _v5_asset_media_path_only_backbone(primary, related, support)
+            else:
+                backbone = build_tool_assisted_anchors_internal(
+                    repo_root,
+                    raw_prompt,
+                    manifest,
+                    primary_files=primary,
+                    related_tests=related,
+                    support_files=support,
+                    strategy=strategy_name,
+                )
             manifest["tool_assisted_anchors_internal"] = backbone
             manifest["metrics"]["model_facing_evidence_tokens"] = 0
             manifest["metrics"].update(backbone.get("discovery_stats") or {})
@@ -6447,6 +6687,7 @@ def compile_prompt(
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(packet, encoding="utf-8")
     record = {
+        "status": "compile_degraded" if manifest.get("compile_degraded") else "compiled",
         "packet_marker": manifest.get("packet_marker"),
         "packet_version": "v5" if manifest.get("packet_marker") == PACKET_V5_MARKER else manifest.get("packet_marker"),
         "packet_variant": manifest.get("packet_variant"),
@@ -6535,6 +6776,11 @@ def compile_prompt(
         "model_facing_leakage_check": manifest.get("model_facing_leakage_check"),
         "tuning_profile_diagnostics": manifest.get("tuning_profile_diagnostics"),
         "pre_agent_worktree_state": manifest.get("pre_agent_worktree_state"),
+        "context_selection_mode": manifest.get("context_selection_mode"),
+        "large_repo_safety": manifest.get("large_repo_safety"),
+        "asset_media_fast_path": manifest.get("asset_media_fast_path"),
+        "compile_degraded": bool(manifest.get("compile_degraded")),
+        "compile_degraded_reason": manifest.get("compile_degraded_reason"),
         "cacheable_prefix_tokens": manifest["metrics"].get("cacheable_prefix_tokens"),
         "dynamic_suffix_tokens": manifest["metrics"].get("dynamic_suffix_tokens"),
         "paths_only_packet_tokens": manifest["metrics"].get("paths_only_packet_tokens"),
