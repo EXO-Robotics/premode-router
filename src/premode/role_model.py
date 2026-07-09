@@ -78,6 +78,7 @@ INTENT_V2_ROLE_BUCKETS_VARIANT = "intent_v2_role_buckets"
 WARM_INDEX_INVENTORY_VERSION = "warm-index-v1"
 WARM_INDEX_PATH_NORMALIZATION_VERSION = "posix-slash-v1"
 ADAPTIVE_PARALLEL_POLICY_VERSION = "cpu-b2-measured-near-best-warm-serial-v1"
+WARM_SCORING_FEATURE_SCHEMA_VERSION = "warm-scoring-features-v1"
 
 
 @dataclass(frozen=True)
@@ -193,7 +194,17 @@ class SelectorCandidateDryRun:
     adaptive_reason: str | None = None
     adaptive_fallback_reason: str | None = None
     adaptive_small_repo_guard_triggered: bool = False
+    warm_features_enabled: bool = False
+    warm_features_schema_version: str | None = None
+    warm_features_candidate_count: int = 0
+    warm_features_reused_count: int = 0
+    warm_features_fallback_reason: str | None = None
+    warm_feature_build_ms: float = 0.0
+    warm_feature_score_ms: float = 0.0
+    serial_score_ms: float = 0.0
+    feature_reuse_hit_rate: float = 0.0
     sensitive_path_exclusion_count: int = 0
+    sensitive_excluded_count: int = 0
     path_filter_policy: str = "sensitive-secret-generated-path-filter-v1"
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
@@ -252,7 +263,17 @@ class SelectorCandidateDryRun:
             "adaptive_reason": self.adaptive_reason,
             "adaptive_fallback_reason": self.adaptive_fallback_reason,
             "adaptive_small_repo_guard_triggered": self.adaptive_small_repo_guard_triggered,
+            "warm_features_enabled": self.warm_features_enabled,
+            "warm_features_schema_version": self.warm_features_schema_version,
+            "warm_features_candidate_count": self.warm_features_candidate_count,
+            "warm_features_reused_count": self.warm_features_reused_count,
+            "warm_features_fallback_reason": self.warm_features_fallback_reason,
+            "warm_feature_build_ms": self.warm_feature_build_ms,
+            "warm_feature_score_ms": self.warm_feature_score_ms,
+            "serial_score_ms": self.serial_score_ms,
+            "feature_reuse_hit_rate": self.feature_reuse_hit_rate,
             "sensitive_path_exclusion_count": self.sensitive_path_exclusion_count,
+            "sensitive_excluded_count": self.sensitive_excluded_count,
             "path_filter_policy": self.path_filter_policy,
         }
         if include_paths:
@@ -260,6 +281,72 @@ class SelectorCandidateDryRun:
             payload["candidate_paths"] = list(self.candidate_paths)
             payload["default_selected_paths"] = list(self.default_selected_paths)
         return payload
+
+
+@dataclass(frozen=True)
+class WarmScoringFeatures:
+    feature_schema_version: str
+    path: str
+    ordinal: int
+    suffix: str
+    basename: str
+    path_segments: tuple[str, ...]
+    path_tokens: tuple[str, ...]
+    basename_tokens: tuple[str, ...]
+    normalized_path_tokens: tuple[str, ...]
+    role_hint: str
+    entrypoint_likelihood_hint: str
+    manifest_likelihood: str
+    docs_specificity: str
+    is_source: bool
+    is_test: bool
+    is_docs: bool
+    is_config: bool
+    is_workflow: bool
+    is_media: bool
+    is_generated: bool
+    is_vendor: bool
+    is_runtime_state: bool
+    is_sensitive_or_secret: bool
+    is_archive_or_legacy: bool
+    bucket_eligibility_flags: tuple[str, ...]
+    stable_tie_key: tuple[str, str]
+    path_depth: int
+    size_bucket: int | None = None
+    mtime_bucket: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "feature_schema_version": self.feature_schema_version,
+            "path": self.path,
+            "ordinal": self.ordinal,
+            "suffix": self.suffix,
+            "basename": self.basename,
+            "path_segments": list(self.path_segments),
+            "path_tokens": list(self.path_tokens),
+            "basename_tokens": list(self.basename_tokens),
+            "normalized_path_tokens": list(self.normalized_path_tokens),
+            "role_hint": self.role_hint,
+            "entrypoint_likelihood_hint": self.entrypoint_likelihood_hint,
+            "manifest_likelihood": self.manifest_likelihood,
+            "docs_specificity": self.docs_specificity,
+            "is_source": self.is_source,
+            "is_test": self.is_test,
+            "is_docs": self.is_docs,
+            "is_config": self.is_config,
+            "is_workflow": self.is_workflow,
+            "is_media": self.is_media,
+            "is_generated": self.is_generated,
+            "is_vendor": self.is_vendor,
+            "is_runtime_state": self.is_runtime_state,
+            "is_sensitive_or_secret": self.is_sensitive_or_secret,
+            "is_archive_or_legacy": self.is_archive_or_legacy,
+            "bucket_eligibility_flags": list(self.bucket_eligibility_flags),
+            "stable_tie_key": list(self.stable_tie_key),
+            "path_depth": self.path_depth,
+            "size_bucket": self.size_bucket,
+            "mtime_bucket": self.mtime_bucket,
+        }
 
 
 @dataclass(frozen=True)
@@ -272,9 +359,10 @@ class WarmPathMetadata:
     role: PathRole
     is_media_asset_shape: bool
     is_archive_or_legacy: bool
+    scoring_features: WarmScoringFeatures | None = None
 
     def to_dict(self) -> dict[str, object]:
-        return {
+        payload: dict[str, object] = {
             "path": self.path,
             "suffix": self.suffix,
             "basename": self.basename,
@@ -284,6 +372,9 @@ class WarmPathMetadata:
             "is_media_asset_shape": self.is_media_asset_shape,
             "is_archive_or_legacy": self.is_archive_or_legacy,
         }
+        if self.scoring_features is not None:
+            payload["scoring_features"] = self.scoring_features.to_dict()
+        return payload
 
 
 @dataclass(frozen=True)
@@ -306,7 +397,12 @@ class WarmCandidate:
     is_workflow: bool
     is_media: bool
     is_generated: bool
+    is_vendor: bool
+    is_runtime_state: bool
+    is_sensitive_or_secret: bool
     is_archive_or_legacy: bool
+    stable_tie_key: tuple[str, str]
+    path_depth: int
     size_bucket: int | None
     mtime_bucket: int | None
     feature_schema: str
@@ -336,6 +432,7 @@ class RepoWarmIndex:
     ignore_file_hash: str = ""
     path_fingerprint: str = ""
     path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION
+    warm_feature_schema_version: str = WARM_SCORING_FEATURE_SCHEMA_VERSION
     build_ms: float = 0.0
     content_reads: int = 0
 
@@ -354,7 +451,7 @@ class RepoWarmIndex:
     ) -> "RepoWarmIndex":
         start = time.perf_counter()
         normalized = _normalize_path_list(paths)
-        metadata = tuple(_warm_metadata_for_path(path) for path in normalized)
+        metadata = tuple(_warm_metadata_for_path(path, ordinal=ordinal) for ordinal, path in enumerate(normalized))
         fingerprint = _warm_index_path_fingerprint(normalized)
         cache_payload = {
             "repo_root": repo_root,
@@ -365,6 +462,7 @@ class RepoWarmIndex:
             "inventory_version": inventory_version,
             "path_fingerprint": fingerprint,
             "platform_path_normalization": path_normalization_version,
+            "warm_feature_schema_version": WARM_SCORING_FEATURE_SCHEMA_VERSION,
         }
         cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         return cls(
@@ -379,6 +477,7 @@ class RepoWarmIndex:
             ignore_file_hash=ignore_file_hash,
             path_fingerprint=fingerprint,
             path_normalization_version=path_normalization_version,
+            warm_feature_schema_version=WARM_SCORING_FEATURE_SCHEMA_VERSION,
             build_ms=round((time.perf_counter() - start) * 1000, 3),
         )
 
@@ -398,6 +497,8 @@ class RepoWarmIndex:
             return False, "selector_inventory_version_changed"
         if self.path_normalization_version != path_normalization_version:
             return False, "path_normalization_version_changed"
+        if self.warm_feature_schema_version != WARM_SCORING_FEATURE_SCHEMA_VERSION:
+            return False, "warm_feature_schema_version_changed"
         if repo_root is not None and self.repo_root != repo_root:
             return False, "repo_root_mismatch"
         if git_head is not None and self.git_head != git_head:
@@ -423,6 +524,7 @@ class RepoWarmIndex:
             "cache_key": self.cache_key,
             "inventory_version": self.inventory_version,
             "path_normalization_version": self.path_normalization_version,
+            "warm_feature_schema_version": self.warm_feature_schema_version,
             "path_count": len(self.paths),
             "path_fingerprint": self.path_fingerprint,
             "build_ms": self.build_ms,
@@ -435,8 +537,11 @@ class RepoWarmIndex:
                 "basename",
                 "path_segments",
                 "path_tokens",
+                "basename_tokens",
+                "normalized_path_tokens",
                 "classification_flags",
                 "role_hints",
+                "stable_tie_key",
             ],
         }
         if include_paths:
@@ -643,18 +748,88 @@ def classify_path_role(path: str) -> PathRole:
     )
 
 
-def _warm_metadata_for_path(path: str) -> WarmPathMetadata:
+def _warm_scoring_features_for_path(
+    path: str,
+    *,
+    ordinal: int,
+    role: PathRole,
+    is_media_asset_shape: bool,
+    is_archive_or_legacy: bool,
+) -> WarmScoringFeatures:
     normalized = path.replace("\\", "/").strip("/")
     parts = tuple(_parts(normalized))
+    path_tokens = tuple(sorted(_expanded_match_tokens(normalized)))
+    basename = _name(normalized)
+    safety = classify_path_for_routing(normalized)
+    lowered_parts = tuple(part.lower() for part in parts)
+    is_vendor = any(part in VENDOR_ROOTS or part in {".cache", "__pycache__"} for part in lowered_parts)
+    is_runtime_state = safety.get("category") == "secret_state_proof_runtime" and not safety.get("editable")
+    flags: list[str] = [role.role]
+    if role.is_test:
+        flags.append("test")
+    if role.is_docs:
+        flags.append("docs")
+    if role.is_config:
+        flags.append("config")
+    if role.is_workflow:
+        flags.append("workflow")
+    if is_media_asset_shape:
+        flags.append("media")
+    if role.entrypoint_likelihood in {"high", "medium"}:
+        flags.append("entrypoint")
+    return WarmScoringFeatures(
+        feature_schema_version=WARM_SCORING_FEATURE_SCHEMA_VERSION,
+        path=normalized,
+        ordinal=ordinal,
+        suffix=_suffix(normalized),
+        basename=basename,
+        path_segments=parts,
+        path_tokens=path_tokens,
+        basename_tokens=tuple(sorted(_expanded_match_tokens(basename))),
+        normalized_path_tokens=path_tokens,
+        role_hint=role.role,
+        entrypoint_likelihood_hint=role.entrypoint_likelihood,
+        manifest_likelihood=role.manifest_likelihood,
+        docs_specificity=role.docs_specificity,
+        is_source=role.role == "source",
+        is_test=role.is_test,
+        is_docs=role.is_docs,
+        is_config=role.is_config,
+        is_workflow=role.is_workflow,
+        is_media=is_media_asset_shape,
+        is_generated=role.is_generated_or_vendor,
+        is_vendor=is_vendor,
+        is_runtime_state=is_runtime_state,
+        is_sensitive_or_secret=is_sensitive_or_secret_path(normalized),
+        is_archive_or_legacy=is_archive_or_legacy,
+        bucket_eligibility_flags=tuple(sorted(dict.fromkeys(flags))),
+        stable_tie_key=("path", normalized),
+        path_depth=normalized.count("/"),
+    )
+
+
+def _warm_metadata_for_path(path: str, *, ordinal: int = 0) -> WarmPathMetadata:
+    normalized = path.replace("\\", "/").strip("/")
+    parts = tuple(_parts(normalized))
+    role = classify_path_role(normalized)
+    is_media_asset_shape = _path_has_media_asset_shape(normalized)
+    is_archive_or_legacy = _is_archive_or_legacy_path(normalized)
     return WarmPathMetadata(
         path=normalized,
         suffix=_suffix(normalized),
         basename=_name(normalized),
         path_segments=parts,
         path_tokens=tuple(sorted(_expanded_match_tokens(normalized))),
-        role=classify_path_role(normalized),
-        is_media_asset_shape=_path_has_media_asset_shape(normalized),
-        is_archive_or_legacy=_is_archive_or_legacy_path(normalized),
+        role=role,
+        is_media_asset_shape=is_media_asset_shape,
+        is_archive_or_legacy=is_archive_or_legacy,
+        scoring_features=_warm_scoring_features_for_path(
+            normalized,
+            ordinal=ordinal,
+            role=role,
+            is_media_asset_shape=is_media_asset_shape,
+            is_archive_or_legacy=is_archive_or_legacy,
+        ),
     )
 
 
@@ -939,7 +1114,56 @@ def intent_v2_path_score(path: str, intent: str | PromptIntentV2, *, linked: boo
     return score
 
 
+def _warm_candidate_from_features(features: WarmScoringFeatures) -> WarmCandidate:
+    return WarmCandidate(
+        ordinal=features.ordinal,
+        path=features.path,
+        suffix=features.suffix,
+        basename=features.basename,
+        path_segments=features.path_segments,
+        path_tokens=features.path_tokens,
+        basename_tokens=features.basename_tokens,
+        role_hint=features.role_hint,
+        entrypoint_likelihood=features.entrypoint_likelihood_hint,
+        manifest_likelihood=features.manifest_likelihood,
+        docs_specificity=features.docs_specificity,
+        is_source=features.is_source,
+        is_test=features.is_test,
+        is_docs=features.is_docs,
+        is_config=features.is_config,
+        is_workflow=features.is_workflow,
+        is_media=features.is_media,
+        is_generated=features.is_generated,
+        is_vendor=features.is_vendor,
+        is_runtime_state=features.is_runtime_state,
+        is_sensitive_or_secret=features.is_sensitive_or_secret,
+        is_archive_or_legacy=features.is_archive_or_legacy,
+        stable_tie_key=features.stable_tie_key,
+        path_depth=features.path_depth,
+        size_bucket=features.size_bucket,
+        mtime_bucket=features.mtime_bucket,
+        feature_schema=features.feature_schema_version,
+    )
+
+
+def _validate_warm_scoring_features(features: WarmScoringFeatures | None, *, ordinal: int, metadata: WarmPathMetadata) -> str | None:
+    if features is None:
+        return "missing_warm_feature_record"
+    if features.feature_schema_version != WARM_SCORING_FEATURE_SCHEMA_VERSION:
+        return "warm_feature_schema_version_changed"
+    if features.ordinal != ordinal or features.path != metadata.path:
+        return "corrupt_warm_feature_record"
+    if not features.path or features.is_sensitive_or_secret or _selector_excludes_path(features.path):
+        return "warm_feature_excluded_path"
+    if features.path_tokens != metadata.path_tokens or features.basename != metadata.basename or features.suffix != metadata.suffix:
+        return "corrupt_warm_feature_record"
+    return None
+
+
 def _warm_candidate_from_metadata(ordinal: int, metadata: WarmPathMetadata) -> WarmCandidate:
+    feature_reason = _validate_warm_scoring_features(metadata.scoring_features, ordinal=ordinal, metadata=metadata)
+    if feature_reason is None and metadata.scoring_features is not None:
+        return _warm_candidate_from_features(metadata.scoring_features)
     role = metadata.role
     return WarmCandidate(
         ordinal=ordinal,
@@ -960,7 +1184,12 @@ def _warm_candidate_from_metadata(ordinal: int, metadata: WarmPathMetadata) -> W
         is_workflow=role.is_workflow,
         is_media=metadata.is_media_asset_shape,
         is_generated=role.is_generated_or_vendor,
+        is_vendor=role.is_generated_or_vendor,
+        is_runtime_state=False,
+        is_sensitive_or_secret=is_sensitive_or_secret_path(metadata.path),
         is_archive_or_legacy=metadata.is_archive_or_legacy,
+        stable_tie_key=("path", metadata.path),
+        path_depth=metadata.path.count("/"),
         size_bucket=None,
         mtime_bucket=None,
         feature_schema="warm-candidate-v1",
@@ -1141,7 +1370,7 @@ def _score_warm_candidate(args: tuple[WarmCandidate, PromptIntentV2, tuple[str, 
     decision = _role_bucket_for_warm_candidate(candidate, intent, linked=linked)
     intent_name = intent.intent
     score = _intent_v2_candidate_base_score(candidate, decision, intent_name, linked=linked) + overlap * 100
-    score -= min(candidate.path.count("/"), 5) * 8
+    score -= min(candidate.path_depth, 5) * 8
     matched_signal_ids: list[str] = [decision.role_bucket_reason]
     if overlap:
         matched_signal_ids.append("prompt_path_overlap")
@@ -1181,7 +1410,7 @@ def _score_warm_candidate(args: tuple[WarmCandidate, PromptIntentV2, tuple[str, 
         path=candidate.path,
         score=score,
         role_bucket=decision.role_bucket,
-        sort_key=(-score, candidate.path),
+        sort_key=(-score, candidate.stable_tie_key[1]),
         matched_signal_ids=tuple(matched_signal_ids),
         role_bucket_reason=decision.role_bucket_reason,
     )
@@ -1236,18 +1465,8 @@ def _resource_usage_ms() -> tuple[float, float, int]:
     return usage.ru_utime * 1000, usage.ru_stime * 1000, int(usage.ru_maxrss)
 
 
-def _parallel_rank_intent_v2_warm_index(
-    warm_index: RepoWarmIndex,
-    raw_prompt: str,
-    *,
-    mode: str,
-    worker_count: int | None,
-    max_paths: int | None = None,
-) -> tuple[list[RoleBucketDecision] | None, dict[str, object]]:
-    total_start = time.perf_counter()
-    usage_start = _resource_usage_ms()
-    intent = infer_prompt_intent_v2(raw_prompt)
-    cap_defaults = {
+def _intent_v2_default_limit(intent_name: str) -> int:
+    return {
         "media_asset_lookup": 2,
         "large_repo_media_lookup": 2,
         "code_entrypoint_lookup": 2,
@@ -1259,8 +1478,75 @@ def _parallel_rank_intent_v2_warm_index(
         "broad_repo_inspection": 3,
         "symbol_lookup": 4,
         "unknown": 3,
+    }.get(intent_name, 4)
+
+
+def _rank_intent_v2_warm_features(
+    warm_index: RepoWarmIndex,
+    raw_prompt: str,
+    *,
+    max_paths: int | None = None,
+) -> tuple[list[RoleBucketDecision] | None, dict[str, object]]:
+    total_start = time.perf_counter()
+    telemetry: dict[str, object] = {
+        "warm_features_enabled": True,
+        "warm_features_schema_version": WARM_SCORING_FEATURE_SCHEMA_VERSION,
+        "warm_features_candidate_count": len(warm_index.path_metadata),
+        "warm_features_reused_count": 0,
+        "warm_features_fallback_reason": None,
+        "warm_feature_build_ms": 0.0,
+        "warm_feature_score_ms": 0.0,
+        "serial_score_ms": 0.0,
+        "feature_reuse_hit_rate": 0.0,
     }
-    limit = max_paths if max_paths is not None else cap_defaults.get(intent.intent, 4)
+    intent = infer_prompt_intent_v2(raw_prompt)
+    limit = max_paths if max_paths is not None else _intent_v2_default_limit(intent.intent)
+
+    try:
+        build_start = time.perf_counter()
+        candidates: list[WarmCandidate] = []
+        for ordinal, metadata in enumerate(warm_index.path_metadata):
+            reason = _validate_warm_scoring_features(metadata.scoring_features, ordinal=ordinal, metadata=metadata)
+            if reason is not None:
+                telemetry["warm_features_fallback_reason"] = reason
+                return None, telemetry
+            candidates.append(_warm_candidate_from_features(metadata.scoring_features))
+        telemetry["warm_feature_build_ms"] = round((time.perf_counter() - build_start) * 1000, 3)
+
+        score_start = time.perf_counter()
+        prompt_tokens = tuple(sorted(_expanded_match_tokens(raw_prompt)))
+        records = [_score_warm_candidate((candidate, intent, prompt_tokens)) for candidate in candidates]
+        score_ms = round((time.perf_counter() - score_start) * 1000, 3)
+        telemetry["warm_feature_score_ms"] = score_ms
+        telemetry["serial_score_ms"] = score_ms
+        telemetry["warm_features_reused_count"] = len(candidates)
+        telemetry["feature_reuse_hit_rate"] = round(len(candidates) / len(candidates), 6) if candidates else 0.0
+    except Exception as exc:
+        telemetry["warm_features_fallback_reason"] = f"warm_feature_exception:{type(exc).__name__}"
+        return None, telemetry
+
+    reduce_start = time.perf_counter()
+    decisions, fallback_reason = _reduce_score_records(records, intent_name=intent.intent, limit=limit, candidate_count=len(candidates))
+    telemetry["reduce_sort_ms"] = round((time.perf_counter() - reduce_start) * 1000, 3)
+    telemetry["total_selector_ms"] = round((time.perf_counter() - total_start) * 1000, 3)
+    if fallback_reason:
+        telemetry["warm_features_fallback_reason"] = fallback_reason
+        return None, telemetry
+    return decisions, telemetry
+
+
+def _parallel_rank_intent_v2_warm_index(
+    warm_index: RepoWarmIndex,
+    raw_prompt: str,
+    *,
+    mode: str,
+    worker_count: int | None,
+    max_paths: int | None = None,
+) -> tuple[list[RoleBucketDecision] | None, dict[str, object]]:
+    total_start = time.perf_counter()
+    usage_start = _resource_usage_ms()
+    intent = infer_prompt_intent_v2(raw_prompt)
+    limit = max_paths if max_paths is not None else _intent_v2_default_limit(intent.intent)
     candidates = [_warm_candidate_from_metadata(ordinal, metadata) for ordinal, metadata in enumerate(warm_index.path_metadata)]
     requested_mode = "threads" if mode == "auto" else mode
     effective_mode = requested_mode
@@ -1591,7 +1877,17 @@ def _dry_run_fallback_result(
         adaptive_reason=parallel.get("adaptive_reason") if isinstance(parallel.get("adaptive_reason"), str) else None,
         adaptive_fallback_reason=parallel.get("adaptive_fallback_reason") if isinstance(parallel.get("adaptive_fallback_reason"), str) else None,
         adaptive_small_repo_guard_triggered=bool(parallel.get("adaptive_small_repo_guard_triggered", False)),
+        warm_features_enabled=bool(warm.get("warm_features_enabled", False)),
+        warm_features_schema_version=warm.get("warm_features_schema_version") if isinstance(warm.get("warm_features_schema_version"), str) else None,
+        warm_features_candidate_count=int(warm.get("warm_features_candidate_count") or 0),
+        warm_features_reused_count=int(warm.get("warm_features_reused_count") or 0),
+        warm_features_fallback_reason=warm.get("warm_features_fallback_reason") if isinstance(warm.get("warm_features_fallback_reason"), str) else None,
+        warm_feature_build_ms=float(warm.get("warm_feature_build_ms") or 0.0),
+        warm_feature_score_ms=float(warm.get("warm_feature_score_ms") or 0.0),
+        serial_score_ms=float(warm.get("serial_score_ms") or 0.0),
+        feature_reuse_hit_rate=float(warm.get("feature_reuse_hit_rate") or 0.0),
         sensitive_path_exclusion_count=sensitive_path_exclusion_count,
+        sensitive_excluded_count=sensitive_path_exclusion_count,
     )
 
 
@@ -1616,6 +1912,7 @@ def dry_run_selector_candidate(
     parallel_scoring_enabled: bool = False,
     parallel_scoring_mode: str = "serial",
     parallel_score_workers: int | None = None,
+    warm_features_enabled: bool = False,
 ) -> SelectorCandidateDryRun:
     """Evaluate a selector candidate as explicit dry-run metadata only.
 
@@ -1641,6 +1938,15 @@ def dry_run_selector_candidate(
         "candidate_enumeration_count": len(normalized_paths),
         "warm_index_cache_key": None,
         "warm_index_metadata_only_verified": False,
+        "warm_features_enabled": warm_features_enabled,
+        "warm_features_schema_version": WARM_SCORING_FEATURE_SCHEMA_VERSION if warm_features_enabled else None,
+        "warm_features_candidate_count": 0,
+        "warm_features_reused_count": 0,
+        "warm_features_fallback_reason": None,
+        "warm_feature_build_ms": 0.0,
+        "warm_feature_score_ms": 0.0,
+        "serial_score_ms": 0.0,
+        "feature_reuse_hit_rate": 0.0,
     }
     parallel_stats: dict[str, object] = {
         "parallel_scoring_enabled": False,
@@ -1795,6 +2101,21 @@ def dry_run_selector_candidate(
                 candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
             else:
                 candidate_decisions = parallel_decisions
+    elif warm_features_enabled:
+        if not warm_index_enabled or scoring_warm_index is None or not warm_stats.get("warm_index_metadata_only_verified"):
+            warm_stats["warm_features_fallback_reason"] = "warm_features_require_valid_warm_index"
+            candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+        else:
+            warm_feature_decisions, warm_feature_attempt = _rank_intent_v2_warm_features(
+                scoring_warm_index,
+                raw_prompt,
+                max_paths=max_paths,
+            )
+            warm_stats.update(warm_feature_attempt)
+            if warm_feature_decisions is None:
+                candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+            else:
+                candidate_decisions = warm_feature_decisions
     else:
         candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
     selector_ms = round((time.perf_counter() - selector_start) * 1000, 3)
@@ -1880,7 +2201,17 @@ def dry_run_selector_candidate(
         adaptive_reason=parallel_stats.get("adaptive_reason") if isinstance(parallel_stats.get("adaptive_reason"), str) else None,
         adaptive_fallback_reason=parallel_stats.get("adaptive_fallback_reason") if isinstance(parallel_stats.get("adaptive_fallback_reason"), str) else None,
         adaptive_small_repo_guard_triggered=bool(parallel_stats.get("adaptive_small_repo_guard_triggered", False)),
+        warm_features_enabled=bool(warm_stats.get("warm_features_enabled", False)),
+        warm_features_schema_version=warm_stats.get("warm_features_schema_version") if isinstance(warm_stats.get("warm_features_schema_version"), str) else None,
+        warm_features_candidate_count=int(warm_stats.get("warm_features_candidate_count") or 0),
+        warm_features_reused_count=int(warm_stats.get("warm_features_reused_count") or 0),
+        warm_features_fallback_reason=warm_stats.get("warm_features_fallback_reason") if isinstance(warm_stats.get("warm_features_fallback_reason"), str) else None,
+        warm_feature_build_ms=float(warm_stats.get("warm_feature_build_ms") or 0.0),
+        warm_feature_score_ms=float(warm_stats.get("warm_feature_score_ms") or 0.0),
+        serial_score_ms=float(warm_stats.get("serial_score_ms") or 0.0),
+        feature_reuse_hit_rate=float(warm_stats.get("feature_reuse_hit_rate") or 0.0),
         sensitive_path_exclusion_count=sensitive_path_exclusion_count,
+        sensitive_excluded_count=sensitive_path_exclusion_count,
     )
 
 
