@@ -13,9 +13,14 @@ from typing import Any
 from .config import premode_dir
 
 SECRET_LIKE_PATTERNS = [
-    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa", "id_ed25519",
-    "secrets.*", "credentials.*", "token.*", "**/.env", "**/.env.*", "**/*.pem", "**/*.key",
-    "**/id_rsa", "**/id_ed25519", "**/secrets.*", "**/credentials.*", "**/token.*",
+    ".env", ".env.*", "*.env", "env.local", "env.*.bak", "*.env.bak", "env.local.*.bak",
+    "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa", "id_ed25519",
+    "secret.*", "secrets.*", "credential.*", "credentials.*", "token.*",
+    "**/.env", "**/.env.*", "**/*.env", "**/env.local", "**/env.*.bak", "**/*.env.bak",
+    "**/env.local.*.bak", "**/*.pem", "**/*.key", "**/id_rsa", "**/id_ed25519",
+    "**/secret.*", "**/secrets.*", "**/credential.*", "**/credentials.*", "**/token.*",
+    "._backup_codex/**", "**/._backup_codex/**", ".agents/**", "**/.agents/**",
+    ".premode/**", "**/.premode/**",
 ]
 
 DEPENDENCY_OR_BUILD_PATTERNS = [

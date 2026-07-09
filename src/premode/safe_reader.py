@@ -5,6 +5,7 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Iterable
 
+from .context_constraints import is_sensitive_or_secret_path
 from .ignore import IgnoreMatcher
 from .paths import normalize_for_manifest, safe_repo_path
 from .profiles import ResourceCaps
@@ -15,9 +16,12 @@ BINARY_EXTENSIONS = {
     ".mobileprovision", ".sqlite", ".db", ".otf", ".ttf", ".woff", ".woff2",
 }
 SECRET_PATTERNS = [
-    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.mobileprovision",
+    ".env", ".env.*", "*.env", "env.local", "env.*.bak", "*.env.bak",
+    "env.local.*.bak", "*.pem", "*.key", "*.p12", "*.pfx", "*.mobileprovision",
     "id_rsa", "id_ed25519", "*.ppk", "*.cer", "*.crt", "*.keystore",
-    "*.jks", "*.secret", "secrets.*", "credentials.*", "aws_credentials",
+    "*.jks", "*.secret", "secret.*", "secrets.*", "credential.*",
+    "credentials.*", "aws_credentials", "._backup_codex/**", ".agents/**",
+    ".premode/**",
 ]
 LOG_SUFFIXES = {".log", ".trace", ".txt"}
 
@@ -44,6 +48,8 @@ class SafeReadResult:
 
 
 def is_secret_name(rel_path: str) -> bool:
+    if is_sensitive_or_secret_path(rel_path):
+        return True
     base = rel_path.replace("\\", "/").split("/")[-1]
     for pat in SECRET_PATTERNS:
         if fnmatch(base, pat) or fnmatch(rel_path, pat):

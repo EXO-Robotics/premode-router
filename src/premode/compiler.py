@@ -4636,6 +4636,14 @@ def _prompt_signals_for_packet(manifest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _model_facing_path_excluded(path: str) -> bool:
+    safety = classify_path_for_routing(path)
+    return (
+        safety.get("category") in {"secret_state_proof_runtime", "generated_or_build_output"}
+        and not safety.get("editable")
+    )
+
+
 def _path_values_for_packet(items: Any, *, limit: int = 20) -> dict[str, Any]:
     values: list[str] = []
     for item in list(items or []):
@@ -4644,7 +4652,7 @@ def _path_values_for_packet(items: Any, *, limit: int = 20) -> dict[str, Any]:
         else:
             value = item
         text = str(value or "").strip()
-        if text:
+        if text and not _model_facing_path_excluded(text):
             values.append(text)
     return {"count": len(values), "items": values[:limit], "omitted_count": max(0, len(values) - limit)}
 
@@ -4960,7 +4968,7 @@ def _paths_from_packet_items(items: Any, *, limit: int = 48) -> list[str]:
         value = item.get("path") if isinstance(item, dict) else item
         text = str(value or "").strip()
         key = text.lower()
-        if text and key not in seen:
+        if text and not _model_facing_path_excluded(text) and key not in seen:
             out.append(text)
             seen.add(key)
         if len(out) >= limit:
@@ -6499,9 +6507,14 @@ def _pre_agent_worktree_state(repo_root: Path) -> dict[str, Any]:
 
 
 REVIEW_SECRET_LIKE_PATTERNS = [
-    ".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa", "id_ed25519",
-    "secrets.*", "credentials.*", "token.*", "**/.env", "**/.env.*", "**/*.pem", "**/*.key",
-    "**/id_rsa", "**/id_ed25519", "**/secrets.*", "**/credentials.*", "**/token.*",
+    ".env", ".env.*", "*.env", "env.local", "env.*.bak", "*.env.bak", "env.local.*.bak",
+    "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa", "id_ed25519",
+    "secret.*", "secrets.*", "credential.*", "credentials.*", "token.*",
+    "**/.env", "**/.env.*", "**/*.env", "**/env.local", "**/env.*.bak", "**/*.env.bak",
+    "**/env.local.*.bak", "**/*.pem", "**/*.key", "**/id_rsa", "**/id_ed25519",
+    "**/secret.*", "**/secrets.*", "**/credential.*", "**/credentials.*", "**/token.*",
+    "._backup_codex/**", "**/._backup_codex/**", ".agents/**", "**/.agents/**",
+    ".premode/**", "**/.premode/**",
 ]
 REVIEW_GENERATED_OR_STATE_PATTERNS = [
     "_output/*", "generated/*", "gen/*", "bazel-*", "build/*", "dist/*", "target/*", "out/*",

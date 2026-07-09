@@ -10,6 +10,8 @@ import re
 import resource
 import time
 
+from .context_constraints import classify_path_for_routing, is_sensitive_or_secret_path
+
 
 SOURCE_EXTENSIONS = {
     ".py", ".swift", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".rs", ".go",
@@ -191,6 +193,8 @@ class SelectorCandidateDryRun:
     adaptive_reason: str | None = None
     adaptive_fallback_reason: str | None = None
     adaptive_small_repo_guard_triggered: bool = False
+    sensitive_path_exclusion_count: int = 0
+    path_filter_policy: str = "sensitive-secret-generated-path-filter-v1"
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -248,6 +252,8 @@ class SelectorCandidateDryRun:
             "adaptive_reason": self.adaptive_reason,
             "adaptive_fallback_reason": self.adaptive_fallback_reason,
             "adaptive_small_repo_guard_triggered": self.adaptive_small_repo_guard_triggered,
+            "sensitive_path_exclusion_count": self.sensitive_path_exclusion_count,
+            "path_filter_policy": self.path_filter_policy,
         }
         if include_paths:
             payload["selected_paths"] = list(self.selected_paths)
@@ -545,7 +551,11 @@ def classify_path_role(path: str) -> PathRole:
     name = _name(normalized)
     suffix = _suffix(normalized)
     ecosystem = _ecosystem(normalized)
-    generated = bool(any(part in VENDOR_ROOTS for part in lowered) or ".generated." in normalized.lower() or ".gen." in normalized.lower())
+    generated = bool(
+        any(part in VENDOR_ROOTS for part in lowered)
+        or ".generated." in normalized.lower()
+        or ".gen." in normalized.lower()
+    )
     is_example = bool(any(part in EXAMPLE_ROOTS for part in lowered))
     is_workflow = bool(
         normalized.lower().startswith(".github/workflows/")
@@ -771,6 +781,8 @@ def role_bucket_for_path(
 ) -> RoleBucketDecision:
     intent_name = intent.intent if isinstance(intent, PromptIntentV2) else str(intent or "unknown")
     normalized = path.replace("\\", "/").strip("/")
+    if _selector_excludes_path(normalized):
+        return RoleBucketDecision(normalized, intent_name, "ignore_or_noise", "sensitive_or_secret_path")
     role = classify_path_role(normalized)
     is_asset = _path_has_media_asset_shape(normalized)
     is_archive_or_legacy = _is_archive_or_legacy_path(normalized)
@@ -963,6 +975,8 @@ def _role_bucket_for_warm_candidate(
 ) -> RoleBucketDecision:
     intent_name = intent.intent if isinstance(intent, PromptIntentV2) else str(intent or "unknown")
     normalized = candidate.path
+    if _selector_excludes_path(normalized):
+        return RoleBucketDecision(normalized, intent_name, "ignore_or_noise", "sensitive_or_secret_path")
     role = candidate.role_hint
     is_asset = candidate.is_media
 
@@ -1416,10 +1430,7 @@ def rank_intent_v2_paths(paths: list[str], raw_prompt: str, *, max_paths: int | 
     limit = max_paths if max_paths is not None else cap_defaults.get(intent_name, 4)
     prompt_tokens = _expanded_match_tokens(raw_prompt)
     scored: list[tuple[int, str, RoleBucketDecision]] = []
-    for raw_path in paths:
-        path = raw_path.replace("\\", "/").strip("/")
-        if not path:
-            continue
+    for path in _normalize_path_list(paths):
         overlap = _path_prompt_overlap_score(path, prompt_tokens)
         linked = overlap > 0
         decision = role_bucket_for_path(path, intent, linked=linked)
@@ -1470,15 +1481,41 @@ def rank_intent_v2_paths(paths: list[str], raw_prompt: str, *, max_paths: int | 
     return selected
 
 
-def _normalize_path_list(paths: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+def _selector_excludes_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").strip("/").lower()
+    parts = _parts(normalized)
+    safety = classify_path_for_routing(path)
+    return (
+        (
+            safety.get("category") in {"secret_state_proof_runtime", "generated_or_build_output"}
+            and not safety.get("editable")
+        )
+        or is_sensitive_or_secret_path(path)
+        or (parts and parts[0] == "cache")
+        or any(part in VENDOR_ROOTS or part in {".cache", "__pycache__"} for part in parts)
+        or any(part.startswith("bazel-") for part in parts)
+        or ".generated." in normalized
+        or ".gen." in normalized
+        or "_generated." in normalized
+    )
+
+
+def _normalize_path_list(paths: list[str] | tuple[str, ...] | None, *, filter_excluded: bool = True) -> tuple[str, ...]:
     out: list[str] = []
     seen: set[str] = set()
     for raw_path in paths or ():
         path = str(raw_path or "").replace("\\", "/").strip("/")
+        if filter_excluded and _selector_excludes_path(path):
+            continue
         if path and path not in seen:
             seen.add(path)
             out.append(path)
     return tuple(out)
+
+
+def _sensitive_path_exclusion_count(paths: list[str] | tuple[str, ...] | None) -> int:
+    raw = _normalize_path_list(paths, filter_excluded=False)
+    return sum(1 for path in raw if is_sensitive_or_secret_path(path))
 
 
 def _role_bucket_summary(decisions: list[RoleBucketDecision]) -> dict[str, int]:
@@ -1497,6 +1534,7 @@ def _dry_run_fallback_result(
     candidate_decisions: list[RoleBucketDecision] | None = None,
     warm_stats: dict[str, object] | None = None,
     parallel_stats: dict[str, object] | None = None,
+    sensitive_path_exclusion_count: int = 0,
 ) -> SelectorCandidateDryRun:
     candidate_paths = tuple(decision.path for decision in candidate_decisions or [])
     role_summary = _role_bucket_summary(candidate_decisions or [])
@@ -1553,6 +1591,7 @@ def _dry_run_fallback_result(
         adaptive_reason=parallel.get("adaptive_reason") if isinstance(parallel.get("adaptive_reason"), str) else None,
         adaptive_fallback_reason=parallel.get("adaptive_fallback_reason") if isinstance(parallel.get("adaptive_fallback_reason"), str) else None,
         adaptive_small_repo_guard_triggered=bool(parallel.get("adaptive_small_repo_guard_triggered", False)),
+        sensitive_path_exclusion_count=sensitive_path_exclusion_count,
     )
 
 
@@ -1584,6 +1623,8 @@ def dry_run_selector_candidate(
     not mutate default routing behavior and does not read file contents.
     """
     default_paths = _normalize_path_list(default_selected_paths)
+    normalized_paths = _normalize_path_list(paths)
+    sensitive_path_exclusion_count = _sensitive_path_exclusion_count(paths) + _sensitive_path_exclusion_count(default_selected_paths)
     intent = infer_prompt_intent_v2(raw_prompt)
     selector = selector_candidate or "default_current"
     warm_stats: dict[str, object] = {
@@ -1594,10 +1635,10 @@ def dry_run_selector_candidate(
         "warm_index_build_ms": 0.0,
         "warm_selector_ms": 0.0,
         "cold_selector_ms": 0.0,
-        "disk_read_proxy_count": len(_normalize_path_list(paths)) if not warm_index_enabled else 0,
+        "disk_read_proxy_count": len(normalized_paths) if not warm_index_enabled else 0,
         "inventory_walk_count": 1 if not warm_index_enabled else 0,
         "stat_call_count": 0,
-        "candidate_enumeration_count": len(_normalize_path_list(paths)),
+        "candidate_enumeration_count": len(normalized_paths),
         "warm_index_cache_key": None,
         "warm_index_metadata_only_verified": False,
     }
@@ -1606,7 +1647,7 @@ def dry_run_selector_candidate(
         "parallel_scoring_mode": "serial",
         "parallel_score_workers": None,
         "parallel_score_fallback_reason": None,
-        "candidate_count": len(_normalize_path_list(paths)),
+        "candidate_count": len(normalized_paths),
         "score_record_count": 0,
         "score_map_ms": 0.0,
         "reduce_sort_ms": 0.0,
@@ -1637,6 +1678,7 @@ def dry_run_selector_candidate(
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
             parallel_stats=parallel_stats,
+            sensitive_path_exclusion_count=sensitive_path_exclusion_count,
         )
     if selector_candidate != INTENT_V2_ROLE_BUCKETS_VARIANT:
         return _dry_run_fallback_result(
@@ -1646,6 +1688,7 @@ def dry_run_selector_candidate(
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
             parallel_stats=parallel_stats,
+            sensitive_path_exclusion_count=sensitive_path_exclusion_count,
         )
     if intent.intent == "unknown" or intent.confidence < 0.50:
         return _dry_run_fallback_result(
@@ -1655,9 +1698,10 @@ def dry_run_selector_candidate(
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
             parallel_stats=parallel_stats,
+            sensitive_path_exclusion_count=sensitive_path_exclusion_count,
         )
 
-    selector_paths: list[str] | tuple[str, ...] = paths
+    selector_paths: list[str] | tuple[str, ...] = normalized_paths
     scoring_warm_index: RepoWarmIndex | None = None
     if warm_index_enabled:
         if warm_index is not None:
@@ -1688,7 +1732,7 @@ def dry_run_selector_candidate(
                 warm_stats.update(
                     {
                         "warm_index_fallback_reason": reason or "warm_index_invalid",
-                        "disk_read_proxy_count": len(_normalize_path_list(paths)),
+                        "disk_read_proxy_count": len(normalized_paths),
                         "inventory_walk_count": 1,
                     }
                 )
@@ -1720,7 +1764,7 @@ def dry_run_selector_candidate(
             warm_stats.update(
                 {
                     "warm_index_fallback_reason": "missing_index",
-                    "disk_read_proxy_count": len(_normalize_path_list(paths)),
+                    "disk_read_proxy_count": len(normalized_paths),
                     "inventory_walk_count": 1,
                 }
             )
@@ -1770,6 +1814,7 @@ def dry_run_selector_candidate(
             candidate_decisions=candidate_decisions,
             warm_stats=warm_stats,
             parallel_stats=parallel_stats,
+            sensitive_path_exclusion_count=sensitive_path_exclusion_count,
         )
     forbidden = set(_normalize_path_list(forbidden_paths))
     if forbidden and any(decision.path in forbidden for decision in candidate_decisions):
@@ -1781,6 +1826,7 @@ def dry_run_selector_candidate(
             candidate_decisions=candidate_decisions,
             warm_stats=warm_stats,
             parallel_stats=parallel_stats,
+            sensitive_path_exclusion_count=sensitive_path_exclusion_count,
         )
 
     candidate_paths = tuple(decision.path for decision in candidate_decisions)
@@ -1834,6 +1880,7 @@ def dry_run_selector_candidate(
         adaptive_reason=parallel_stats.get("adaptive_reason") if isinstance(parallel_stats.get("adaptive_reason"), str) else None,
         adaptive_fallback_reason=parallel_stats.get("adaptive_fallback_reason") if isinstance(parallel_stats.get("adaptive_fallback_reason"), str) else None,
         adaptive_small_repo_guard_triggered=bool(parallel_stats.get("adaptive_small_repo_guard_triggered", False)),
+        sensitive_path_exclusion_count=sensitive_path_exclusion_count,
     )
 
 

@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import Path
 
+from .context_constraints import is_sensitive_or_secret_path
 from .ignore import IgnoreMatcher
 from .role_model import classify_path_role
 from .safe_reader import is_probably_binary_path, is_secret_name
@@ -672,7 +673,7 @@ def _role_for_path(rel_path: str) -> str:
     parts = lower.split("/")
     name = parts[-1]
     suffix = Path(name).suffix.lower()
-    if is_secret_name(rel) or name in {".npmrc", ".pypirc"} or "private_key" in lower:
+    if is_secret_name(rel) or is_sensitive_or_secret_path(rel) or name in {".npmrc", ".pypirc"} or "private_key" in lower:
         return "secret"
     if role.generated_or_vendor_status == "generated_or_vendor" and any(part in {"node_modules", "vendor", "vendors", "third_party"} for part in parts):
         return "vendor"
@@ -757,9 +758,7 @@ def _media_path_is_pruned(rel_path: str) -> bool:
     lower = rel_path.lower().replace("\\", "/").strip("/")
     parts = [part for part in lower.split("/") if part]
     name = parts[-1] if parts else lower
-    if is_secret_name(lower):
-        return True
-    if name.startswith(".env") or "secret" in name or "credential" in name or "token" in name:
+    if is_secret_name(lower) or is_sensitive_or_secret_path(lower):
         return True
     return any(part in MEDIA_PRUNE_SEGMENTS for part in parts)
 
