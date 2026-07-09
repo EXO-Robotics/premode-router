@@ -41,7 +41,8 @@ MEDIA_ASSET_EXTENSIONS = {
 MEDIA_ASSET_PATH_TERMS = {
     "asset", "assets", "media", "material", "materials", "texture", "textures",
     "sprite", "sprites", "icon", "icons", "mesh", "meshes", "model", "models",
-    "catalog", "manifest", "image", "images",
+    "catalog", "manifest", "image", "images", "audio", "cue", "cues", "sound",
+    "sounds",
 }
 INTENT_V2_CLASSES = (
     "media_asset_lookup",
@@ -129,6 +130,48 @@ class RoleBucketDecision:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class SelectorCandidateDryRun:
+    selector_variant: str
+    candidate_selector_used: bool
+    candidate_selector_fallback: bool
+    candidate_selector_fallback_reason: str | None
+    intent_v2: str
+    intent_confidence: float
+    role_bucket_summary: dict[str, int]
+    selection_lock_hash: str
+    selected_paths: tuple[str, ...]
+    candidate_paths: tuple[str, ...]
+    default_selected_paths: tuple[str, ...]
+    content_reads: int = 0
+    advisory_only: bool = True
+    claim_level: str = SELECTOR_MATRIX_CLAIM_LEVEL
+
+    def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "selector_variant": self.selector_variant,
+            "candidate_selector_used": self.candidate_selector_used,
+            "candidate_selector_fallback": self.candidate_selector_fallback,
+            "candidate_selector_fallback_reason": self.candidate_selector_fallback_reason,
+            "intent_v2": self.intent_v2,
+            "intent_confidence": self.intent_confidence,
+            "role_bucket_summary": dict(self.role_bucket_summary),
+            "selection_lock_hash": self.selection_lock_hash,
+            "selected_path_count": len(self.selected_paths),
+            "selected_path_hash": selection_lock_hash_for_paths(list(self.selected_paths), intent=self.intent_v2),
+            "candidate_path_count": len(self.candidate_paths),
+            "default_selected_path_count": len(self.default_selected_paths),
+            "content_reads": self.content_reads,
+            "advisory_only": self.advisory_only,
+            "claim_level": self.claim_level,
+        }
+        if include_paths:
+            payload["selected_paths"] = list(self.selected_paths)
+            payload["candidate_paths"] = list(self.candidate_paths)
+            payload["default_selected_paths"] = list(self.default_selected_paths)
+        return payload
+
+
 def _parts(path: str) -> list[str]:
     return [part for part in path.replace("\\", "/").strip("/").split("/") if part]
 
@@ -146,13 +189,25 @@ def _path_has_media_asset_shape(path: str) -> bool:
     parts = set(_parts(normalized))
     name = _name(normalized)
     suffix = _suffix(normalized)
+    name_terms = set(re.findall(r"[a-z0-9]+", Path(name).stem))
     if suffix in MEDIA_ASSET_EXTENSIONS:
         return True
     if parts & MEDIA_ASSET_PATH_TERMS:
         return True
+    if suffix in {".json", ".yaml", ".yml", ".toml"} and name_terms & MEDIA_ASSET_PATH_TERMS:
+        return True
     return bool(
         ("asset" in normalized or "media" in normalized)
         and name in {"manifest.json", "asset_manifest.json", "index.json", "catalog.json"}
+    )
+
+
+def _is_archive_or_legacy_path(path: str) -> bool:
+    lowered = [part.lower() for part in _parts(path)]
+    name = _name(path)
+    return bool(
+        any(part in {"archive", "archived", "legacy", "history", "old"} for part in lowered)
+        or any(term in name for term in ("archive", "archived", "legacy", "old_"))
     )
 
 
@@ -364,7 +419,8 @@ def infer_prompt_intent_v2(raw_prompt: str) -> PromptIntentV2:
 
     media_terms = re.search(
         r"\b(asset|assets|media|material|materials|texture|textures|sprite|sprites|"
-        r"icon|icons|image|images|model|models|mesh|meshes|blend|blender|catalog|manifest)\b",
+        r"icon|icons|image|images|model|models|mesh|meshes|audio|cue|cues|sound|sounds|"
+        r"blend|blender|catalog|manifest)\b",
         text,
     )
     media_ext = re.search(r"\.(png|jpe?g|webp|gif|svg|blend|fbx|glb|gltf|obj|wav|mp3|ogg)\b", text)
@@ -387,7 +443,8 @@ def infer_prompt_intent_v2(raw_prompt: str) -> PromptIntentV2:
     symbol_terms = re.search(r"\b(symbol|function|class|method|definition|where is .* defined|declaration)\b", text)
     large_terms = re.search(r"\b(large repo|large repository|many assets|asset library|media library)\b", text)
     negative_runtime_boundary = re.search(
-        r"\b(avoid|without|do not|don't|unrelated)\b[^\n.;]{0,60}\b(runtime|source|code|implementation)\b",
+        r"\b(avoid|without|do not|don't|unrelated|not|exclude|keep)\b[^\n.;]{0,80}\b(runtime|source|code|implementation|files?)\b"
+        r"|\b(runtime|source|code|implementation)\b[^\n.;]{0,80}\b(out of scope|out of primary|not the target)\b",
         text,
     )
 
@@ -402,8 +459,10 @@ def infer_prompt_intent_v2(raw_prompt: str) -> PromptIntentV2:
         return PromptIntentV2("code_entrypoint_lookup", 0.86, ("entrypoint_lookup_language",))
     if workflow_terms and (lookup_terms or runtime_terms or re.search(r"\b(update|change|tighten|adjust)\b", text)):
         return PromptIntentV2("workflow_change", 0.82, ("workflow_change_language",))
-    if test_terms and not re.search(r"\b(runtime|behavior|source|bug|crash)\b", text):
+    if test_terms and not re.search(r"\b(runtime|behavior|bug|crash)\b", text):
         return PromptIntentV2("test_failure", 0.78, ("test_failure_language",))
+    if docs_terms and negative_runtime_boundary and not (config_terms or workflow_terms):
+        return PromptIntentV2("docs_only", 0.78, ("docs_only_with_runtime_boundary",))
     if runtime_terms:
         return PromptIntentV2("bugfix_runtime", 0.76, ("runtime_bugfix_language",))
     if docs_terms and not (runtime_terms or config_terms or workflow_terms):
@@ -427,6 +486,7 @@ def role_bucket_for_path(
     normalized = path.replace("\\", "/").strip("/")
     role = classify_path_role(normalized)
     is_asset = _path_has_media_asset_shape(normalized)
+    is_archive_or_legacy = _is_archive_or_legacy_path(normalized)
 
     bucket = "support_context"
     reason = f"{role.role}_support"
@@ -435,7 +495,9 @@ def role_bucket_for_path(
         return RoleBucketDecision(normalized, intent_name, "ignore_or_noise", "generated_or_vendor")
 
     if intent_name in {"media_asset_lookup", "large_repo_media_lookup"}:
-        if is_asset:
+        if is_asset and is_archive_or_legacy:
+            bucket, reason = "ignore_or_noise", "archived_media_asset_noise"
+        elif is_asset:
             bucket, reason = "primary_lookup", "media_asset_lookup_primary"
         elif role.role == "source":
             bucket, reason = ("support_context", "source_support_only_for_media_lookup") if linked else ("ignore_or_noise", "source_unlinked_for_media_lookup")
@@ -446,7 +508,10 @@ def role_bucket_for_path(
         elif role.role == "config":
             bucket, reason = "config_support", "metadata_or_manifest_for_media_lookup"
     elif intent_name == "code_entrypoint_lookup":
-        if role.role == "source" and role.entrypoint_likelihood in {"high", "medium"}:
+        if role.role == "source" and (
+            role.entrypoint_likelihood in {"high", "medium"}
+            or any(term in _name(normalized) for term in ("entry", "bootstrap", "route", "server", "main", "cli"))
+        ):
             bucket, reason = "primary_lookup", "entrypoint_source_lookup"
         elif role.role == "source":
             bucket, reason = "support_context", "source_support_for_entrypoint_lookup"
@@ -465,11 +530,13 @@ def role_bucket_for_path(
             bucket, reason = "verification", "runtime_test_verification"
         elif is_asset:
             bucket, reason = ("asset_support", "linked_asset_for_runtime") if linked else ("ignore_or_noise", "asset_unlinked_for_runtime")
-        elif role.role in {"docs", "config"}:
-            bucket, reason = ("support_context", f"linked_{role.role}_for_runtime") if linked else ("ignore_or_noise", f"unlinked_{role.role}_for_runtime")
+        elif role.role == "config":
+            bucket, reason = ("config_support", "linked_config_for_runtime") if linked else ("ignore_or_noise", "unlinked_config_for_runtime")
+        elif role.role == "docs":
+            bucket, reason = ("support_context", "linked_docs_for_runtime") if linked else ("ignore_or_noise", "unlinked_docs_for_runtime")
     elif intent_name == "docs_only":
         if role.role == "docs":
-            bucket, reason = "primary_edit", "docs_primary"
+            bucket, reason = ("support_context", "readme_support_for_specific_docs") if _name(normalized) == "readme.md" and not linked else ("primary_edit", "docs_primary")
         elif role.role == "source":
             bucket, reason = ("support_context", "linked_source_for_docs") if linked else ("ignore_or_noise", "source_unlinked_for_docs")
         elif role.role in {"test", "workflow"} or is_asset:
@@ -477,21 +544,27 @@ def role_bucket_for_path(
         elif role.role == "config":
             bucket, reason = ("config_support", "linked_config_for_docs") if linked else ("ignore_or_noise", "config_unlinked_for_docs")
     elif intent_name == "config_change":
-        if role.role == "config":
+        if is_asset and not linked:
+            bucket, reason = "ignore_or_noise", "unlinked_asset_config_for_config"
+        elif role.role == "config":
             bucket, reason = "primary_edit", "config_primary"
-        elif role.role in {"source", "docs"}:
-            bucket, reason = ("support_context", f"linked_{role.role}_for_config") if linked else ("ignore_or_noise", f"unlinked_{role.role}_for_config")
+        elif role.role == "docs":
+            bucket, reason = ("docs_support", "linked_docs_for_config") if linked else ("ignore_or_noise", "unlinked_docs_for_config")
+        elif role.role == "source":
+            bucket, reason = ("support_context", "linked_source_for_config") if linked else ("ignore_or_noise", "unlinked_source_for_config")
         else:
             bucket, reason = "ignore_or_noise", "unlinked_non_config_for_config"
     elif intent_name == "workflow_change":
         if role.role == "workflow" or normalized.lower().startswith((".github/workflows/", "scripts/")):
             bucket, reason = "primary_edit", "workflow_primary"
         elif role.role == "config":
-            bucket, reason = "primary_edit", "workflow_config_primary"
+            bucket, reason = ("primary_edit", "linked_workflow_config_primary") if linked else ("config_support", "workflow_config_support")
         elif role.role == "test":
             bucket, reason = ("verification", "workflow_test_verification") if linked else ("ignore_or_noise", "test_unlinked_for_workflow")
-        elif role.role in {"docs", "source"}:
-            bucket, reason = ("support_context", f"linked_{role.role}_for_workflow") if linked else ("ignore_or_noise", f"unlinked_{role.role}_for_workflow")
+        elif role.role == "docs":
+            bucket, reason = ("docs_support", "linked_docs_for_workflow") if linked else ("ignore_or_noise", "unlinked_docs_for_workflow")
+        elif role.role == "source":
+            bucket, reason = ("support_context", "linked_source_for_workflow") if linked else ("ignore_or_noise", "unlinked_source_for_workflow")
         else:
             bucket, reason = "ignore_or_noise", "unlinked_non_workflow_for_workflow"
     elif intent_name == "broad_repo_inspection":
@@ -526,6 +599,7 @@ def role_bucket_for_path(
 def intent_v2_path_score(path: str, intent: str | PromptIntentV2, *, linked: bool = False) -> int:
     decision = role_bucket_for_path(path, intent, linked=linked)
     role = classify_path_role(path)
+    intent_name = intent.intent if isinstance(intent, PromptIntentV2) else str(intent or "unknown")
     lowered = [part.lower() for part in _parts(path)]
     bucket_scores = {
         "primary_edit": 900,
@@ -538,18 +612,31 @@ def intent_v2_path_score(path: str, intent: str | PromptIntentV2, *, linked: boo
         "ignore_or_noise": -500,
     }
     score = bucket_scores.get(decision.role_bucket, 0)
-    if role.entrypoint_likelihood == "high":
-        score += 120
-    elif role.entrypoint_likelihood == "medium":
+    if intent_name == "code_entrypoint_lookup":
+        name = _name(path)
+        if role.entrypoint_likelihood == "high":
+            score += 120
+        elif role.entrypoint_likelihood == "medium":
+            score += 80
+        if any(term in name for term in ("entry", "bootstrap", "route", "server", "main", "cli")):
+            score += 120
+    elif intent_name in {"bugfix_runtime", "test_failure"}:
+        if role.entrypoint_likelihood == "high" and not linked:
+            score -= 80
+        elif role.entrypoint_likelihood == "medium" and not linked:
+            score -= 40
+    elif role.entrypoint_likelihood == "high":
         score += 60
+    elif role.entrypoint_likelihood == "medium":
+        score += 30
     if role.manifest_likelihood == "high":
         score += 80
     if role.docs_specificity in {"readme", "specific"}:
         score += 40
     if role.is_generated_or_vendor:
         score -= 800
-    if any(part in {"archive", "archived", "legacy", "history"} for part in lowered) or "archive" in _name(path):
-        score -= 350
+    if _is_archive_or_legacy_path(path):
+        score -= 700
     return score
 
 
@@ -558,6 +645,243 @@ def selection_lock_hash_for_paths(paths: list[str], *, intent: str | None = None
     payload = {"intent": intent or "", "paths": cleaned}
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _expanded_match_tokens(text: str) -> set[str]:
+    normalized = re.sub(r"[/_.:-]+", " ", (text or "").lower())
+    tokens = {tok for tok in re.findall(r"[a-z0-9]+", normalized) if len(tok) > 2}
+    expanded = set(tokens)
+    for token in tokens:
+        if token.endswith("ies") and len(token) > 4:
+            expanded.add(token[:-3] + "y")
+        if token.endswith("s") and len(token) > 3:
+            expanded.add(token[:-1])
+    return expanded
+
+
+def _path_prompt_overlap_score(path: str, prompt_tokens: set[str]) -> int:
+    return len(_expanded_match_tokens(path) & prompt_tokens)
+
+
+def _intent_v2_bucket_limits(intent_name: str, max_paths: int) -> dict[str, int]:
+    base = {
+        "primary_edit": max_paths,
+        "primary_lookup": max_paths,
+        "verification": 1,
+        "support_context": 1,
+        "asset_support": 1,
+        "docs_support": 1,
+        "config_support": 1,
+        "ignore_or_noise": 0,
+    }
+    if intent_name in {"media_asset_lookup", "large_repo_media_lookup", "code_entrypoint_lookup"}:
+        base["primary_lookup"] = 2
+    elif intent_name == "bugfix_runtime":
+        base["primary_edit"] = 1
+        base["verification"] = 1
+        base["asset_support"] = 0
+    elif intent_name == "test_failure":
+        base["primary_edit"] = 1
+        base["verification"] = 1
+    elif intent_name in {"docs_only", "config_change", "workflow_change"}:
+        base["primary_edit"] = 2
+    elif intent_name == "broad_repo_inspection":
+        base["primary_lookup"] = 2
+        base["support_context"] = 2
+    return base
+
+
+def rank_intent_v2_paths(paths: list[str], raw_prompt: str, *, max_paths: int | None = None) -> list[RoleBucketDecision]:
+    """Rank paths for the opt-in IntentV2 selector without reading file contents."""
+    intent = infer_prompt_intent_v2(raw_prompt)
+    intent_name = intent.intent
+    cap_defaults = {
+        "media_asset_lookup": 2,
+        "large_repo_media_lookup": 2,
+        "code_entrypoint_lookup": 2,
+        "bugfix_runtime": 3,
+        "docs_only": 2,
+        "config_change": 3,
+        "workflow_change": 3,
+        "test_failure": 3,
+        "broad_repo_inspection": 3,
+        "symbol_lookup": 4,
+        "unknown": 3,
+    }
+    limit = max_paths if max_paths is not None else cap_defaults.get(intent_name, 4)
+    prompt_tokens = _expanded_match_tokens(raw_prompt)
+    scored: list[tuple[int, str, RoleBucketDecision]] = []
+    for raw_path in paths:
+        path = raw_path.replace("\\", "/").strip("/")
+        if not path:
+            continue
+        overlap = _path_prompt_overlap_score(path, prompt_tokens)
+        linked = overlap > 0
+        decision = role_bucket_for_path(path, intent, linked=linked)
+        if decision.role_bucket == "ignore_or_noise":
+            continue
+        score = intent_v2_path_score(path, intent, linked=linked) + overlap * 100
+        score -= min(path.count("/"), 5) * 8
+        role = classify_path_role(path)
+        if intent_name in {"media_asset_lookup", "large_repo_media_lookup"} and _path_has_media_asset_shape(path):
+            score += 220
+            if path.lower().startswith(("assets/", "audio/", "ui/assets/", "mega_assets/")):
+                score += 40
+            if _is_archive_or_legacy_path(path):
+                score -= 900
+        if intent_name == "code_entrypoint_lookup" and role.role == "source":
+            name = _name(path)
+            if any(term in name for term in ("entry", "bootstrap", "route", "server", "main", "cli")):
+                score += 180
+        if intent_name == "bugfix_runtime" and role.role == "source":
+            score += 140 if linked else -80
+        if intent_name == "test_failure" and role.role == "test":
+            score += 220
+        if intent_name == "docs_only" and role.role == "docs":
+            score += 180 if linked else 40
+        if intent_name == "config_change" and role.role == "config":
+            score += 180 if linked else 40
+        if intent_name == "workflow_change" and (role.role == "workflow" or path.lower().startswith((".github/workflows/", "scripts/"))):
+            score += 220 if linked else 80
+        if intent_name == "broad_repo_inspection" and path.lower() in {"ai_start_here.md", "agents.md", "premode.ai.json", "readme.md"}:
+            score += 220
+        scored.append((score, path, decision))
+
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    bucket_limits = _intent_v2_bucket_limits(intent_name, limit)
+    bucket_counts = {bucket: 0 for bucket in ROLE_BUCKETS}
+    selected: list[RoleBucketDecision] = []
+    seen: set[str] = set()
+    for _score, path, decision in scored:
+        if path in seen:
+            continue
+        if bucket_counts.get(decision.role_bucket, 0) >= bucket_limits.get(decision.role_bucket, 0):
+            continue
+        selected.append(decision)
+        seen.add(path)
+        bucket_counts[decision.role_bucket] = bucket_counts.get(decision.role_bucket, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _normalize_path_list(paths: list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths or ():
+        path = str(raw_path or "").replace("\\", "/").strip("/")
+        if path and path not in seen:
+            seen.add(path)
+            out.append(path)
+    return tuple(out)
+
+
+def _role_bucket_summary(decisions: list[RoleBucketDecision]) -> dict[str, int]:
+    summary = {bucket: 0 for bucket in ROLE_BUCKETS}
+    for decision in decisions:
+        summary[decision.role_bucket] = summary.get(decision.role_bucket, 0) + 1
+    return {bucket: count for bucket, count in summary.items() if count}
+
+
+def _dry_run_fallback_result(
+    *,
+    selector_variant: str,
+    fallback_reason: str,
+    intent: PromptIntentV2,
+    default_selected_paths: tuple[str, ...],
+    candidate_decisions: list[RoleBucketDecision] | None = None,
+) -> SelectorCandidateDryRun:
+    candidate_paths = tuple(decision.path for decision in candidate_decisions or [])
+    role_summary = _role_bucket_summary(candidate_decisions or [])
+    selection_hash = selection_lock_hash_for_paths(list(default_selected_paths), intent="default_current")
+    return SelectorCandidateDryRun(
+        selector_variant=selector_variant,
+        candidate_selector_used=False,
+        candidate_selector_fallback=True,
+        candidate_selector_fallback_reason=fallback_reason,
+        intent_v2=intent.intent,
+        intent_confidence=intent.confidence,
+        role_bucket_summary=role_summary,
+        selection_lock_hash=selection_hash,
+        selected_paths=default_selected_paths,
+        candidate_paths=candidate_paths,
+        default_selected_paths=default_selected_paths,
+    )
+
+
+def dry_run_selector_candidate(
+    paths: list[str],
+    raw_prompt: str,
+    *,
+    selector_candidate: str | None = None,
+    default_selected_paths: list[str] | tuple[str, ...] | None = None,
+    forbidden_paths: list[str] | tuple[str, ...] | None = None,
+    max_paths: int | None = None,
+) -> SelectorCandidateDryRun:
+    """Evaluate a selector candidate as explicit dry-run metadata only.
+
+    The returned candidate can be inspected by callers, but this function does
+    not mutate default routing behavior and does not read file contents.
+    """
+    default_paths = _normalize_path_list(default_selected_paths)
+    intent = infer_prompt_intent_v2(raw_prompt)
+    selector = selector_candidate or "default_current"
+    if selector_candidate is None:
+        return _dry_run_fallback_result(
+            selector_variant=selector,
+            fallback_reason="candidate_not_requested",
+            intent=intent,
+            default_selected_paths=default_paths,
+        )
+    if selector_candidate != INTENT_V2_ROLE_BUCKETS_VARIANT:
+        return _dry_run_fallback_result(
+            selector_variant=selector,
+            fallback_reason="unsupported_selector_candidate",
+            intent=intent,
+            default_selected_paths=default_paths,
+        )
+    if intent.intent == "unknown" or intent.confidence < 0.50:
+        return _dry_run_fallback_result(
+            selector_variant=selector,
+            fallback_reason="low_confidence_or_unknown",
+            intent=intent,
+            default_selected_paths=default_paths,
+        )
+
+    candidate_decisions = rank_intent_v2_paths(paths, raw_prompt, max_paths=max_paths)
+    primary_count = sum(1 for decision in candidate_decisions if decision.role_bucket in {"primary_edit", "primary_lookup"})
+    if primary_count == 0:
+        return _dry_run_fallback_result(
+            selector_variant=selector,
+            fallback_reason="empty_primary_selection",
+            intent=intent,
+            default_selected_paths=default_paths,
+            candidate_decisions=candidate_decisions,
+        )
+    forbidden = set(_normalize_path_list(forbidden_paths))
+    if forbidden and any(decision.path in forbidden for decision in candidate_decisions):
+        return _dry_run_fallback_result(
+            selector_variant=selector,
+            fallback_reason="forbidden_risk_detected",
+            intent=intent,
+            default_selected_paths=default_paths,
+            candidate_decisions=candidate_decisions,
+        )
+
+    candidate_paths = tuple(decision.path for decision in candidate_decisions)
+    return SelectorCandidateDryRun(
+        selector_variant=selector,
+        candidate_selector_used=True,
+        candidate_selector_fallback=False,
+        candidate_selector_fallback_reason=None,
+        intent_v2=intent.intent,
+        intent_confidence=intent.confidence,
+        role_bucket_summary=_role_bucket_summary(candidate_decisions),
+        selection_lock_hash=selection_lock_hash_for_paths(list(candidate_paths), intent=intent.intent),
+        selected_paths=candidate_paths,
+        candidate_paths=candidate_paths,
+        default_selected_paths=default_paths,
+    )
 
 
 def path_role_rank(path: str, intent: PromptIntent, *, for_related_test: bool = False) -> int:
