@@ -311,6 +311,12 @@ Full local pytest command:
 PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 ```
 
+Equivalent no-venv form when `python` resolves to the checkout environment:
+
+```bash
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+```
+
 Review and benchmark smoke:
 
 ```bash
@@ -318,7 +324,7 @@ premode review-patch --since-compile
 premode benchmark --profile lite
 ```
 
-Estimated reduction is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
+Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
 
 Use `premode review-patch` for local patch-boundary review. It is a human review aid, not automatic merge approval.
 

@@ -75,6 +75,7 @@ SELECTOR_MATRIX_CLAIM_LEVEL = "Level 0 internal metric only"
 INTENT_V2_ROLE_BUCKETS_VARIANT = "intent_v2_role_buckets"
 WARM_INDEX_INVENTORY_VERSION = "warm-index-v1"
 WARM_INDEX_PATH_NORMALIZATION_VERSION = "posix-slash-v1"
+ADAPTIVE_PARALLEL_POLICY_VERSION = "cpu-b2-measured-near-best-warm-serial-v1"
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,14 @@ class SelectorCandidateDryRun:
     worker_file_open_count: int = 0
     worker_stat_count: int = 0
     worker_walk_count: int = 0
+    adaptive_parallel_enabled: bool = False
+    adaptive_policy_version: str | None = None
+    adaptive_candidate_count: int = 0
+    adaptive_selected_mode: str = "serial"
+    adaptive_selected_workers: int | None = None
+    adaptive_reason: str | None = None
+    adaptive_fallback_reason: str | None = None
+    adaptive_small_repo_guard_triggered: bool = False
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -231,6 +240,14 @@ class SelectorCandidateDryRun:
             "worker_file_open_count": self.worker_file_open_count,
             "worker_stat_count": self.worker_stat_count,
             "worker_walk_count": self.worker_walk_count,
+            "adaptive_parallel_enabled": self.adaptive_parallel_enabled,
+            "adaptive_policy_version": self.adaptive_policy_version,
+            "adaptive_candidate_count": self.adaptive_candidate_count,
+            "adaptive_selected_mode": self.adaptive_selected_mode,
+            "adaptive_selected_workers": self.adaptive_selected_workers,
+            "adaptive_reason": self.adaptive_reason,
+            "adaptive_fallback_reason": self.adaptive_fallback_reason,
+            "adaptive_small_repo_guard_triggered": self.adaptive_small_repo_guard_triggered,
         }
         if include_paths:
             payload["selected_paths"] = list(self.selected_paths)
@@ -1188,6 +1205,18 @@ def _bounded_worker_count(worker_count: int | None, candidate_count: int) -> int
     return max(1, min(int(requested), candidate_count, 8))
 
 
+def _adaptive_parallel_policy(candidate_count: int) -> dict[str, object]:
+    bounded_count = max(0, int(candidate_count))
+    return {
+        "policy_version": ADAPTIVE_PARALLEL_POLICY_VERSION,
+        "candidate_count": bounded_count,
+        "selected_mode": "serial",
+        "selected_workers": 0,
+        "reason": "measured_warm_serial_near_best",
+        "small_repo_guard_triggered": bounded_count < 750,
+    }
+
+
 def _resource_usage_ms() -> tuple[float, float, int]:
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return usage.ru_utime * 1000, usage.ru_stime * 1000, int(usage.ru_maxrss)
@@ -1219,11 +1248,17 @@ def _parallel_rank_intent_v2_warm_index(
     }
     limit = max_paths if max_paths is not None else cap_defaults.get(intent.intent, 4)
     candidates = [_warm_candidate_from_metadata(ordinal, metadata) for ordinal, metadata in enumerate(warm_index.path_metadata)]
+    requested_mode = "threads" if mode == "auto" else mode
+    effective_mode = requested_mode
     workers = _bounded_worker_count(worker_count, len(candidates))
-    effective_mode = "threads" if mode == "auto" else mode
+    adaptive_decision: dict[str, object] | None = None
+    if requested_mode == "adaptive":
+        adaptive_decision = _adaptive_parallel_policy(len(candidates))
+        effective_mode = str(adaptive_decision["selected_mode"])
+        workers = int(adaptive_decision["selected_workers"])
     telemetry: dict[str, object] = {
         "parallel_scoring_enabled": True,
-        "parallel_scoring_mode": effective_mode,
+        "parallel_scoring_mode": "adaptive" if requested_mode == "adaptive" else effective_mode,
         "parallel_score_workers": workers,
         "parallel_score_fallback_reason": None,
         "candidate_count": len(candidates),
@@ -1240,26 +1275,57 @@ def _parallel_rank_intent_v2_warm_index(
         "worker_file_open_count": 0,
         "worker_stat_count": 0,
         "worker_walk_count": 0,
+        "adaptive_parallel_enabled": requested_mode == "adaptive",
+        "adaptive_policy_version": None,
+        "adaptive_candidate_count": 0,
+        "adaptive_selected_mode": "serial",
+        "adaptive_selected_workers": None,
+        "adaptive_reason": None,
+        "adaptive_fallback_reason": None,
+        "adaptive_small_repo_guard_triggered": False,
     }
-    if effective_mode not in {"threads", "processes"}:
+    if adaptive_decision is not None:
+        telemetry.update(
+            {
+                "adaptive_policy_version": adaptive_decision["policy_version"],
+                "adaptive_candidate_count": adaptive_decision["candidate_count"],
+                "adaptive_selected_mode": adaptive_decision["selected_mode"],
+                "adaptive_selected_workers": adaptive_decision["selected_workers"],
+                "adaptive_reason": adaptive_decision["reason"],
+                "adaptive_small_repo_guard_triggered": adaptive_decision["small_repo_guard_triggered"],
+            }
+        )
+    if effective_mode not in {"serial", "threads", "processes"}:
         telemetry["parallel_score_fallback_reason"] = f"unsupported_parallel_mode:{mode}"
         return None, telemetry
-    if workers < 1:
+    if effective_mode == "processes" and requested_mode == "adaptive":
+        telemetry["parallel_score_fallback_reason"] = "adaptive_process_mode_disabled"
+        telemetry["adaptive_fallback_reason"] = "adaptive_process_mode_disabled"
+        return None, telemetry
+    if effective_mode != "serial" and workers < 1:
         telemetry["parallel_score_fallback_reason"] = "no_parallel_workers"
+        if requested_mode == "adaptive":
+            telemetry["adaptive_fallback_reason"] = "no_parallel_workers"
         return None, telemetry
 
     prompt_tokens = tuple(sorted(_expanded_match_tokens(raw_prompt)))
     args = [(candidate, intent, prompt_tokens) for candidate in candidates]
     try:
         map_start = time.perf_counter()
-        executor_cls = ThreadPoolExecutor if effective_mode == "threads" else ProcessPoolExecutor
-        start_open = time.perf_counter()
-        with executor_cls(max_workers=workers) as executor:
-            telemetry["worker_start_ms"] = round((time.perf_counter() - start_open) * 1000, 3)
-            records = list(executor.map(_score_warm_candidate, args))
+        if effective_mode == "serial":
+            records = [_score_warm_candidate(arg) for arg in args]
+        else:
+            executor_cls = ThreadPoolExecutor if effective_mode == "threads" else ProcessPoolExecutor
+            start_open = time.perf_counter()
+            with executor_cls(max_workers=workers) as executor:
+                telemetry["worker_start_ms"] = round((time.perf_counter() - start_open) * 1000, 3)
+                records = list(executor.map(_score_warm_candidate, args))
         telemetry["score_map_ms"] = round((time.perf_counter() - map_start) * 1000, 3)
     except Exception as exc:
-        telemetry["parallel_score_fallback_reason"] = f"worker_exception:{type(exc).__name__}"
+        fallback_reason = f"worker_exception:{type(exc).__name__}"
+        telemetry["parallel_score_fallback_reason"] = fallback_reason
+        if requested_mode == "adaptive":
+            telemetry["adaptive_fallback_reason"] = fallback_reason
         return None, telemetry
 
     reduce_start = time.perf_counter()
@@ -1268,6 +1334,8 @@ def _parallel_rank_intent_v2_warm_index(
     telemetry["score_record_count"] = len(records)
     if fallback_reason:
         telemetry["parallel_score_fallback_reason"] = fallback_reason
+        if requested_mode == "adaptive":
+            telemetry["adaptive_fallback_reason"] = fallback_reason
         return None, telemetry
     usage_end = _resource_usage_ms()
     telemetry["cpu_user_ms"] = round(max(0.0, usage_end[0] - usage_start[0]), 3)
@@ -1477,6 +1545,14 @@ def _dry_run_fallback_result(
         worker_file_open_count=int(parallel.get("worker_file_open_count") or 0),
         worker_stat_count=int(parallel.get("worker_stat_count") or 0),
         worker_walk_count=int(parallel.get("worker_walk_count") or 0),
+        adaptive_parallel_enabled=bool(parallel.get("adaptive_parallel_enabled", False)),
+        adaptive_policy_version=parallel.get("adaptive_policy_version") if isinstance(parallel.get("adaptive_policy_version"), str) else None,
+        adaptive_candidate_count=int(parallel.get("adaptive_candidate_count") or 0),
+        adaptive_selected_mode=str(parallel.get("adaptive_selected_mode") or "serial"),
+        adaptive_selected_workers=parallel.get("adaptive_selected_workers") if isinstance(parallel.get("adaptive_selected_workers"), int) else None,
+        adaptive_reason=parallel.get("adaptive_reason") if isinstance(parallel.get("adaptive_reason"), str) else None,
+        adaptive_fallback_reason=parallel.get("adaptive_fallback_reason") if isinstance(parallel.get("adaptive_fallback_reason"), str) else None,
+        adaptive_small_repo_guard_triggered=bool(parallel.get("adaptive_small_repo_guard_triggered", False)),
     )
 
 
@@ -1544,6 +1620,14 @@ def dry_run_selector_candidate(
         "worker_file_open_count": 0,
         "worker_stat_count": 0,
         "worker_walk_count": 0,
+        "adaptive_parallel_enabled": False,
+        "adaptive_policy_version": None,
+        "adaptive_candidate_count": 0,
+        "adaptive_selected_mode": "serial",
+        "adaptive_selected_workers": None,
+        "adaptive_reason": None,
+        "adaptive_fallback_reason": None,
+        "adaptive_small_repo_guard_triggered": False,
     }
     if selector_candidate is None:
         return _dry_run_fallback_result(
@@ -1742,6 +1826,14 @@ def dry_run_selector_candidate(
         worker_file_open_count=int(parallel_stats.get("worker_file_open_count") or 0),
         worker_stat_count=int(parallel_stats.get("worker_stat_count") or 0),
         worker_walk_count=int(parallel_stats.get("worker_walk_count") or 0),
+        adaptive_parallel_enabled=bool(parallel_stats.get("adaptive_parallel_enabled", False)),
+        adaptive_policy_version=parallel_stats.get("adaptive_policy_version") if isinstance(parallel_stats.get("adaptive_policy_version"), str) else None,
+        adaptive_candidate_count=int(parallel_stats.get("adaptive_candidate_count") or 0),
+        adaptive_selected_mode=str(parallel_stats.get("adaptive_selected_mode") or "serial"),
+        adaptive_selected_workers=parallel_stats.get("adaptive_selected_workers") if isinstance(parallel_stats.get("adaptive_selected_workers"), int) else None,
+        adaptive_reason=parallel_stats.get("adaptive_reason") if isinstance(parallel_stats.get("adaptive_reason"), str) else None,
+        adaptive_fallback_reason=parallel_stats.get("adaptive_fallback_reason") if isinstance(parallel_stats.get("adaptive_fallback_reason"), str) else None,
+        adaptive_small_repo_guard_triggered=bool(parallel_stats.get("adaptive_small_repo_guard_triggered", False)),
     )
 
 
