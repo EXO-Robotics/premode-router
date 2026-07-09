@@ -32,6 +32,30 @@ def _print_json(obj) -> None:
     print(json.dumps(obj, indent=2, sort_keys=True))
 
 
+PACKET_MODE_CHOICES = ["auto", "paths-only", "evidence-snippets", "compact", "selected-paths-only", "selected_paths_only"]
+
+
+def _packet_mode_from_cli(value: str, *, evidence_snippets: bool = False) -> str:
+    if evidence_snippets:
+        return "evidence_snippets"
+    normalized = str(value or "paths-only").replace("-", "_").strip().lower()
+    if normalized == "evidence_snippets":
+        return "evidence_snippets"
+    if normalized == "selected_paths_only":
+        return "selected_paths_only"
+    if normalized in {"auto", "compact"}:
+        return normalized
+    return "paths_only"
+
+
+def _packet_version_from_cli(packet_version: str | None, packet_mode: str) -> str | None:
+    if packet_mode in {"compact", "selected_paths_only"}:
+        if packet_version and packet_version != "v5":
+            raise ValueError(f"--packet-mode {packet_mode.replace('_', '-')} requires --packet-version v5")
+        return "v5"
+    return packet_version
+
+
 def _guarded_repo(cwd: Path, explicit_repo: str | None = None, *, fail_on_root_escalation: bool = False) -> Path:
     try:
         return resolve_cli_repo(cwd, explicit_repo, fail_on_root_escalation=fail_on_root_escalation).repo
@@ -58,6 +82,8 @@ def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -
         "status": "compiled",
         "packet_version": result.get("packet_version"),
         "packet_variant": result.get("packet_variant"),
+        "model_facing_packet_mode": result.get("model_facing_packet_mode"),
+        "packet_receipt_mode": result.get("packet_receipt_mode"),
         "packet_detail_mode": result.get("packet_detail_mode"),
         "packet_detail_mode_requested": result.get("packet_detail_mode_requested"),
         "packet_detail_mode_selected": result.get("packet_detail_mode_selected"),
@@ -151,7 +177,7 @@ def build_parser() -> argparse.ArgumentParser:
     ]
     comp.add_argument("--packet-variant", choices=v5_variants, default=None, help="Packet V5 variant. Defaults to ranked_snippets.")
     comp.add_argument("--packet-strategy", choices=anchor_strategies, default=None, help="Internal V5 anchor strategy for tool_assisted_anchors_internal.")
-    comp.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only", help="Packet V3 detail mode.")
+    comp.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only", help="Packet detail mode. compact and selected-paths-only are V5 opt-ins.")
     comp.add_argument("--evidence-snippets", action="store_true", help="Shortcut for --packet-mode evidence-snippets.")
     comp.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
     comp.add_argument("--cache-optimized", action="store_true", help="Select cache-aware Packet V3 unless --packet-version v2 is explicitly set.")
@@ -218,7 +244,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None)
     bench.add_argument("--packet-variant", choices=v5_variants, default=None)
     bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
-    bench.add_argument("--packet-mode", choices=["auto", "paths-only", "evidence-snippets"], default="paths-only")
+    bench.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only")
     bench.add_argument("--cache-mode", choices=["strategy_isolated", "shared_cache"], default="strategy_isolated", help="Label benchmark cache discipline. Defaults to strategy-isolated rows.")
     bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
     bench.add_argument("--compile-modes", action="store_true", help="Include compile-only raw/v3 paths/v3 snippets/v2 mode comparisons.")
@@ -385,7 +411,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.tuning and str(args.packet_strategy or "").replace("-", "_").strip().lower() != "literal_symbol":
             print("premode: error: --tuning currently supports only --plugin literal_symbol / packet_strategy literal_symbol.", file=sys.stderr)
             return 2
-        packet_mode = "evidence_snippets" if args.evidence_snippets or args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only")
+        packet_mode = _packet_mode_from_cli(args.packet_mode, evidence_snippets=args.evidence_snippets)
+        try:
+            packet_version = _packet_version_from_cli(args.packet_version, packet_mode)
+        except ValueError as exc:
+            print(f"premode: error: {exc}", file=sys.stderr)
+            return 2
         try:
             result = compile_prompt(
                 compile_repo,
@@ -394,7 +425,7 @@ def main(argv: list[str] | None = None) -> int:
                 out_path=out,
                 json_out_path=json_out,
                 use_repo_map=args.use_repo_map,
-                packet_version=args.packet_version,
+                packet_version=packet_version,
                 packet_variant=args.packet_variant,
                 packet_strategy=args.packet_strategy,
                 packet_detail_mode=packet_mode,
@@ -505,16 +536,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "benchmark":
         bench_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         plugin_resolution = _apply_packet_plugin_or_exit(args)
+        packet_mode = _packet_mode_from_cli(args.packet_mode)
+        try:
+            packet_version = _packet_version_from_cli(args.packet_version, packet_mode)
+        except ValueError as exc:
+            print(f"premode: error: {exc}", file=sys.stderr)
+            return 2
         result = run_benchmark(
             bench_repo,
             prompts_path=Path(args.prompts) if args.prompts else None,
             profile=args.profile,
             use_repo_map=not args.no_repo_map,
             cache_optimized=not args.no_cache_optimized,
-            packet_version=args.packet_version,
+            packet_version=packet_version,
             packet_variant=args.packet_variant,
             packet_strategy=args.packet_strategy,
-            packet_detail_mode="evidence_snippets" if args.packet_mode == "evidence-snippets" else ("auto" if args.packet_mode == "auto" else "paths_only"),
+            packet_detail_mode=packet_mode,
             snippet_budget_tokens=args.snippet_budget_tokens,
             compile_modes=args.compile_modes,
             save_packets=args.save_packets,

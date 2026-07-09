@@ -42,7 +42,13 @@ from .repo_map import (
     _prompt_has_negative_boundary,
     _prompt_is_swift_source_task,
 )
-from .role_model import classify_path_role, infer_prompt_intent
+from .role_model import (
+    classify_path_role,
+    infer_prompt_intent,
+    infer_prompt_intent_v2,
+    role_bucket_for_path,
+    selection_lock_hash_for_paths,
+)
 from .intake import intake_policy_from_detection, intake_score_delta
 from .locator import LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
 from .router import (
@@ -65,6 +71,16 @@ LEGACY_PACKET_MARKER = "PREMODE_COMPILED_PACKET_V1"
 PACKET_DETAIL_PATHS_ONLY = "paths_only"
 PACKET_DETAIL_EVIDENCE_SNIPPETS = "evidence_snippets"
 PACKET_DETAIL_AUTO = "auto"
+PACKET_DETAIL_COMPACT = "compact"
+PACKET_DETAIL_SELECTED_PATHS_ONLY = "selected_paths_only"
+PACKET_DETAIL_MODES = {
+    PACKET_DETAIL_AUTO,
+    PACKET_DETAIL_PATHS_ONLY,
+    PACKET_DETAIL_EVIDENCE_SNIPPETS,
+    PACKET_DETAIL_COMPACT,
+    PACKET_DETAIL_SELECTED_PATHS_ONLY,
+}
+PACKET_DETAIL_COMPACT_MODES = {PACKET_DETAIL_COMPACT, PACKET_DETAIL_SELECTED_PATHS_ONLY}
 PACKET_VARIANT_RANKED_PATHS = "ranked_paths"
 PACKET_VARIANT_RANKED_SNIPPETS = "ranked_snippets"
 PACKET_VARIANT_PRIMARY_TESTS_ONLY = "primary_tests_only"
@@ -228,6 +244,15 @@ def _is_large_file_protected(flags: set[str], token_count: int, caps: ResourceCa
         return True
     direct_evidence = {"prompt_mentioned", "first_meaningful_error_file", "repo_map_entrypoint", "dirty_with_prompt_evidence", "dirty_with_symbol_evidence", "dirty_with_import_proximity"}
     return not bool(flags & direct_evidence)
+
+
+def _normalize_packet_detail_mode(packet_detail_mode: str | None) -> str:
+    requested = str(packet_detail_mode or PACKET_DETAIL_PATHS_ONLY).replace("-", "_").strip().lower()
+    if requested in {"full", "default", "existing", "standard"}:
+        return PACKET_DETAIL_PATHS_ONLY
+    if requested in PACKET_DETAIL_MODES:
+        return requested
+    return PACKET_DETAIL_PATHS_ONLY
 
 
 def _context_receipt(manifest: dict[str, Any]) -> dict[str, Any]:
@@ -5089,6 +5114,135 @@ def _xml_attr(value: str) -> str:
     )
 
 
+def _raw_path_values(items: Any, *, limit: int = 200) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in list(items or []):
+        if isinstance(item, dict):
+            value = item.get("path") or item.get("command") or item.get("name")
+        else:
+            value = item
+        text = str(value or "").strip()
+        key = text.lower()
+        if text and key not in seen:
+            out.append(text)
+            seen.add(key)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _compact_blocked_paths(manifest: dict[str, Any], *, limit: int = 200) -> list[str]:
+    boundary = manifest.get("patch_boundary") if isinstance(manifest.get("patch_boundary"), dict) else {}
+    control = boundary.get("control_plane_boundary") if isinstance(boundary.get("control_plane_boundary"), dict) else {}
+    values: list[str] = []
+    for items in (
+        manifest.get("prompt_forbidden_paths"),
+        manifest.get("prompt_forbidden_files"),
+        manifest.get("safety_blocked_files"),
+        boundary.get("forbidden_without_user_confirmation"),
+        boundary.get("discouraged_files"),
+        control.get("forbidden_runtime_mutation"),
+        control.get("authority_read_only"),
+        control.get("state_mutation_requires_explicit_authorization"),
+    ):
+        values.extend(_raw_path_values(items, limit=limit))
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        key = value.lower()
+        if value and key not in seen:
+            deduped.append(value)
+            seen.add(key)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
+def _compact_prompt_text(manifest: dict[str, Any]) -> str:
+    return str(manifest.get("canonical_user_prompt") or "")
+
+
+def _packet_path_items(items: Any) -> Any:
+    if isinstance(items, dict) and isinstance(items.get("items"), list):
+        return items.get("items")
+    return items
+
+
+def _v5_active_paths_by_role(manifest: dict[str, Any]) -> dict[str, list[str]]:
+    variant = str(manifest.get("packet_variant") or PACKET_V5_DEFAULT_VARIANT)
+    if variant in _v5_internal_anchor_variants():
+        backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
+        return {
+            "primary": _paths_from_packet_items(_packet_path_items(backbone.get("primary_files_after") or backbone.get("primary_files")), limit=24),
+            "tests": _paths_from_packet_items(_packet_path_items(backbone.get("related_tests_after") or backbone.get("related_tests")), limit=24),
+            "support": _paths_from_packet_items(_packet_path_items(backbone.get("support_files_json_only") or backbone.get("support_files")), limit=24),
+        }
+    if variant in _v5_tool_assisted_variants():
+        backbone = manifest.get("tool_assisted_backbone") if isinstance(manifest.get("tool_assisted_backbone"), dict) else {}
+        return {
+            "primary": _paths_from_packet_items(_packet_path_items(backbone.get("primary_files")), limit=24),
+            "tests": _paths_from_packet_items(_packet_path_items(backbone.get("related_tests")), limit=24),
+            "support": _paths_from_packet_items(_packet_path_items(backbone.get("support_files")), limit=24),
+        }
+    primary, related, support = _v5_ranked_items(manifest, variant)
+    return {"primary": primary, "tests": related, "support": support}
+
+
+def _compact_path_role_label(path: str, bucket: str) -> str:
+    role = classify_path_role(path).role
+    if role and role != bucket:
+        return f"{bucket}/{role}"
+    return bucket
+
+
+def _compact_path_lines(paths: list[str], bucket: str) -> list[str]:
+    return [f"- {path} [{_compact_path_role_label(path, bucket)}]" for path in paths]
+
+
+def _v5_compact_packet_parts(manifest: dict[str, Any], detail_mode: str) -> tuple[str, str, str]:
+    mode = "selected_paths_only_v1" if detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY else "compact_pcodex_v1"
+    marker = "SELECTED_PATHS_PCODEX_V1" if detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY else "COMPACT_PCODEX_V1"
+    paths_by_role = _v5_active_paths_by_role(manifest)
+    blocked_count = len(_compact_blocked_paths(manifest))
+    prefix_lines = [marker, f"MODE: {mode}", ""]
+    suffix_lines = [
+        "<TASK>",
+        _compact_prompt_text(manifest),
+        "</TASK>",
+    ]
+    if detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY:
+        suffix_lines.append("PATHS:")
+        seen: set[str] = set()
+        for bucket in ("primary", "tests", "support"):
+            for path in paths_by_role.get(bucket) or []:
+                key = path.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                suffix_lines.append(f"- {path} [{_compact_path_role_label(path, bucket)}]")
+    else:
+        seen: set[str] = set()
+        for heading, bucket in (("PRIMARY:", "primary"), ("TESTS:", "tests"), ("SUPPORT:", "support")):
+            suffix_lines.append(heading)
+            visible_paths: list[str] = []
+            for path in paths_by_role.get(bucket) or []:
+                key = path.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                visible_paths.append(path)
+            suffix_lines.extend(_compact_path_lines(visible_paths, bucket))
+    edit_boundary = "listed" if detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY else "listed_or_obvious"
+    suffix_lines.extend([
+        f"AVOID: sensitive/generated/runtime; count={blocked_count}",
+        f"BOUNDARY: edit={edit_boundary}; avoid=sensitive_generated_runtime",
+        f"END_{marker}",
+        "",
+    ])
+    return "\n".join(prefix_lines + suffix_lines), "\n".join(prefix_lines), "\n".join(suffix_lines)
+
+
 def _v5_tool_assisted_variants() -> set[str]:
     return {
         PACKET_VARIANT_TOOL_ASSISTED_BACKBONE,
@@ -5764,6 +5918,188 @@ def _v5_metric_counts(manifest: dict[str, Any]) -> dict[str, int | bool | str]:
     }
 
 
+def _dedupe_paths(paths: Iterable[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        text = str(path or "").strip()
+        key = text.lower()
+        if text and key not in seen:
+            out.append(text)
+            seen.add(key)
+    return out
+
+
+def _selected_paths_for_receipt(paths_by_role: dict[str, list[str]]) -> list[str]:
+    return _dedupe_paths(
+        list(paths_by_role.get("primary") or [])
+        + list(paths_by_role.get("tests") or [])
+        + list(paths_by_role.get("support") or [])
+    )
+
+
+def _ranked_records_for_receipt(manifest: dict[str, Any], *, limit: int = 80) -> list[dict[str, Any]]:
+    ledger = manifest.get("file_decision_ledger") if isinstance(manifest.get("file_decision_ledger"), dict) else {}
+    records = ledger.get("records") if isinstance(ledger.get("records"), list) else []
+    ranked: list[dict[str, Any]] = []
+    for idx, record in enumerate(records[:limit], start=1):
+        if not isinstance(record, dict):
+            continue
+        ranked.append({
+            "rank": idx,
+            "path": record.get("path"),
+            "raw_score": record.get("raw_score"),
+            "final_bucket": record.get("final_bucket"),
+            "candidate": bool(record.get("candidate")),
+            "support": bool(record.get("support")),
+            "verification": bool(record.get("verification")),
+            "role_classification": record.get("role_classification"),
+            "skip_reason": record.get("skip_reason"),
+        })
+    return ranked
+
+
+def _sensitive_or_blocked_hits(paths: list[str], manifest: dict[str, Any]) -> list[str]:
+    raw_prompt = str(manifest.get("canonical_user_prompt") or "")
+    prompt_forbidden = set(str(path) for path in (manifest.get("prompt_forbidden_paths") or []))
+    hits: list[str] = []
+    for path in paths:
+        safety = classify_path_for_routing(path, raw_prompt, prompt_forbidden_paths=prompt_forbidden)
+        if safety.get("category") in {"secret_state_proof_runtime", "forbidden_or_prompt_blocked"} and not safety.get("editable"):
+            hits.append(path)
+    return hits
+
+
+def _role_bucket_receipt(paths: list[str], manifest: dict[str, Any]) -> dict[str, Any]:
+    intent = infer_prompt_intent_v2(str(manifest.get("canonical_user_prompt") or ""))
+    items: list[dict[str, str]] = []
+    summary: dict[str, int] = {}
+    for path in paths:
+        decision = role_bucket_for_path(path, intent)
+        bucket = str(decision.role_bucket)
+        summary[bucket] = summary.get(bucket, 0) + 1
+        items.append({
+            "path": path,
+            "intent": decision.intent,
+            "role_bucket": bucket,
+            "reason": decision.role_bucket_reason,
+        })
+    return {
+        "intent": intent.intent,
+        "confidence": intent.confidence,
+        "summary": summary,
+        "items": items,
+    }
+
+
+def _receipt_content_reads(manifest: dict[str, Any]) -> int:
+    active_backbone = (
+        manifest.get("tool_assisted_anchors_internal")
+        if isinstance(manifest.get("tool_assisted_anchors_internal"), dict)
+        else manifest.get("tool_assisted_backbone")
+        if isinstance(manifest.get("tool_assisted_backbone"), dict)
+        else {}
+    )
+    stats = active_backbone.get("discovery_stats") if isinstance(active_backbone, dict) else {}
+    if isinstance(stats, dict) and stats.get("content_reads") is not None:
+        return int(stats.get("content_reads") or 0)
+    large_repo_safety = manifest.get("large_repo_safety") if isinstance(manifest.get("large_repo_safety"), dict) else {}
+    if large_repo_safety.get("content_reads") is not None:
+        return int(large_repo_safety.get("content_reads") or 0)
+    return 0
+
+
+def _packet_component_accounting(manifest: dict[str, Any], packet: str, paths_by_role: dict[str, list[str]]) -> dict[str, Any]:
+    selected_paths = _selected_paths_for_receipt(paths_by_role)
+    task_tokens = estimate_tokens(_compact_prompt_text(manifest))
+    path_tokens = estimate_tokens("\n".join(selected_paths))
+    packet_tokens = estimate_tokens(packet)
+    boundary_tokens = estimate_tokens("\n".join(_compact_blocked_paths(manifest, limit=40)))
+    operational_tokens = task_tokens + path_tokens
+    overhead_tokens = max(0, packet_tokens - operational_tokens)
+    return {
+        "schema_version": "packet_component_accounting.v1",
+        "packet_proxy_tokens": packet_tokens,
+        "packet_byte_count": len(packet.encode("utf-8", errors="replace")),
+        "task_proxy_tokens": task_tokens,
+        "selected_path_proxy_tokens": path_tokens,
+        "minimal_boundary_proxy_tokens": boundary_tokens,
+        "operational_proxy_tokens": operational_tokens,
+        "overhead_proxy_tokens": overhead_tokens,
+        "overhead_share": round(overhead_tokens / packet_tokens, 4) if packet_tokens else 0.0,
+        "selected_path_count": len(selected_paths),
+    }
+
+
+def _packet_audit_receipt(manifest: dict[str, Any], packet: str) -> dict[str, Any]:
+    paths_by_role = _v5_active_paths_by_role(manifest) if manifest.get("packet_marker") == PACKET_V5_MARKER else {
+        "primary": _paths_from_packet_items(manifest.get("candidate_edit_files") or manifest.get("likely_files") or manifest.get("likely_edit_files"), limit=48),
+        "tests": _paths_from_packet_items(manifest.get("related_tests") or manifest.get("suggested_tests") or manifest.get("verification_files"), limit=48),
+        "support": _paths_from_packet_items(manifest.get("support_files") or manifest.get("read_only_support_files"), limit=48),
+    }
+    selected_paths = _selected_paths_for_receipt(paths_by_role)
+    ranked_records = _ranked_records_for_receipt(manifest)
+    ranked_paths = _dedupe_paths([str(item.get("path") or "") for item in ranked_records])
+    role_buckets = _role_bucket_receipt(selected_paths, manifest)
+    selection_lock_hash = selection_lock_hash_for_paths(selected_paths, intent=str(role_buckets.get("intent") or "unknown"))
+    selected_sensitive_hits = _sensitive_or_blocked_hits(selected_paths, manifest)
+    ranked_sensitive_hits = _sensitive_or_blocked_hits(ranked_paths, manifest)
+    metrics = dict(manifest.get("metrics") or {})
+    return {
+        "schema_version": "premode.packet_audit_receipt.v1",
+        "model_facing": False,
+        "packet_marker": manifest.get("packet_marker"),
+        "packet_variant": manifest.get("packet_variant"),
+        "packet_detail_mode": manifest.get("packet_detail_mode"),
+        "packet_detail_mode_requested": manifest.get("packet_detail_mode_requested"),
+        "packet_detail_mode_selected": manifest.get("packet_detail_mode_selected", manifest.get("packet_detail_mode")),
+        "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
+        "packet_receipt_mode": manifest.get("packet_receipt_mode"),
+        "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
+        "raw_prompt_sha256": manifest.get("raw_prompt_sha256"),
+        "packet_sha256": sha256_text(packet),
+        "packet_proxy_tokens": estimate_tokens(packet),
+        "model_facing_packet_bytes": len(packet.encode("utf-8", errors="replace")),
+        "selected_paths": selected_paths,
+        "selected_paths_by_role": paths_by_role,
+        "selected_path_count": len(selected_paths),
+        "selection_lock_hash": selection_lock_hash,
+        "role_buckets": role_buckets,
+        "ranked_paths": ranked_paths,
+        "ranked_path_records": ranked_records,
+        "ranked_path_count": len(ranked_paths),
+        "selected_sensitive_hits": selected_sensitive_hits,
+        "ranked_sensitive_hits": ranked_sensitive_hits,
+        "sensitive_path_hit_count": len(selected_sensitive_hits) + len(ranked_sensitive_hits),
+        "content_reads": _receipt_content_reads(manifest),
+        "policy_metadata": {
+            "context_receipt": manifest.get("context_receipt"),
+            "trust_boundary_warnings": manifest.get("trust_boundary_warnings") or [],
+            "prompt_forbidden_paths": manifest.get("prompt_forbidden_paths") or [],
+            "prompt_forbidden_files": manifest.get("prompt_forbidden_files") or [],
+            "safety_blocked_files": manifest.get("safety_blocked_files") or [],
+            "forbidden_without_user_confirmation": _compact_blocked_paths(manifest),
+            "excluded_context_summary": manifest.get("excluded_context_summary"),
+            "redaction_summary": manifest.get("redaction_summary"),
+        },
+        "selector_candidate_data": {
+            "candidate_edit_files": manifest.get("candidate_edit_files") or [],
+            "likely_files": manifest.get("likely_files") or [],
+            "support_files": manifest.get("support_files") or [],
+            "related_tests": manifest.get("related_tests") or [],
+            "file_decision_candidate_count": (manifest.get("file_decision_ledger") or {}).get("candidate_count") if isinstance(manifest.get("file_decision_ledger"), dict) else None,
+            "locator_confidence": (manifest.get("locator_evidence") or {}).get("confidence") if isinstance(manifest.get("locator_evidence"), dict) else None,
+        },
+        "compile_diagnostics": {
+            "metrics": metrics,
+            "model_facing_leakage_check": manifest.get("model_facing_leakage_check"),
+            "context_selection_mode": manifest.get("context_selection_mode"),
+            "large_repo_safety": manifest.get("large_repo_safety"),
+        },
+        "packet_component_accounting": _packet_component_accounting(manifest, packet, paths_by_role),
+    }
+
+
 def _stable_repo_map_summary_for_prefix(repo_map_summary: dict[str, Any] | None) -> dict[str, Any]:
     if not isinstance(repo_map_summary, dict):
         return {"status": "repo_map_not_enabled"}
@@ -5972,6 +6308,9 @@ def _render_packet_parts_from_manifest(manifest: dict[str, Any], selected: list[
         packet = "\n".join(lines)
         return packet, None, None
     if marker == PACKET_V5_MARKER:
+        detail_mode = str(manifest.get("packet_detail_mode") or PACKET_DETAIL_PATHS_ONLY)
+        if detail_mode in PACKET_DETAIL_COMPACT_MODES:
+            return _v5_compact_packet_parts(manifest, detail_mode)
         prefix = "\n".join(_v5_prefix_lines(str(manifest.get("packet_variant") or PACKET_V5_DEFAULT_VARIANT)))
         suffix = "\n".join(_v5_suffix_lines(manifest))
         return prefix + suffix, prefix, suffix
@@ -6173,21 +6512,39 @@ def build_compiled_packet(
         manifest["packet_variant"] = variant
     if packet_strategy:
         manifest["packet_strategy"] = str(packet_strategy).replace("-", "_").strip().lower()
-    requested_detail_mode = packet_detail_mode if packet_detail_mode in {PACKET_DETAIL_AUTO, PACKET_DETAIL_PATHS_ONLY, PACKET_DETAIL_EVIDENCE_SNIPPETS} else PACKET_DETAIL_PATHS_ONLY
+    requested_detail_mode = _normalize_packet_detail_mode(packet_detail_mode)
     detail_mode = requested_detail_mode if requested_detail_mode != PACKET_DETAIL_AUTO else PACKET_DETAIL_PATHS_ONLY
     if marker not in {PACKET_V3_MARKER, PACKET_V4_MARKER, PACKET_V5_MARKER}:
         detail_mode = PACKET_DETAIL_PATHS_ONLY
-        if requested_detail_mode == PACKET_DETAIL_AUTO:
+        if requested_detail_mode == PACKET_DETAIL_AUTO or requested_detail_mode in PACKET_DETAIL_COMPACT_MODES:
             requested_detail_mode = PACKET_DETAIL_PATHS_ONLY
     if marker == PACKET_V4_MARKER:
+        if requested_detail_mode in PACKET_DETAIL_COMPACT_MODES:
+            requested_detail_mode = PACKET_DETAIL_PATHS_ONLY
         detail_mode = PACKET_DETAIL_PATHS_ONLY if requested_detail_mode == PACKET_DETAIL_AUTO else requested_detail_mode
         manifest["packet_mode"] = "context-only-v4"
     if marker == PACKET_V5_MARKER:
-        detail_mode = PACKET_DETAIL_EVIDENCE_SNIPPETS if _v5_uses_evidence_snippets(str(variant or PACKET_V5_DEFAULT_VARIANT)) else PACKET_DETAIL_PATHS_ONLY
-        requested_detail_mode = detail_mode
+        if requested_detail_mode in PACKET_DETAIL_COMPACT_MODES:
+            detail_mode = requested_detail_mode
+        else:
+            detail_mode = PACKET_DETAIL_EVIDENCE_SNIPPETS if _v5_uses_evidence_snippets(str(variant or PACKET_V5_DEFAULT_VARIANT)) else PACKET_DETAIL_PATHS_ONLY
+            requested_detail_mode = detail_mode
         manifest["packet_mode"] = "ranked-context-v5"
+    if marker == PACKET_V3_MARKER and requested_detail_mode in PACKET_DETAIL_COMPACT_MODES:
+        requested_detail_mode = PACKET_DETAIL_PATHS_ONLY
+        detail_mode = PACKET_DETAIL_PATHS_ONLY
     manifest["packet_detail_mode"] = detail_mode
     manifest["packet_detail_mode_requested"] = requested_detail_mode
+    if marker == PACKET_V5_MARKER and detail_mode == PACKET_DETAIL_COMPACT:
+        manifest["model_facing_packet_mode"] = "compact_pcodex_v1"
+        manifest["packet_receipt_mode"] = "sidecar"
+    elif marker == PACKET_V5_MARKER and detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY:
+        manifest["model_facing_packet_mode"] = "selected_paths_only_v1"
+        manifest["packet_receipt_mode"] = "sidecar"
+    else:
+        manifest["model_facing_packet_mode"] = manifest.get("packet_mode")
+        manifest["packet_receipt_mode"] = "standard"
+    manifest["selected_paths_only_first_class"] = bool(marker == PACKET_V5_MARKER and detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY)
     manifest["include_packet_debug_metadata"] = bool(include_packet_debug_metadata)
     manifest["metrics"]["packet_detail_mode"] = detail_mode
     manifest["metrics"]["packet_detail_mode_requested"] = requested_detail_mode
@@ -6366,6 +6723,7 @@ def build_compiled_packet(
             metrics["model_facing_diagnostic_leakage"] = bool((manifest.get("model_facing_leakage_check") or {}).get("model_facing_diagnostic_leakage"))
     manifest["metrics"] = metrics
     manifest["context_receipt"] = _context_receipt(manifest)
+    manifest["packet_audit_receipt"] = _packet_audit_receipt(manifest, packet)
     if marker == PACKET_V3_MARKER and requested_detail_mode == PACKET_DETAIL_AUTO:
         forced_mode = str(manifest.get("packet_detail_mode_selected") or detail_mode)
         forced_packet = _render_model_facing_packet_for_detail_mode(manifest, selected, forced_mode)
@@ -6681,11 +7039,13 @@ def _save_last_packet_artifacts(repo_root: Path, packet: str, result_record: dic
     packet_path = out_dir / "last_packet.md"
     json_path = out_dir / "last_packet.json"
     receipt_path = out_dir / "last_context_receipt.json"
+    audit_receipt_path = out_dir / "last_packet_audit_receipt.json"
     repo_map_path = out_dir / "last_repo_map_summary.json"
     packet_path.write_text(packet, encoding="utf-8")
     json_payload = {k: v for k, v in result_record.items() if k != "packet"}
     json_path.write_text(json.dumps(json_payload, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
     receipt_path.write_text(_safe_json_dump(manifest.get("context_receipt") or _context_receipt(manifest)) + "\n", encoding="utf-8")
+    audit_receipt_path.write_text(_safe_json_dump(manifest.get("packet_audit_receipt") or {}) + "\n", encoding="utf-8")
     repo_map_summary = manifest.get("repo_map_summary")
     if not repo_map_summary:
         repo_map_summary = {"status": "repo_map_not_enabled_or_unavailable", "repo_map_enabled": False}
@@ -6694,6 +7054,7 @@ def _save_last_packet_artifacts(repo_root: Path, packet: str, result_record: dic
         "last_packet_md": str(packet_path),
         "last_packet_json": str(json_path),
         "last_context_receipt_json": str(receipt_path),
+        "last_packet_audit_receipt_json": str(audit_receipt_path),
         "last_repo_map_summary_json": str(repo_map_path),
     }
 
@@ -6782,6 +7143,9 @@ def compile_prompt(
         "packet_variant": manifest.get("packet_variant"),
         "resource_profile": manifest["resource_profile"],
         "packet_mode": manifest.get("packet_mode"),
+        "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
+        "packet_receipt_mode": manifest.get("packet_receipt_mode"),
+        "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
         "packet_detail_mode": manifest.get("packet_detail_mode"),
         "packet_detail_mode_requested": manifest.get("packet_detail_mode_requested"),
         "packet_detail_mode_selected": manifest.get("packet_detail_mode_selected", manifest.get("packet_detail_mode")),
@@ -6858,6 +7222,7 @@ def compile_prompt(
         "suggested_commands": manifest.get("suggested_commands"),
         "routing_filter_diagnostics": manifest.get("routing_filter_diagnostics"),
         "context_receipt": manifest.get("context_receipt"),
+        "packet_audit_receipt": manifest.get("packet_audit_receipt"),
         "scope_contract": manifest.get("patch_boundary"),
         "review_metadata": _harness_review_metadata_from_manifest(manifest),
         "verification_suggestions": {
