@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import time
 
 
 SOURCE_EXTENSIONS = {
@@ -69,6 +70,7 @@ ROLE_BUCKETS = (
 )
 SELECTOR_MATRIX_CLAIM_LEVEL = "Level 0 internal metric only"
 INTENT_V2_ROLE_BUCKETS_VARIANT = "intent_v2_role_buckets"
+WARM_INDEX_INVENTORY_VERSION = "warm-index-v1"
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,18 @@ class SelectorCandidateDryRun:
     content_reads: int = 0
     advisory_only: bool = True
     claim_level: str = SELECTOR_MATRIX_CLAIM_LEVEL
+    warm_index_enabled: bool = False
+    warm_index_hit: bool = False
+    warm_index_miss: bool = False
+    warm_index_fallback_reason: str | None = None
+    warm_index_build_ms: float = 0.0
+    warm_selector_ms: float = 0.0
+    cold_selector_ms: float = 0.0
+    disk_read_proxy_count: int = 0
+    inventory_walk_count: int = 0
+    stat_call_count: int = 0
+    candidate_enumeration_count: int = 0
+    warm_index_cache_key: str | None = None
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -164,11 +178,145 @@ class SelectorCandidateDryRun:
             "content_reads": self.content_reads,
             "advisory_only": self.advisory_only,
             "claim_level": self.claim_level,
+            "warm_index_enabled": self.warm_index_enabled,
+            "warm_index_hit": self.warm_index_hit,
+            "warm_index_miss": self.warm_index_miss,
+            "warm_index_fallback_reason": self.warm_index_fallback_reason,
+            "warm_index_build_ms": self.warm_index_build_ms,
+            "warm_selector_ms": self.warm_selector_ms,
+            "cold_selector_ms": self.cold_selector_ms,
+            "disk_read_proxy_count": self.disk_read_proxy_count,
+            "inventory_walk_count": self.inventory_walk_count,
+            "stat_call_count": self.stat_call_count,
+            "candidate_enumeration_count": self.candidate_enumeration_count,
+            "warm_index_cache_key": self.warm_index_cache_key,
         }
         if include_paths:
             payload["selected_paths"] = list(self.selected_paths)
             payload["candidate_paths"] = list(self.candidate_paths)
             payload["default_selected_paths"] = list(self.default_selected_paths)
+        return payload
+
+
+@dataclass(frozen=True)
+class WarmPathMetadata:
+    path: str
+    suffix: str
+    basename: str
+    path_segments: tuple[str, ...]
+    path_tokens: tuple[str, ...]
+    role: PathRole
+    is_media_asset_shape: bool
+    is_archive_or_legacy: bool
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "path": self.path,
+            "suffix": self.suffix,
+            "basename": self.basename,
+            "path_segments": list(self.path_segments),
+            "path_tokens": list(self.path_tokens),
+            "role": self.role.to_dict(),
+            "is_media_asset_shape": self.is_media_asset_shape,
+            "is_archive_or_legacy": self.is_archive_or_legacy,
+        }
+
+
+@dataclass(frozen=True)
+class RepoWarmIndex:
+    paths: tuple[str, ...]
+    path_metadata: tuple[WarmPathMetadata, ...]
+    cache_key: str
+    inventory_version: str = WARM_INDEX_INVENTORY_VERSION
+    repo_root: str = ""
+    git_head: str = ""
+    dirty_state_hash: str = ""
+    include_exclude_hash: str = ""
+    ignore_file_hash: str = ""
+    path_fingerprint: str = ""
+    build_ms: float = 0.0
+    content_reads: int = 0
+
+    @classmethod
+    def build(
+        cls,
+        paths: list[str] | tuple[str, ...],
+        *,
+        repo_root: str = "",
+        git_head: str = "",
+        dirty_state_hash: str = "",
+        include_exclude_hash: str = "",
+        ignore_file_hash: str = "",
+        inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
+    ) -> "RepoWarmIndex":
+        start = time.perf_counter()
+        normalized = _normalize_path_list(paths)
+        metadata = tuple(_warm_metadata_for_path(path) for path in normalized)
+        fingerprint = _warm_index_path_fingerprint(normalized)
+        cache_payload = {
+            "repo_root": repo_root,
+            "git_head": git_head,
+            "dirty_state_hash": dirty_state_hash,
+            "include_exclude_hash": include_exclude_hash,
+            "ignore_file_hash": ignore_file_hash,
+            "inventory_version": inventory_version,
+            "path_fingerprint": fingerprint,
+            "platform_path_normalization": "posix-slash-v1",
+        }
+        cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
+        return cls(
+            paths=normalized,
+            path_metadata=metadata,
+            cache_key=cache_key,
+            inventory_version=inventory_version,
+            repo_root=repo_root,
+            git_head=git_head,
+            dirty_state_hash=dirty_state_hash,
+            include_exclude_hash=include_exclude_hash,
+            ignore_file_hash=ignore_file_hash,
+            path_fingerprint=fingerprint,
+            build_ms=round((time.perf_counter() - start) * 1000, 3),
+        )
+
+    def validate_for_paths(
+        self,
+        paths: list[str] | tuple[str, ...],
+        *,
+        inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
+    ) -> tuple[bool, str | None]:
+        if self.inventory_version != inventory_version:
+            return False, "selector_inventory_version_changed"
+        if self.content_reads != 0:
+            return False, "warm_index_contains_content_reads"
+        if len(self.paths) != len(self.path_metadata):
+            return False, "corrupt_index_metadata"
+        if any(not metadata.path for metadata in self.path_metadata):
+            return False, "missing_required_fields"
+        if _warm_index_path_fingerprint(_normalize_path_list(paths)) != self.path_fingerprint:
+            return False, "file_set_changed"
+        return True, None
+
+    def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "cache_key": self.cache_key,
+            "inventory_version": self.inventory_version,
+            "path_count": len(self.paths),
+            "path_fingerprint": self.path_fingerprint,
+            "build_ms": self.build_ms,
+            "content_reads": self.content_reads,
+            "metadata_only": True,
+            "cached_fields": [
+                "path",
+                "suffix",
+                "basename",
+                "path_segments",
+                "path_tokens",
+                "classification_flags",
+                "role_hints",
+            ],
+        }
+        if include_paths:
+            payload["paths"] = list(self.paths)
         return payload
 
 
@@ -365,6 +513,27 @@ def classify_path_role(path: str) -> PathRole:
         is_example=is_example,
         is_generated_or_vendor=generated,
     )
+
+
+def _warm_metadata_for_path(path: str) -> WarmPathMetadata:
+    normalized = path.replace("\\", "/").strip("/")
+    parts = tuple(_parts(normalized))
+    return WarmPathMetadata(
+        path=normalized,
+        suffix=_suffix(normalized),
+        basename=_name(normalized),
+        path_segments=parts,
+        path_tokens=tuple(sorted(_expanded_match_tokens(normalized))),
+        role=classify_path_role(normalized),
+        is_media_asset_shape=_path_has_media_asset_shape(normalized),
+        is_archive_or_legacy=_is_archive_or_legacy_path(normalized),
+    )
+
+
+def _warm_index_path_fingerprint(paths: list[str] | tuple[str, ...]) -> str:
+    normalized = _normalize_path_list(paths)
+    payload = {"paths": list(normalized), "normalization": "posix-slash-v1"}
+    return hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def infer_prompt_intent(raw_prompt: str) -> PromptIntent:
@@ -790,10 +959,12 @@ def _dry_run_fallback_result(
     intent: PromptIntentV2,
     default_selected_paths: tuple[str, ...],
     candidate_decisions: list[RoleBucketDecision] | None = None,
+    warm_stats: dict[str, object] | None = None,
 ) -> SelectorCandidateDryRun:
     candidate_paths = tuple(decision.path for decision in candidate_decisions or [])
     role_summary = _role_bucket_summary(candidate_decisions or [])
     selection_hash = selection_lock_hash_for_paths(list(default_selected_paths), intent="default_current")
+    warm = warm_stats or {}
     return SelectorCandidateDryRun(
         selector_variant=selector_variant,
         candidate_selector_used=False,
@@ -806,6 +977,18 @@ def _dry_run_fallback_result(
         selected_paths=default_selected_paths,
         candidate_paths=candidate_paths,
         default_selected_paths=default_selected_paths,
+        warm_index_enabled=bool(warm.get("warm_index_enabled", False)),
+        warm_index_hit=bool(warm.get("warm_index_hit", False)),
+        warm_index_miss=bool(warm.get("warm_index_miss", False)),
+        warm_index_fallback_reason=warm.get("warm_index_fallback_reason") if isinstance(warm.get("warm_index_fallback_reason"), str) else None,
+        warm_index_build_ms=float(warm.get("warm_index_build_ms") or 0.0),
+        warm_selector_ms=float(warm.get("warm_selector_ms") or 0.0),
+        cold_selector_ms=float(warm.get("cold_selector_ms") or 0.0),
+        disk_read_proxy_count=int(warm.get("disk_read_proxy_count") or 0),
+        inventory_walk_count=int(warm.get("inventory_walk_count") or 0),
+        stat_call_count=int(warm.get("stat_call_count") or 0),
+        candidate_enumeration_count=int(warm.get("candidate_enumeration_count") or 0),
+        warm_index_cache_key=warm.get("warm_index_cache_key") if isinstance(warm.get("warm_index_cache_key"), str) else None,
     )
 
 
@@ -817,6 +1000,10 @@ def dry_run_selector_candidate(
     default_selected_paths: list[str] | tuple[str, ...] | None = None,
     forbidden_paths: list[str] | tuple[str, ...] | None = None,
     max_paths: int | None = None,
+    warm_index_enabled: bool = False,
+    warm_index: RepoWarmIndex | None = None,
+    build_warm_index: bool = True,
+    selector_inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
 ) -> SelectorCandidateDryRun:
     """Evaluate a selector candidate as explicit dry-run metadata only.
 
@@ -826,12 +1013,27 @@ def dry_run_selector_candidate(
     default_paths = _normalize_path_list(default_selected_paths)
     intent = infer_prompt_intent_v2(raw_prompt)
     selector = selector_candidate or "default_current"
+    warm_stats: dict[str, object] = {
+        "warm_index_enabled": warm_index_enabled,
+        "warm_index_hit": False,
+        "warm_index_miss": False,
+        "warm_index_fallback_reason": None,
+        "warm_index_build_ms": 0.0,
+        "warm_selector_ms": 0.0,
+        "cold_selector_ms": 0.0,
+        "disk_read_proxy_count": len(_normalize_path_list(paths)) if not warm_index_enabled else 0,
+        "inventory_walk_count": 1 if not warm_index_enabled else 0,
+        "stat_call_count": 0,
+        "candidate_enumeration_count": len(_normalize_path_list(paths)),
+        "warm_index_cache_key": None,
+    }
     if selector_candidate is None:
         return _dry_run_fallback_result(
             selector_variant=selector,
             fallback_reason="candidate_not_requested",
             intent=intent,
             default_selected_paths=default_paths,
+            warm_stats=warm_stats,
         )
     if selector_candidate != INTENT_V2_ROLE_BUCKETS_VARIANT:
         return _dry_run_fallback_result(
@@ -839,6 +1041,7 @@ def dry_run_selector_candidate(
             fallback_reason="unsupported_selector_candidate",
             intent=intent,
             default_selected_paths=default_paths,
+            warm_stats=warm_stats,
         )
     if intent.intent == "unknown" or intent.confidence < 0.50:
         return _dry_run_fallback_result(
@@ -846,9 +1049,61 @@ def dry_run_selector_candidate(
             fallback_reason="low_confidence_or_unknown",
             intent=intent,
             default_selected_paths=default_paths,
+            warm_stats=warm_stats,
         )
 
-    candidate_decisions = rank_intent_v2_paths(paths, raw_prompt, max_paths=max_paths)
+    selector_paths: list[str] | tuple[str, ...] = paths
+    if warm_index_enabled:
+        if warm_index is not None:
+            valid, reason = warm_index.validate_for_paths(paths, inventory_version=selector_inventory_version)
+            if valid:
+                selector_paths = warm_index.paths
+                warm_stats.update(
+                    {
+                        "warm_index_hit": True,
+                        "disk_read_proxy_count": 0,
+                        "inventory_walk_count": 0,
+                        "candidate_enumeration_count": len(warm_index.paths),
+                        "warm_index_cache_key": warm_index.cache_key,
+                    }
+                )
+            else:
+                warm_stats.update(
+                    {
+                        "warm_index_fallback_reason": reason or "warm_index_invalid",
+                        "disk_read_proxy_count": len(_normalize_path_list(paths)),
+                        "inventory_walk_count": 1,
+                    }
+                )
+        elif build_warm_index:
+            built_index = RepoWarmIndex.build(paths, inventory_version=selector_inventory_version)
+            selector_paths = built_index.paths
+            warm_stats.update(
+                {
+                    "warm_index_miss": True,
+                    "warm_index_build_ms": built_index.build_ms,
+                    "disk_read_proxy_count": len(built_index.paths),
+                    "inventory_walk_count": 1,
+                    "candidate_enumeration_count": len(built_index.paths),
+                    "warm_index_cache_key": built_index.cache_key,
+                }
+            )
+        else:
+            warm_stats.update(
+                {
+                    "warm_index_fallback_reason": "missing_index",
+                    "disk_read_proxy_count": len(_normalize_path_list(paths)),
+                    "inventory_walk_count": 1,
+                }
+            )
+
+    selector_start = time.perf_counter()
+    candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+    selector_ms = round((time.perf_counter() - selector_start) * 1000, 3)
+    if warm_index_enabled and warm_stats.get("warm_index_fallback_reason") is None:
+        warm_stats["warm_selector_ms"] = selector_ms
+    else:
+        warm_stats["cold_selector_ms"] = selector_ms
     primary_count = sum(1 for decision in candidate_decisions if decision.role_bucket in {"primary_edit", "primary_lookup"})
     if primary_count == 0:
         return _dry_run_fallback_result(
@@ -857,6 +1112,7 @@ def dry_run_selector_candidate(
             intent=intent,
             default_selected_paths=default_paths,
             candidate_decisions=candidate_decisions,
+            warm_stats=warm_stats,
         )
     forbidden = set(_normalize_path_list(forbidden_paths))
     if forbidden and any(decision.path in forbidden for decision in candidate_decisions):
@@ -866,6 +1122,7 @@ def dry_run_selector_candidate(
             intent=intent,
             default_selected_paths=default_paths,
             candidate_decisions=candidate_decisions,
+            warm_stats=warm_stats,
         )
 
     candidate_paths = tuple(decision.path for decision in candidate_decisions)
@@ -881,6 +1138,18 @@ def dry_run_selector_candidate(
         selected_paths=candidate_paths,
         candidate_paths=candidate_paths,
         default_selected_paths=default_paths,
+        warm_index_enabled=bool(warm_stats.get("warm_index_enabled", False)),
+        warm_index_hit=bool(warm_stats.get("warm_index_hit", False)),
+        warm_index_miss=bool(warm_stats.get("warm_index_miss", False)),
+        warm_index_fallback_reason=warm_stats.get("warm_index_fallback_reason") if isinstance(warm_stats.get("warm_index_fallback_reason"), str) else None,
+        warm_index_build_ms=float(warm_stats.get("warm_index_build_ms") or 0.0),
+        warm_selector_ms=float(warm_stats.get("warm_selector_ms") or 0.0),
+        cold_selector_ms=float(warm_stats.get("cold_selector_ms") or 0.0),
+        disk_read_proxy_count=int(warm_stats.get("disk_read_proxy_count") or 0),
+        inventory_walk_count=int(warm_stats.get("inventory_walk_count") or 0),
+        stat_call_count=int(warm_stats.get("stat_call_count") or 0),
+        candidate_enumeration_count=int(warm_stats.get("candidate_enumeration_count") or 0),
+        warm_index_cache_key=warm_stats.get("warm_index_cache_key") if isinstance(warm_stats.get("warm_index_cache_key"), str) else None,
     )
 
 
