@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+import resource
 import time
 
 
@@ -162,6 +165,23 @@ class SelectorCandidateDryRun:
     candidate_enumeration_count: int = 0
     warm_index_cache_key: str | None = None
     warm_index_metadata_only_verified: bool = False
+    parallel_scoring_enabled: bool = False
+    parallel_scoring_mode: str = "serial"
+    parallel_score_workers: int | None = None
+    parallel_score_fallback_reason: str | None = None
+    score_record_count: int = 0
+    score_map_ms: float = 0.0
+    reduce_sort_ms: float = 0.0
+    total_selector_ms: float = 0.0
+    worker_start_ms: float = 0.0
+    serialization_ms: float = 0.0
+    cpu_user_ms: float | None = None
+    cpu_system_ms: float | None = None
+    max_rss_kb: int | None = None
+    worker_content_reads: int = 0
+    worker_file_open_count: int = 0
+    worker_stat_count: int = 0
+    worker_walk_count: int = 0
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -194,6 +214,23 @@ class SelectorCandidateDryRun:
             "candidate_enumeration_count": self.candidate_enumeration_count,
             "warm_index_cache_key": self.warm_index_cache_key,
             "warm_index_metadata_only_verified": self.warm_index_metadata_only_verified,
+            "parallel_scoring_enabled": self.parallel_scoring_enabled,
+            "parallel_scoring_mode": self.parallel_scoring_mode,
+            "parallel_score_workers": self.parallel_score_workers,
+            "parallel_score_fallback_reason": self.parallel_score_fallback_reason,
+            "score_record_count": self.score_record_count,
+            "score_map_ms": self.score_map_ms,
+            "reduce_sort_ms": self.reduce_sort_ms,
+            "total_selector_ms": self.total_selector_ms,
+            "worker_start_ms": self.worker_start_ms,
+            "serialization_ms": self.serialization_ms,
+            "cpu_user_ms": self.cpu_user_ms,
+            "cpu_system_ms": self.cpu_system_ms,
+            "max_rss_kb": self.max_rss_kb,
+            "worker_content_reads": self.worker_content_reads,
+            "worker_file_open_count": self.worker_file_open_count,
+            "worker_stat_count": self.worker_stat_count,
+            "worker_walk_count": self.worker_walk_count,
         }
         if include_paths:
             payload["selected_paths"] = list(self.selected_paths)
@@ -224,6 +261,43 @@ class WarmPathMetadata:
             "is_media_asset_shape": self.is_media_asset_shape,
             "is_archive_or_legacy": self.is_archive_or_legacy,
         }
+
+
+@dataclass(frozen=True)
+class WarmCandidate:
+    ordinal: int
+    path: str
+    suffix: str
+    basename: str
+    path_segments: tuple[str, ...]
+    path_tokens: tuple[str, ...]
+    basename_tokens: tuple[str, ...]
+    role_hint: str
+    entrypoint_likelihood: str | int
+    manifest_likelihood: str
+    docs_specificity: str
+    is_source: bool
+    is_test: bool
+    is_docs: bool
+    is_config: bool
+    is_workflow: bool
+    is_media: bool
+    is_generated: bool
+    is_archive_or_legacy: bool
+    size_bucket: int | None
+    mtime_bucket: int | None
+    feature_schema: str
+
+
+@dataclass(frozen=True)
+class ScoreRecord:
+    ordinal: int
+    path: str
+    score: int
+    role_bucket: str
+    sort_key: tuple[int, str]
+    matched_signal_ids: tuple[str, ...]
+    role_bucket_reason: str
 
 
 @dataclass(frozen=True)
@@ -836,6 +910,373 @@ def intent_v2_path_score(path: str, intent: str | PromptIntentV2, *, linked: boo
     return score
 
 
+def _warm_candidate_from_metadata(ordinal: int, metadata: WarmPathMetadata) -> WarmCandidate:
+    role = metadata.role
+    return WarmCandidate(
+        ordinal=ordinal,
+        path=metadata.path,
+        suffix=metadata.suffix,
+        basename=metadata.basename,
+        path_segments=metadata.path_segments,
+        path_tokens=metadata.path_tokens,
+        basename_tokens=tuple(sorted(_expanded_match_tokens(metadata.basename))),
+        role_hint=role.role,
+        entrypoint_likelihood=role.entrypoint_likelihood,
+        manifest_likelihood=role.manifest_likelihood,
+        docs_specificity=role.docs_specificity,
+        is_source=role.role == "source",
+        is_test=role.is_test,
+        is_docs=role.is_docs,
+        is_config=role.is_config,
+        is_workflow=role.is_workflow,
+        is_media=metadata.is_media_asset_shape,
+        is_generated=role.is_generated_or_vendor,
+        is_archive_or_legacy=metadata.is_archive_or_legacy,
+        size_bucket=None,
+        mtime_bucket=None,
+        feature_schema="warm-candidate-v1",
+    )
+
+
+def _role_bucket_for_warm_candidate(
+    candidate: WarmCandidate,
+    intent: str | PromptIntentV2,
+    *,
+    linked: bool = False,
+) -> RoleBucketDecision:
+    intent_name = intent.intent if isinstance(intent, PromptIntentV2) else str(intent or "unknown")
+    normalized = candidate.path
+    role = candidate.role_hint
+    is_asset = candidate.is_media
+
+    bucket = "support_context"
+    reason = f"{role}_support"
+
+    if candidate.is_generated:
+        return RoleBucketDecision(normalized, intent_name, "ignore_or_noise", "generated_or_vendor")
+
+    if intent_name in {"media_asset_lookup", "large_repo_media_lookup"}:
+        if is_asset and candidate.is_archive_or_legacy:
+            bucket, reason = "ignore_or_noise", "archived_media_asset_noise"
+        elif is_asset:
+            bucket, reason = "primary_lookup", "media_asset_lookup_primary"
+        elif role == "source":
+            bucket, reason = ("support_context", "source_support_only_for_media_lookup") if linked else ("ignore_or_noise", "source_unlinked_for_media_lookup")
+        elif role == "test":
+            bucket, reason = "ignore_or_noise", "test_unlinked_for_media_lookup"
+        elif role == "docs":
+            bucket, reason = ("docs_support", "linked_docs_for_media_lookup") if linked else ("support_context", "docs_metadata_for_media_lookup")
+        elif role == "config":
+            bucket, reason = "config_support", "metadata_or_manifest_for_media_lookup"
+    elif intent_name == "code_entrypoint_lookup":
+        if role == "source" and (
+            candidate.entrypoint_likelihood in {"high", "medium"}
+            or any(term in candidate.basename for term in ("entry", "bootstrap", "route", "server", "main", "cli"))
+        ):
+            bucket, reason = "primary_lookup", "entrypoint_source_lookup"
+        elif role == "source":
+            bucket, reason = "support_context", "source_support_for_entrypoint_lookup"
+        elif is_asset:
+            bucket, reason = "asset_support", "asset_support_only_for_entrypoint_lookup"
+        elif role == "test":
+            bucket, reason = ("verification", "linked_test_for_entrypoint_lookup") if linked else ("ignore_or_noise", "test_unlinked_for_entrypoint_lookup")
+        elif role == "config":
+            bucket, reason = "config_support", "config_bootstrap_support"
+        elif role == "docs":
+            bucket, reason = "docs_support", "docs_support_for_entrypoint_lookup"
+    elif intent_name == "bugfix_runtime":
+        if role == "source":
+            bucket, reason = "primary_edit", "runtime_source_primary"
+        elif role == "test":
+            bucket, reason = "verification", "runtime_test_verification"
+        elif is_asset:
+            bucket, reason = ("asset_support", "linked_asset_for_runtime") if linked else ("ignore_or_noise", "asset_unlinked_for_runtime")
+        elif role == "config":
+            bucket, reason = ("config_support", "linked_config_for_runtime") if linked else ("ignore_or_noise", "unlinked_config_for_runtime")
+        elif role == "docs":
+            bucket, reason = ("support_context", "linked_docs_for_runtime") if linked else ("ignore_or_noise", "unlinked_docs_for_runtime")
+    elif intent_name == "docs_only":
+        if role == "docs":
+            bucket, reason = ("support_context", "readme_support_for_specific_docs") if candidate.basename == "readme.md" and not linked else ("primary_edit", "docs_primary")
+        elif role == "source":
+            bucket, reason = ("support_context", "linked_source_for_docs") if linked else ("ignore_or_noise", "source_unlinked_for_docs")
+        elif role in {"test", "workflow"} or is_asset:
+            bucket, reason = "ignore_or_noise", "unlinked_non_docs_for_docs"
+        elif role == "config":
+            bucket, reason = ("config_support", "linked_config_for_docs") if linked else ("ignore_or_noise", "config_unlinked_for_docs")
+    elif intent_name == "config_change":
+        if is_asset and not linked:
+            bucket, reason = "ignore_or_noise", "unlinked_asset_config_for_config"
+        elif role == "config":
+            bucket, reason = "primary_edit", "config_primary"
+        elif role == "docs":
+            bucket, reason = ("docs_support", "linked_docs_for_config") if linked else ("ignore_or_noise", "unlinked_docs_for_config")
+        elif role == "source":
+            bucket, reason = ("support_context", "linked_source_for_config") if linked else ("ignore_or_noise", "unlinked_source_for_config")
+        else:
+            bucket, reason = "ignore_or_noise", "unlinked_non_config_for_config"
+    elif intent_name == "workflow_change":
+        if role == "workflow" or normalized.lower().startswith((".github/workflows/", "scripts/")):
+            bucket, reason = "primary_edit", "workflow_primary"
+        elif role == "config":
+            bucket, reason = ("primary_edit", "linked_workflow_config_primary") if linked else ("config_support", "workflow_config_support")
+        elif role == "test":
+            bucket, reason = ("verification", "workflow_test_verification") if linked else ("ignore_or_noise", "test_unlinked_for_workflow")
+        elif role == "docs":
+            bucket, reason = ("docs_support", "linked_docs_for_workflow") if linked else ("ignore_or_noise", "unlinked_docs_for_workflow")
+        elif role == "source":
+            bucket, reason = ("support_context", "linked_source_for_workflow") if linked else ("ignore_or_noise", "unlinked_source_for_workflow")
+        else:
+            bucket, reason = "ignore_or_noise", "unlinked_non_workflow_for_workflow"
+    elif intent_name == "broad_repo_inspection":
+        lower = normalized.lower()
+        if lower in {"ai_start_here.md", "agents.md", "premode.ai.json"}:
+            bucket, reason = "primary_lookup", "repo_orientation_surface"
+        elif role in {"docs", "config"} or candidate.entrypoint_likelihood in {"high", "medium"}:
+            bucket, reason = "support_context", "bounded_repo_context"
+        else:
+            bucket, reason = "ignore_or_noise", "bounded_repo_inspection_noise"
+    elif intent_name == "test_failure":
+        if role == "test":
+            bucket, reason = "primary_edit", "test_failure_primary"
+        elif role == "source":
+            bucket, reason = "support_context", "source_support_for_test_failure"
+        elif role == "config":
+            bucket, reason = "config_support", "config_support_for_test_failure"
+    elif intent_name == "symbol_lookup":
+        if role == "source":
+            bucket, reason = "primary_lookup", "symbol_source_lookup"
+        elif role == "test":
+            bucket, reason = "verification", "symbol_test_context"
+    else:
+        if role in {"docs", "config"} or candidate.entrypoint_likelihood in {"high", "medium"}:
+            bucket, reason = "support_context", "unknown_bounded_support"
+        else:
+            bucket, reason = "ignore_or_noise", "unknown_bounded_noise"
+
+    return RoleBucketDecision(normalized, intent_name, bucket, reason)
+
+
+def _intent_v2_candidate_base_score(
+    candidate: WarmCandidate,
+    decision: RoleBucketDecision,
+    intent_name: str,
+    *,
+    linked: bool,
+) -> int:
+    bucket_scores = {
+        "primary_edit": 900,
+        "primary_lookup": 850,
+        "verification": 650,
+        "config_support": 500,
+        "docs_support": 450,
+        "asset_support": 420,
+        "support_context": 350,
+        "ignore_or_noise": -500,
+    }
+    score = bucket_scores.get(decision.role_bucket, 0)
+    if intent_name == "code_entrypoint_lookup":
+        if candidate.entrypoint_likelihood == "high":
+            score += 120
+        elif candidate.entrypoint_likelihood == "medium":
+            score += 80
+        if any(term in candidate.basename for term in ("entry", "bootstrap", "route", "server", "main", "cli")):
+            score += 120
+    elif intent_name in {"bugfix_runtime", "test_failure"}:
+        if candidate.entrypoint_likelihood == "high" and not linked:
+            score -= 80
+        elif candidate.entrypoint_likelihood == "medium" and not linked:
+            score -= 40
+    elif candidate.entrypoint_likelihood == "high":
+        score += 60
+    elif candidate.entrypoint_likelihood == "medium":
+        score += 30
+    if candidate.manifest_likelihood == "high":
+        score += 80
+    if candidate.docs_specificity in {"readme", "specific"}:
+        score += 40
+    if candidate.is_generated:
+        score -= 800
+    if candidate.is_archive_or_legacy:
+        score -= 700
+    return score
+
+
+def _score_warm_candidate(args: tuple[WarmCandidate, PromptIntentV2, tuple[str, ...]]) -> ScoreRecord:
+    candidate, intent, prompt_tokens_tuple = args
+    prompt_tokens = set(prompt_tokens_tuple)
+    overlap = len(set(candidate.path_tokens) & prompt_tokens)
+    linked = overlap > 0
+    decision = _role_bucket_for_warm_candidate(candidate, intent, linked=linked)
+    intent_name = intent.intent
+    score = _intent_v2_candidate_base_score(candidate, decision, intent_name, linked=linked) + overlap * 100
+    score -= min(candidate.path.count("/"), 5) * 8
+    matched_signal_ids: list[str] = [decision.role_bucket_reason]
+    if overlap:
+        matched_signal_ids.append("prompt_path_overlap")
+    if intent_name in {"media_asset_lookup", "large_repo_media_lookup"} and candidate.is_media:
+        score += 220
+        matched_signal_ids.append("media_asset_shape")
+        if candidate.path.lower().startswith(("assets/", "audio/", "ui/assets/", "mega_assets/")):
+            score += 40
+            matched_signal_ids.append("preferred_asset_root")
+        if candidate.is_archive_or_legacy:
+            score -= 900
+            matched_signal_ids.append("archive_or_legacy_penalty")
+    if intent_name == "code_entrypoint_lookup" and candidate.role_hint == "source":
+        if any(term in candidate.basename for term in ("entry", "bootstrap", "route", "server", "main", "cli")):
+            score += 180
+            matched_signal_ids.append("entrypoint_basename")
+    if intent_name == "bugfix_runtime" and candidate.role_hint == "source":
+        score += 140 if linked else -80
+        matched_signal_ids.append("runtime_source_linked" if linked else "runtime_source_unlinked")
+    if intent_name == "test_failure" and candidate.role_hint == "test":
+        score += 220
+        matched_signal_ids.append("test_failure_test")
+    if intent_name == "docs_only" and candidate.role_hint == "docs":
+        score += 180 if linked else 40
+        matched_signal_ids.append("docs_primary_linked" if linked else "docs_primary_unlinked")
+    if intent_name == "config_change" and candidate.role_hint == "config":
+        score += 180 if linked else 40
+        matched_signal_ids.append("config_primary_linked" if linked else "config_primary_unlinked")
+    if intent_name == "workflow_change" and (candidate.role_hint == "workflow" or candidate.path.lower().startswith((".github/workflows/", "scripts/"))):
+        score += 220 if linked else 80
+        matched_signal_ids.append("workflow_primary_linked" if linked else "workflow_primary_unlinked")
+    if intent_name == "broad_repo_inspection" and candidate.path.lower() in {"ai_start_here.md", "agents.md", "premode.ai.json", "readme.md"}:
+        score += 220
+        matched_signal_ids.append("repo_orientation_surface")
+    return ScoreRecord(
+        ordinal=candidate.ordinal,
+        path=candidate.path,
+        score=score,
+        role_bucket=decision.role_bucket,
+        sort_key=(-score, candidate.path),
+        matched_signal_ids=tuple(matched_signal_ids),
+        role_bucket_reason=decision.role_bucket_reason,
+    )
+
+
+def _reduce_score_records(records: list[ScoreRecord], *, intent_name: str, limit: int, candidate_count: int) -> tuple[list[RoleBucketDecision], str | None]:
+    if len(records) != candidate_count:
+        return [], "score_record_count_mismatch"
+    ordinals = [record.ordinal for record in records]
+    if len(set(ordinals)) != candidate_count or set(ordinals) != set(range(candidate_count)):
+        return [], "score_record_ordinals_incomplete"
+    bucket_limits = _intent_v2_bucket_limits(intent_name, limit)
+    bucket_counts = {bucket: 0 for bucket in ROLE_BUCKETS}
+    selected: list[RoleBucketDecision] = []
+    seen: set[str] = set()
+    for record in sorted(records, key=lambda item: item.sort_key):
+        if record.role_bucket == "ignore_or_noise":
+            continue
+        if record.path in seen:
+            continue
+        if bucket_counts.get(record.role_bucket, 0) >= bucket_limits.get(record.role_bucket, 0):
+            continue
+        selected.append(RoleBucketDecision(record.path, intent_name, record.role_bucket, record.role_bucket_reason))
+        seen.add(record.path)
+        bucket_counts[record.role_bucket] = bucket_counts.get(record.role_bucket, 0) + 1
+        if len(selected) >= limit:
+            break
+    return selected, None
+
+
+def _bounded_worker_count(worker_count: int | None, candidate_count: int) -> int:
+    if candidate_count <= 0:
+        return 1
+    requested = worker_count if worker_count is not None else min(4, os.cpu_count() or 1)
+    return max(1, min(int(requested), candidate_count, 8))
+
+
+def _resource_usage_ms() -> tuple[float, float, int]:
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return usage.ru_utime * 1000, usage.ru_stime * 1000, int(usage.ru_maxrss)
+
+
+def _parallel_rank_intent_v2_warm_index(
+    warm_index: RepoWarmIndex,
+    raw_prompt: str,
+    *,
+    mode: str,
+    worker_count: int | None,
+    max_paths: int | None = None,
+) -> tuple[list[RoleBucketDecision] | None, dict[str, object]]:
+    total_start = time.perf_counter()
+    usage_start = _resource_usage_ms()
+    intent = infer_prompt_intent_v2(raw_prompt)
+    cap_defaults = {
+        "media_asset_lookup": 2,
+        "large_repo_media_lookup": 2,
+        "code_entrypoint_lookup": 2,
+        "bugfix_runtime": 3,
+        "docs_only": 2,
+        "config_change": 3,
+        "workflow_change": 3,
+        "test_failure": 3,
+        "broad_repo_inspection": 3,
+        "symbol_lookup": 4,
+        "unknown": 3,
+    }
+    limit = max_paths if max_paths is not None else cap_defaults.get(intent.intent, 4)
+    candidates = [_warm_candidate_from_metadata(ordinal, metadata) for ordinal, metadata in enumerate(warm_index.path_metadata)]
+    workers = _bounded_worker_count(worker_count, len(candidates))
+    effective_mode = "threads" if mode == "auto" else mode
+    telemetry: dict[str, object] = {
+        "parallel_scoring_enabled": True,
+        "parallel_scoring_mode": effective_mode,
+        "parallel_score_workers": workers,
+        "parallel_score_fallback_reason": None,
+        "candidate_count": len(candidates),
+        "score_record_count": 0,
+        "score_map_ms": 0.0,
+        "reduce_sort_ms": 0.0,
+        "total_selector_ms": 0.0,
+        "worker_start_ms": 0.0,
+        "serialization_ms": 0.0,
+        "cpu_user_ms": None,
+        "cpu_system_ms": None,
+        "max_rss_kb": None,
+        "worker_content_reads": 0,
+        "worker_file_open_count": 0,
+        "worker_stat_count": 0,
+        "worker_walk_count": 0,
+    }
+    if effective_mode not in {"threads", "processes"}:
+        telemetry["parallel_score_fallback_reason"] = f"unsupported_parallel_mode:{mode}"
+        return None, telemetry
+    if workers < 1:
+        telemetry["parallel_score_fallback_reason"] = "no_parallel_workers"
+        return None, telemetry
+
+    prompt_tokens = tuple(sorted(_expanded_match_tokens(raw_prompt)))
+    args = [(candidate, intent, prompt_tokens) for candidate in candidates]
+    try:
+        map_start = time.perf_counter()
+        executor_cls = ThreadPoolExecutor if effective_mode == "threads" else ProcessPoolExecutor
+        start_open = time.perf_counter()
+        with executor_cls(max_workers=workers) as executor:
+            telemetry["worker_start_ms"] = round((time.perf_counter() - start_open) * 1000, 3)
+            records = list(executor.map(_score_warm_candidate, args))
+        telemetry["score_map_ms"] = round((time.perf_counter() - map_start) * 1000, 3)
+    except Exception as exc:
+        telemetry["parallel_score_fallback_reason"] = f"worker_exception:{type(exc).__name__}"
+        return None, telemetry
+
+    reduce_start = time.perf_counter()
+    decisions, fallback_reason = _reduce_score_records(records, intent_name=intent.intent, limit=limit, candidate_count=len(candidates))
+    telemetry["reduce_sort_ms"] = round((time.perf_counter() - reduce_start) * 1000, 3)
+    telemetry["score_record_count"] = len(records)
+    if fallback_reason:
+        telemetry["parallel_score_fallback_reason"] = fallback_reason
+        return None, telemetry
+    usage_end = _resource_usage_ms()
+    telemetry["cpu_user_ms"] = round(max(0.0, usage_end[0] - usage_start[0]), 3)
+    telemetry["cpu_system_ms"] = round(max(0.0, usage_end[1] - usage_start[1]), 3)
+    telemetry["max_rss_kb"] = usage_end[2]
+    telemetry["total_selector_ms"] = round((time.perf_counter() - total_start) * 1000, 3)
+    return decisions, telemetry
+
+
 def selection_lock_hash_for_paths(paths: list[str], *, intent: str | None = None) -> str:
     cleaned = sorted(dict.fromkeys(path.replace("\\", "/").strip("/") for path in paths if path))
     payload = {"intent": intent or "", "paths": cleaned}
@@ -987,11 +1428,13 @@ def _dry_run_fallback_result(
     default_selected_paths: tuple[str, ...],
     candidate_decisions: list[RoleBucketDecision] | None = None,
     warm_stats: dict[str, object] | None = None,
+    parallel_stats: dict[str, object] | None = None,
 ) -> SelectorCandidateDryRun:
     candidate_paths = tuple(decision.path for decision in candidate_decisions or [])
     role_summary = _role_bucket_summary(candidate_decisions or [])
     selection_hash = selection_lock_hash_for_paths(list(default_selected_paths), intent="default_current")
     warm = warm_stats or {}
+    parallel = parallel_stats or {}
     return SelectorCandidateDryRun(
         selector_variant=selector_variant,
         candidate_selector_used=False,
@@ -1017,6 +1460,23 @@ def _dry_run_fallback_result(
         candidate_enumeration_count=int(warm.get("candidate_enumeration_count") or 0),
         warm_index_cache_key=warm.get("warm_index_cache_key") if isinstance(warm.get("warm_index_cache_key"), str) else None,
         warm_index_metadata_only_verified=bool(warm.get("warm_index_metadata_only_verified", False)),
+        parallel_scoring_enabled=bool(parallel.get("parallel_scoring_enabled", False)),
+        parallel_scoring_mode=str(parallel.get("parallel_scoring_mode") or "serial"),
+        parallel_score_workers=parallel.get("parallel_score_workers") if isinstance(parallel.get("parallel_score_workers"), int) else None,
+        parallel_score_fallback_reason=parallel.get("parallel_score_fallback_reason") if isinstance(parallel.get("parallel_score_fallback_reason"), str) else None,
+        score_record_count=int(parallel.get("score_record_count") or 0),
+        score_map_ms=float(parallel.get("score_map_ms") or 0.0),
+        reduce_sort_ms=float(parallel.get("reduce_sort_ms") or 0.0),
+        total_selector_ms=float(parallel.get("total_selector_ms") or 0.0),
+        worker_start_ms=float(parallel.get("worker_start_ms") or 0.0),
+        serialization_ms=float(parallel.get("serialization_ms") or 0.0),
+        cpu_user_ms=parallel.get("cpu_user_ms") if isinstance(parallel.get("cpu_user_ms"), float) else None,
+        cpu_system_ms=parallel.get("cpu_system_ms") if isinstance(parallel.get("cpu_system_ms"), float) else None,
+        max_rss_kb=parallel.get("max_rss_kb") if isinstance(parallel.get("max_rss_kb"), int) else None,
+        worker_content_reads=int(parallel.get("worker_content_reads") or 0),
+        worker_file_open_count=int(parallel.get("worker_file_open_count") or 0),
+        worker_stat_count=int(parallel.get("worker_stat_count") or 0),
+        worker_walk_count=int(parallel.get("worker_walk_count") or 0),
     )
 
 
@@ -1038,6 +1498,9 @@ def dry_run_selector_candidate(
     include_exclude_hash: str = "",
     ignore_file_hash: str = "",
     path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION,
+    parallel_scoring_enabled: bool = False,
+    parallel_scoring_mode: str = "serial",
+    parallel_score_workers: int | None = None,
 ) -> SelectorCandidateDryRun:
     """Evaluate a selector candidate as explicit dry-run metadata only.
 
@@ -1062,6 +1525,26 @@ def dry_run_selector_candidate(
         "warm_index_cache_key": None,
         "warm_index_metadata_only_verified": False,
     }
+    parallel_stats: dict[str, object] = {
+        "parallel_scoring_enabled": False,
+        "parallel_scoring_mode": "serial",
+        "parallel_score_workers": None,
+        "parallel_score_fallback_reason": None,
+        "candidate_count": len(_normalize_path_list(paths)),
+        "score_record_count": 0,
+        "score_map_ms": 0.0,
+        "reduce_sort_ms": 0.0,
+        "total_selector_ms": 0.0,
+        "worker_start_ms": 0.0,
+        "serialization_ms": 0.0,
+        "cpu_user_ms": None,
+        "cpu_system_ms": None,
+        "max_rss_kb": None,
+        "worker_content_reads": 0,
+        "worker_file_open_count": 0,
+        "worker_stat_count": 0,
+        "worker_walk_count": 0,
+    }
     if selector_candidate is None:
         return _dry_run_fallback_result(
             selector_variant=selector,
@@ -1069,6 +1552,7 @@ def dry_run_selector_candidate(
             intent=intent,
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
+            parallel_stats=parallel_stats,
         )
     if selector_candidate != INTENT_V2_ROLE_BUCKETS_VARIANT:
         return _dry_run_fallback_result(
@@ -1077,6 +1561,7 @@ def dry_run_selector_candidate(
             intent=intent,
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
+            parallel_stats=parallel_stats,
         )
     if intent.intent == "unknown" or intent.confidence < 0.50:
         return _dry_run_fallback_result(
@@ -1085,9 +1570,11 @@ def dry_run_selector_candidate(
             intent=intent,
             default_selected_paths=default_paths,
             warm_stats=warm_stats,
+            parallel_stats=parallel_stats,
         )
 
     selector_paths: list[str] | tuple[str, ...] = paths
+    scoring_warm_index: RepoWarmIndex | None = None
     if warm_index_enabled:
         if warm_index is not None:
             valid, reason = warm_index.validate_for_paths(
@@ -1102,6 +1589,7 @@ def dry_run_selector_candidate(
             )
             if valid:
                 selector_paths = warm_index.paths
+                scoring_warm_index = warm_index
                 warm_stats.update(
                     {
                         "warm_index_hit": True,
@@ -1132,6 +1620,7 @@ def dry_run_selector_candidate(
                 path_normalization_version=path_normalization_version,
             )
             selector_paths = built_index.paths
+            scoring_warm_index = built_index
             warm_stats.update(
                 {
                     "warm_index_miss": True,
@@ -1153,8 +1642,36 @@ def dry_run_selector_candidate(
             )
 
     selector_start = time.perf_counter()
-    candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+    candidate_decisions: list[RoleBucketDecision]
+    if parallel_scoring_enabled:
+        if not warm_index_enabled or scoring_warm_index is None or not warm_stats.get("warm_index_metadata_only_verified"):
+            parallel_stats.update(
+                {
+                    "parallel_scoring_enabled": True,
+                    "parallel_scoring_mode": parallel_scoring_mode,
+                    "parallel_score_workers": parallel_score_workers,
+                    "parallel_score_fallback_reason": "parallel_requires_valid_warm_index",
+                }
+            )
+            candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+        else:
+            parallel_decisions, parallel_attempt = _parallel_rank_intent_v2_warm_index(
+                scoring_warm_index,
+                raw_prompt,
+                mode=parallel_scoring_mode,
+                worker_count=parallel_score_workers,
+                max_paths=max_paths,
+            )
+            parallel_stats.update(parallel_attempt)
+            if parallel_decisions is None:
+                candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
+            else:
+                candidate_decisions = parallel_decisions
+    else:
+        candidate_decisions = rank_intent_v2_paths(list(selector_paths), raw_prompt, max_paths=max_paths)
     selector_ms = round((time.perf_counter() - selector_start) * 1000, 3)
+    if parallel_scoring_enabled and not parallel_stats.get("total_selector_ms"):
+        parallel_stats["total_selector_ms"] = selector_ms
     if warm_index_enabled and warm_stats.get("warm_index_fallback_reason") is None:
         warm_stats["warm_selector_ms"] = selector_ms
     else:
@@ -1168,6 +1685,7 @@ def dry_run_selector_candidate(
             default_selected_paths=default_paths,
             candidate_decisions=candidate_decisions,
             warm_stats=warm_stats,
+            parallel_stats=parallel_stats,
         )
     forbidden = set(_normalize_path_list(forbidden_paths))
     if forbidden and any(decision.path in forbidden for decision in candidate_decisions):
@@ -1178,6 +1696,7 @@ def dry_run_selector_candidate(
             default_selected_paths=default_paths,
             candidate_decisions=candidate_decisions,
             warm_stats=warm_stats,
+            parallel_stats=parallel_stats,
         )
 
     candidate_paths = tuple(decision.path for decision in candidate_decisions)
@@ -1206,6 +1725,23 @@ def dry_run_selector_candidate(
         candidate_enumeration_count=int(warm_stats.get("candidate_enumeration_count") or 0),
         warm_index_cache_key=warm_stats.get("warm_index_cache_key") if isinstance(warm_stats.get("warm_index_cache_key"), str) else None,
         warm_index_metadata_only_verified=bool(warm_stats.get("warm_index_metadata_only_verified", False)),
+        parallel_scoring_enabled=bool(parallel_stats.get("parallel_scoring_enabled", False)),
+        parallel_scoring_mode=str(parallel_stats.get("parallel_scoring_mode") or "serial"),
+        parallel_score_workers=parallel_stats.get("parallel_score_workers") if isinstance(parallel_stats.get("parallel_score_workers"), int) else None,
+        parallel_score_fallback_reason=parallel_stats.get("parallel_score_fallback_reason") if isinstance(parallel_stats.get("parallel_score_fallback_reason"), str) else None,
+        score_record_count=int(parallel_stats.get("score_record_count") or 0),
+        score_map_ms=float(parallel_stats.get("score_map_ms") or 0.0),
+        reduce_sort_ms=float(parallel_stats.get("reduce_sort_ms") or 0.0),
+        total_selector_ms=float(parallel_stats.get("total_selector_ms") or 0.0),
+        worker_start_ms=float(parallel_stats.get("worker_start_ms") or 0.0),
+        serialization_ms=float(parallel_stats.get("serialization_ms") or 0.0),
+        cpu_user_ms=parallel_stats.get("cpu_user_ms") if isinstance(parallel_stats.get("cpu_user_ms"), float) else None,
+        cpu_system_ms=parallel_stats.get("cpu_system_ms") if isinstance(parallel_stats.get("cpu_system_ms"), float) else None,
+        max_rss_kb=parallel_stats.get("max_rss_kb") if isinstance(parallel_stats.get("max_rss_kb"), int) else None,
+        worker_content_reads=int(parallel_stats.get("worker_content_reads") or 0),
+        worker_file_open_count=int(parallel_stats.get("worker_file_open_count") or 0),
+        worker_stat_count=int(parallel_stats.get("worker_stat_count") or 0),
+        worker_walk_count=int(parallel_stats.get("worker_walk_count") or 0),
     )
 
 
