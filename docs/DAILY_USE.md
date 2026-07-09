@@ -11,6 +11,8 @@ scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ```
 
+If a private-beta SSH clone fails with `Permission denied (publickey)`, record the SSH result and use the HTTPS clone path above. Do not print tokens or alter SSH keys during dogfood.
+
 ## Before First Real Run
 
 Check the local Codex CLI first:
@@ -31,6 +33,7 @@ pcodex status
 pcodex setup --no-mcp
 pcodex status --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+pcodex cleanup --local-state --dry-run --json
 ```
 
 Start the first real run against a disposable file or disposable clone:

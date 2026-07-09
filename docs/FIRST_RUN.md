@@ -13,6 +13,8 @@ pCodex is a local context compiler wrapper. It does not replace Codex, does not 
 
 Codex CLI is needed for real runs. It is not needed to view the receipt or run local dry-run preflight.
 
+For a private-beta checkout, SSH clone requires GitHub SSH access to the private repository. HTTPS clone is an approved fallback when SSH reports `Permission denied (publickey)`. Do not print tokens or change SSH keys during dogfood; record the SSH failure and proceed with HTTPS.
+
 ## Install From Current Source
 
 From the `premode-router` checkout:
@@ -144,6 +146,7 @@ Preview cleanup:
 
 ```bash
 pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --dry-run --json
 ```
 
 Apply cleanup:
@@ -179,6 +182,7 @@ This removes the isolated install root created by that installer. It does not ed
 ## Troubleshooting
 
 - If `pcodex` is not found, add the install root `bin` directory to `PATH` or call `~/.pcodex-alpha/bin/pcodex`.
+- If `pcodex cleanup --dry-run --json` fails, rerun the scoped supported form: `pcodex cleanup --local-state --dry-run --json`.
 - If `doctor` reports missing Codex CLI, first-run receipt and dry-run still work, but real Codex runs need Codex CLI repaired.
 - If inventory or topology is missing/stale, `pcodex run --dry-run` refreshes local generated state before spending tokens.
 - If support only needs a paste-safe receipt, use `pcodex status --advisory --json`; it reports missing/stale state without repairing it.

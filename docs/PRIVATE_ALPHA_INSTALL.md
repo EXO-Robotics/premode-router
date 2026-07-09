@@ -46,6 +46,12 @@ Install the core package editable:
 .venv/bin/python -m pip install -e .
 ```
 
+If this dogfood pass includes focused pytest checks, install the repository dev extra instead of the core-only editable install:
+
+```bash
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
 Install the private literal-symbol plugin locally:
 
 ```bash
@@ -84,10 +90,14 @@ dist_plugin/
 .venv/bin/pcodex first-run
 .venv/bin/pcodex first-run --json
 .venv/bin/pcodex cleanup --local-state --dry-run
+.venv/bin/pcodex cleanup --local-state --dry-run --json
 .venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
+.venv/bin/pcodex tuned --help
 .venv/bin/pcodex mcp-server --help
 ```
+
+Do not use `pcodex tuned --advisory`, `pcodex tune --dry-run`, or `pcodex cleanup --dry-run --json`; they are not supported by the current CLI. JSON cleanup must be explicitly scoped, for example `pcodex cleanup --local-state --dry-run --json`.
 
 ## pCodex Modes
 

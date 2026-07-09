@@ -233,6 +233,14 @@ python3.11 -m venv .venv
 .venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
 
+For local pytest checks in a fresh development checkout, install the repository dev extra:
+
+```bash
+.venv/bin/python -m pip install -e ".[dev]"
+```
+
+The dev extra provides pytest. Core source-install dogfood can use the smoke commands below without pytest.
+
 No-install module smoke:
 
 ```bash
@@ -255,7 +263,7 @@ Smoke commands:
 .venv/bin/pcodex tune
 .venv/bin/pcodex tune --help
 .venv/bin/pcodex run --dry-run "Inspect hello.txt"
-.venv/bin/pcodex cleanup --local-state --dry-run
+.venv/bin/pcodex cleanup --local-state --dry-run --json
 .venv/bin/pcodex mcp-server --help
 ```
 
