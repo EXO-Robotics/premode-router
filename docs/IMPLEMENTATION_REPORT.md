@@ -29,7 +29,7 @@ premode benchmark --profile lite
 
 ```bash
 python -m pip install --no-index --no-build-isolation --no-deps -e .
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 bash scripts/smoke_test.sh
 premode stress --profile lite --json
 premode benchmark --profile lite --json --out .premode/out/benchmark_report.json

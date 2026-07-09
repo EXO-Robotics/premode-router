@@ -2,7 +2,7 @@
 
 Pre-mode Router is a private local context compiler and routing formatter for AI coding agents.
 
-It runs before an agent action to select compact repo context and format a model-facing packet. It is not a local reasoning engine, planner, or replacement for the coding agent. The current private alpha path is centered on the V5 `literal_symbol` plugin and the local pCodex wrapper.
+It runs before an agent action to select compact repo context and format a model-facing packet. It is not a local reasoning engine, planner, or replacement for the coding agent. The current Private-Beta path is centered on the V5 `literal_symbol` plugin and the local pCodex wrapper.
 
 ## For AI agents
 
@@ -12,10 +12,11 @@ Start with:
 - `premode.ai.json`
 - `AGENTS.md`
 - `docs/FIRST_RUN.md`
+- `docs/PRIVATE_BETA_TESTER_PACKET.md`
 
 These files define the current install, setup, validation, benchmark, tuning, and safety boundaries for agents. Do not infer current behavior from historical prompt files. Historical prompts live under `docs/history/` and are not current operating instructions.
 
-## Current Private Alpha
+## Current Private-Beta
 
 Base package version: `v0.2.6.24`.
 
@@ -120,13 +121,13 @@ Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/r
 
 `pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
 
-Terminal `pcodex` commands remain the guaranteed control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
+Terminal `pcodex` commands remain the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
 
-`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 proves the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
+`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 local evidence shows the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
 
 ## Supported Claims
 
-On the measured local same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
+In a bounded local six-prompt same-run matrix, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
 
 This is a measured local same-run matrix result. It is not a universal token-savings guarantee.
 
@@ -148,7 +149,7 @@ This repository and the literal-symbol plugin package are private and proprietar
 
 ## Source Install And First Run
 
-For the canonical private-beta first-run path, see [pCodex first run](docs/FIRST_RUN.md).
+For the canonical Private-Beta first-run path, see [pCodex first run](docs/FIRST_RUN.md). For tester-facing setup and reporting, see [Private-Beta tester packet](docs/PRIVATE_BETA_TESTER_PACKET.md).
 
 From a source checkout, install pCodex into an isolated local environment from the checked-out source tree:
 
@@ -169,13 +170,13 @@ The source installer builds and installs `premode-router` and `premode-plugin-li
 
 Current install means the source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
 
-The private-alpha bundle installer is separate:
+The legacy private-alpha bundle installer is separate:
 
 ```bash
 scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-alpha-v0.3.0
 ```
 
-That bundle installer requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
+That bundle installer requires the prepared `dist_core/` and `dist_plugin/` wheel artifacts for that bundle and is not expected to work from a source-only checkout.
 
 ## Fastest repo bootstrap
 
@@ -221,7 +222,7 @@ git diff --name-only
 
 Use terminal `pcodex` commands. Do not use `/pcodex` slash commands yet, do not rely on native Codex UI integration yet, start with dry-run, use explicit `pcodex run` for any Codex execution, run the first real prompt against disposable files or repositories, and inspect the resulting diff.
 
-For pasteable onboarding, use the bounded prompts in [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md) or [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md). These prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface; OpenCode commands are OpenCode-specific.
+For pasteable onboarding, use the bounded prompts in [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md) or [Pasteable OpenCode bootstrap](docs/PASTEABLE_OPENCODE_BOOTSTRAP.md). These prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the primary supported control plane. Codex skills are the Codex-facing surface; OpenCode commands are OpenCode-specific.
 
 ## Quick Local Setup
 
@@ -271,6 +272,7 @@ Smoke commands:
 
 - [Claims and limitations](docs/CLAIMS_AND_LIMITATIONS.md)
 - [pCodex first run](docs/FIRST_RUN.md)
+- [Private-Beta tester packet](docs/PRIVATE_BETA_TESTER_PACKET.md)
 - [AI agent start here](AI_START_HERE.md)
 - [AI operating manifest](premode.ai.json)
 - [Tuning guide](docs/TUNING.md)
@@ -281,7 +283,7 @@ Smoke commands:
 - [pCodex tuning](docs/PCODEX_TUNING.md)
 - [pCodex bootstrap commands](docs/PCODEX_BOOTSTRAP.md)
 - [pCodex MCP status](docs/PCODEX_MCP_STATUS.md)
-- [Private alpha install](docs/PRIVATE_ALPHA_INSTALL.md)
+- [Private-Beta source install and private-alpha bundle notes](docs/PRIVATE_ALPHA_INSTALL.md)
 - [pCodex daily use](docs/DAILY_USE.md)
 - [MacBook dogfood notes](docs/MACBOOK_DOGFOOD.md)
 - [Pasteable Codex bootstrap](docs/PASTEABLE_CODEX_BOOTSTRAP.md)
@@ -306,7 +308,7 @@ PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q packages/premode-
 Full local pytest command:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 ```
 
 Review and benchmark smoke:
@@ -316,7 +318,7 @@ premode review-patch --since-compile
 premode benchmark --profile lite
 ```
 
-Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
+Estimated reduction is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
 
 Use `premode review-patch` for local patch-boundary review. It is a human review aid, not automatic merge approval.
 

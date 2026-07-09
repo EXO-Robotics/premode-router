@@ -72,7 +72,7 @@ scripts/install_pcodex_from_source.sh --install-root "$HOME/.pcodex-alpha"
 - Do not dispatch subagents during bootstrap.
 - Do not modify source code except setup files.
 - Keep generated files project-local by default.
-- Use terminal `pcodex` commands as the guaranteed control plane.
+- Use terminal `pcodex` commands as the primary supported control plane.
 - Do not claim built-in `/pcodex` command support.
 - Do not claim automatic MCP invocation.
 - Do not claim real internal Codex subagent interception.
@@ -113,4 +113,4 @@ Warnings should be written as expected alpha states, not failures by default:
 - MCP status may be unknown when setup used `--no-mcp`.
 - Savings estimates may be unavailable until enough local telemetry exists.
 - Generated local state is expected and should remain untracked.
-- Missing native `/pcodex` slash commands are not bootstrap failure; terminal `pcodex` commands remain the guaranteed control plane.
+- Missing native `/pcodex` slash commands are not bootstrap failure; terminal `pcodex` commands remain the primary supported control plane.

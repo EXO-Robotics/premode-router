@@ -47,7 +47,7 @@ The intended workflow is:
 
 ## Alpha4 Proof Boundary
 
-Alpha4 proves that the same command used in Codex MCP registration can start the local stdio server, expose `pcodex_transform_subagent_prompt` through `tools/list`, expose its schema through that command-backed MCP path, and transform a safe dummy prompt.
+Alpha4 local evidence shows that the same command used in Codex MCP registration can start the local stdio server, expose `pcodex_transform_subagent_prompt` through `tools/list`, expose its schema through that command-backed MCP path, and transform a safe dummy prompt.
 
 Installed Codex can register/list/get the server in an isolated `CODEX_HOME`, but native installed-Codex schema discovery and automatic tool invocation are not yet proven.
 

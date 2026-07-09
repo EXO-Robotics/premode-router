@@ -1,8 +1,8 @@
 # pCodex Daily Use
 
-This is the current private-alpha terminal flow for a source checkout. It uses explicit `pcodex` commands and keeps real Codex config mutation opt-in.
+This is the current Private-Beta terminal flow for a source checkout. It uses explicit `pcodex` commands and keeps real Codex config mutation opt-in.
 
-## Install From Public Source Clone
+## Install From Private-Beta Source Checkout
 
 ```bash
 git clone https://github.com/EXO-Robotics/premode-router.git
@@ -11,32 +11,31 @@ scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ```
 
-If a private-beta SSH clone fails with `Permission denied (publickey)`, record the SSH result and use the HTTPS clone path above. Do not print tokens or alter SSH keys during dogfood.
+If a Private-Beta SSH clone fails with `Permission denied (publickey)`, record the SSH result and use the HTTPS clone path above. Do not print tokens or alter SSH keys during dogfood.
 
-## Before First Real Run
+## Default Preflight
 
-Check the local Codex CLI first:
-
-```bash
-codex --version
-codex exec -C "$PWD" --sandbox workspace-write --ephemeral - <<'EOF'
-Edit only a disposable file. Do not modify source files.
-EOF
-```
-
-If direct Codex fails, update or fix Codex CLI and local Codex config before debugging pCodex. `pcodex doctor` and `pcodex status --json` report Codex CLI version/config warnings when they can be detected.
-
-## Daily-Use Smoke
+Start with advisory and dry-run checks. These do not launch Codex:
 
 ```bash
-pcodex status
-pcodex setup --no-mcp
+pcodex doctor --advisory --json
+pcodex status --advisory --json
+pcodex first-run --json
+pcodex setup --skip-tune --no-mcp
 pcodex status --json
-pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
+pcodex run --dry-run --json "Hypothetical dummy task: inspect this repo. Do not modify files."
 pcodex cleanup --local-state --dry-run --json
 ```
 
-Start the first real run against a disposable file or disposable clone:
+`pcodex doctor` and `pcodex status --json` report Codex CLI version/config warnings when they can be detected. Live Codex verification is separate and should only be run when the tester pass explicitly approves it.
+
+## Optional Host Codex Verification
+
+When explicitly approved, verify the host Codex CLI against a disposable file or disposable repository before blaming pCodex for live-run failures. Do not treat this as part of the default bootstrap flow.
+
+## First Live Prompt After Approval
+
+Run the first live prompt only after the dry-run passes and live Codex execution is separately approved. Use a disposable file or disposable clone:
 
 ```bash
 cat > PCODEX_DAILY_USE_TEST.md <<'EOF'
@@ -52,7 +51,7 @@ git diff -- PCODEX_DAILY_USE_TEST.md
 
 Expected first-run boundary:
 
-- `pcodex run --dry-run` reports `transform_applied: true`
+- `pcodex run --dry-run --json` reports local transform/preflight evidence
 - the real run returns `0`
 - only `PCODEX_DAILY_USE_TEST.md` changes
 - source, docs, and scripts remain untouched
@@ -65,7 +64,7 @@ These files should generally remain untracked. Only version tuning artifacts del
 
 ## First Real Prompt After Bootstrap
 
-Use a disposable or low-risk file first.
+Use a disposable or low-risk file first, and only after separate approval for live Codex execution.
 
 ```bash
 cat > PCODEX_FIRST_REAL_PROMPT.md <<'EOF'
@@ -87,7 +86,7 @@ Pass criteria:
 
 If anything else changes, stop and inspect the diff.
 
-Do not use `/pcodex` slash commands as the guaranteed path.
+Do not use `/pcodex` slash commands as the supported path.
 Use terminal `pcodex` commands.
 
 ## Boundaries
@@ -109,4 +108,4 @@ For one-paste repo onboarding, use:
 - [Bootstrapper design](BOOTSTRAPPER_DESIGN.md)
 - [Integration commands plan](INTEGRATION_COMMANDS_PLAN.md)
 
-Pasteable bootstrap prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.
+Pasteable bootstrap prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the primary supported control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.

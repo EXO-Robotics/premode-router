@@ -222,7 +222,7 @@ Use terminal commands as the reliable control plane:
 - `pcodex run --dry-run "..."`
 - `pcodex run "..."`
 
-Do not use `/pcodex` slash commands as the guaranteed path.
+Do not use `/pcodex` slash commands as the supported path.
 Use terminal `pcodex` commands.
 
 Before real edits:
@@ -344,13 +344,13 @@ Pass criteria:
 
 If anything else changes, stop and inspect the diff.
 
-Do not use `/pcodex` slash commands as the guaranteed path.
+Do not use `/pcodex` slash commands as the supported path.
 Use terminal `pcodex` commands.
 ```
 
 13. Final notes:
    - Use $pcodex-status, $pcodex-dry-run, etc. only if Codex exposes installed skills in the client.
-   - Use terminal pcodex commands as the guaranteed control plane.
+   - Use terminal pcodex commands as the primary supported control plane.
    - Do not assume /pcodex commands.
    - Do not run the first real prompt until after the dry-run has passed and the target file is disposable or low-risk.
 ````

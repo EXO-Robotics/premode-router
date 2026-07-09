@@ -49,7 +49,7 @@ v2.6 attacks this with:
 
 ## Context receipt
 
-Every compile should eventually print a compact receipt:
+Every compile should eventually print a compact local receipt. This illustrative sample is not a generalized savings claim:
 
 ```text
 Context receipt:
@@ -59,7 +59,7 @@ Context receipt:
 - Manifest: 41 files / 2,511 tokens
 - Rules/output/overhead: 3,617 tokens
 - Total: 9,854 / 12,000
-- Savings: 85.6%
+- Estimated local packet reduction: 85.6% in this sample
 ```
 
 This makes the value visible without reading JSON.

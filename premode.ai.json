@@ -1,6 +1,6 @@
 {
   "name": "premode-router",
-  "status": "source-visible development alpha",
+  "status": "source-visible proprietary Private-Beta",
   "license_mode": "source-visible-permission-required",
   "python": ">=3.11",
   "supported_runtime": "codex-cli",
@@ -74,8 +74,10 @@
   "tuning": {
     "current_commands": [
       "pcodex tune",
+      "pcodex tune --static-only",
       "pcodex tune --validate",
       "pcodex tune --verify",
+      "pcodex tuned --profile .premode/tuning/repo_profile.json",
       "pcodex status --json"
     ],
     "distinction": {
@@ -87,7 +89,7 @@
     "doc": "docs/TUNING.md"
   },
   "validation": [
-    "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q",
+    "PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q",
     "premode detect --json",
     "premode benchmark --profile lite --json"
   ],
@@ -96,6 +98,7 @@
     "AGENTS.md",
     "README.md",
     "docs/FIRST_RUN.md",
+    "docs/PRIVATE_BETA_TESTER_PACKET.md",
     "docs/TUNING.md",
     "docs/INCREMENTAL_TUNING.md",
     "docs/CONTENT_FREE_TELEMETRY.md",

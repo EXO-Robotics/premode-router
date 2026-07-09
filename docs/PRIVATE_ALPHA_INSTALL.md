@@ -1,6 +1,6 @@
-# Private Alpha Install
+# Private-Beta Install And Private Alpha Bundle Notes
 
-This is a local/private install flow for the current pCodex alpha. It is not a publishing guide and does not describe PyPI or external registry distribution.
+This is a local/private install flow for the current pCodex Private-Beta source checkout plus the legacy private-alpha bundle installer. It is not a publishing guide and does not describe PyPI or external registry distribution. For a tester-facing checklist, see `docs/PRIVATE_BETA_TESTER_PACKET.md`.
 
 ## Local Setup
 
@@ -20,9 +20,9 @@ export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 
 The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It prunes generated/runtime state from the temporary build copy and writes `~/.pcodex-alpha/install_manifest.json`. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
-## Before First Real Run
+## Optional Host Codex Verification
 
-Verify the installed Codex CLI before blaming pCodex for real-run failures:
+Verify the installed Codex CLI only when live Codex execution is explicitly approved for the tester pass:
 
 ```bash
 codex --version
@@ -31,7 +31,7 @@ Edit only a disposable file. Do not modify source files.
 EOF
 ```
 
-If direct Codex fails, update or fix Codex CLI and local Codex config first. `pcodex doctor` and `pcodex status --json` report Codex CLI version/config warnings when they can be detected.
+If direct Codex fails during an approved live check, update or fix Codex CLI and local Codex config first. `pcodex doctor` and `pcodex status --json` report Codex CLI version/config warnings when they can be detected.
 
 For manual source setup, clone or copy the repository through an approved path, then create a virtual environment:
 
@@ -46,6 +46,8 @@ Install the core package editable:
 .venv/bin/python -m pip install -e .
 ```
 
+Editable installs may create `src/premode_router.egg-info/`. That is generated packaging metadata and should remain untracked.
+
 If this dogfood pass includes focused pytest checks, install the repository dev extra instead of the core-only editable install:
 
 ```bash
@@ -58,25 +60,35 @@ Install the private literal-symbol plugin locally:
 .venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
 
+No-install module smoke works without console scripts:
+
+```bash
+PYTHONPATH=src python -m premode.cli detect --json
+```
+
+Console scripts such as `premode` and `pcodex` require an editable install or source install.
+
 ## Private Bundle Install
 
-The private-alpha bundle installer is for a prepared local artifact bundle, not a source-only public clone:
+The private-alpha bundle installer is for a prepared local artifact bundle, not a source-only checkout:
 
 ```bash
 scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-alpha-v0.3.0
 ```
 
-The artifact root must contain:
+The artifact root must contain the prepared manifest, checksum file, and version-pinned wheels expected by `scripts/install_pcodex_private_alpha.sh`:
 
 ```text
 README_INSTALL_FIRST.md
 ARTIFACT_MANIFEST.json
 SHA256SUMS.txt
 dist_core/
+dist_core/premode_router-0.2.6.24-py3-none-any.whl
 dist_plugin/
+dist_plugin/premode_plugin_literal_symbol-0.1.0-py3-none-any.whl
 ```
 
-`scripts/install_pcodex_private_alpha.sh` requires `dist_core/` and `dist_plugin/` wheel artifacts and is not expected to work from a source-only public clone.
+`scripts/install_pcodex_private_alpha.sh` is not an arbitrary wheel-drop installer and is not expected to work from a source-only checkout.
 
 ## Smoke Checks
 
@@ -185,7 +197,7 @@ For pasteable agent onboarding, see:
 - [Bootstrapper design](BOOTSTRAPPER_DESIGN.md)
 - [Integration commands plan](INTEGRATION_COMMANDS_PLAN.md)
 
-The pasteable prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the guaranteed control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.
+The pasteable prompts configure repo-local pCodex UX files. Terminal `pcodex` commands remain the primary supported control plane. Codex skills are the Codex-facing surface. OpenCode commands are OpenCode-specific.
 
 ## Status And Telemetry
 

@@ -256,7 +256,7 @@ Pass criteria:
 
 If anything else changes, stop and inspect the diff.
 
-Do not use `/pcodex` slash commands as the guaranteed path.
+Do not use `/pcodex` slash commands as the supported path.
 Use terminal `pcodex` commands.
 
 Expected OpenCode command names:

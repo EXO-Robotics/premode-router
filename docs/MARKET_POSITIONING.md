@@ -88,22 +88,24 @@ Later users:
 
 > Pre-mode does not make the model cheaper by being smaller. It makes the task cheaper by making the model read less, explore less, rerun less, and review less.
 
-## Public MVP story
+## Future Public MVP story
+
+This is future positioning only. It is not active unless package publication exists.
 
 ```bash
 pipx install premode-router
 cd my-repo
 premode setup
-pcodex "Fix the failing tests"
+pcodex run --dry-run "Fix the failing tests"
 ```
 
-Expected visible value:
+Illustrative visible value:
 
 ```text
 Detected: Python project at .
 Commands: pytest
 Context: 2 full-text files, 6 summaries, 42 manifest files
-Estimated context savings: 81%
+Estimated local context reduction: <example percent>
 Patch boundary: 4 allowed edit files
 Privacy: 3 files blocked, 0 secrets leaked
 ```

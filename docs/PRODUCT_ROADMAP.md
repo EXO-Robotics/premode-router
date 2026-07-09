@@ -318,7 +318,7 @@ Validation target:
 
 ```bash
 python -m pip install --no-build-isolation --no-deps -e .
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 bash scripts/smoke_test.sh
 premode map --summary-json
 premode map --json --max-files 10

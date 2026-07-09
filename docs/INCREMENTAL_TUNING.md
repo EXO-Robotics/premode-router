@@ -12,14 +12,18 @@ Current supported commands are:
 
 ```bash
 pcodex tune
+pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
+pcodex tuned --profile .premode/tuning/repo_profile.json
 pcodex status --json
 ```
 
 `pcodex on` uses verified tuning only when the profile is valid and `VERIFY_RESULTS.json` has verdict `PASS`. Otherwise it falls back to generalized `literal_symbol`.
 
-`pcodex tuned` is strict. It requires a valid profile and `VERIFY_RESULTS.json` verdict `PASS`; missing, invalid, or unverified tuning fails clearly.
+`pcodex tune --static-only` generates static tuning artifacts only. `pcodex tuned` is strict. It requires a valid profile and `VERIFY_RESULTS.json` verdict `PASS`; missing, invalid, or unverified tuning fails clearly. Use `pcodex tuned --profile .premode/tuning/repo_profile.json` when the tuned profile path should be explicit.
+
+Unsupported forms remain unsupported: do not use `pcodex tune --dry-run` or `pcodex tuned --advisory`.
 
 ## Staleness Signals
 

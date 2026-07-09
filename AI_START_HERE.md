@@ -1,6 +1,6 @@
 # AI Start Here
 
-This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, `AGENTS.md`, and `docs/FIRST_RUN.md` before using historical docs or prompts.
+This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, `AGENTS.md`, `docs/FIRST_RUN.md`, and `docs/PRIVATE_BETA_TESTER_PACKET.md` before using historical docs or prompts.
 
 ## 1. What this repo is
 
@@ -10,7 +10,7 @@ Pre-mode is not a local reasoning engine, task planner, autonomous agent, or rep
 
 ## 2. Current status
 
-The current repo state is source-visible proprietary development alpha. The lead runtime surface is pCodex, a local wrapper around the Pre-mode `literal_symbol` path for Codex CLI workflows.
+The current repo state is source-visible proprietary Private-Beta. The lead runtime surface is pCodex, a local wrapper around the Pre-mode `literal_symbol` path for Codex CLI workflows.
 
 ## 3. License posture
 
@@ -34,7 +34,7 @@ Python `>=3.11` is required.
 
 ## 6. Current source install and first run
 
-Use `docs/FIRST_RUN.md` as the canonical private-beta first-run path. From a source checkout:
+Use `docs/FIRST_RUN.md` as the canonical Private-Beta first-run path. Use `docs/PRIVATE_BETA_TESTER_PACKET.md` for tester-facing setup and reporting. From a source checkout:
 
 ```bash
 cd premode-router
@@ -144,8 +144,10 @@ Current supported pCodex tuning flow:
 
 ```bash
 pcodex tune
+pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
+pcodex tuned --profile .premode/tuning/repo_profile.json
 pcodex status --json
 ```
 
@@ -162,7 +164,7 @@ See `docs/TUNING.md` and `examples/tuning_prompts.json`.
 Use focused validation before committing agent-operability changes:
 
 ```bash
-PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q
+PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .venv/bin/python -m pytest -q
 premode detect --json
 premode benchmark --profile lite --json
 ```
@@ -293,13 +295,14 @@ codex --version
 - `AI_START_HERE.md`: current AI operating entrypoint.
 - `premode.ai.json`: machine-readable AI operating manifest.
 - `AGENTS.md`: Codex-specific boundaries, routing, lab, and commit rules.
-- `docs/FIRST_RUN.md`: canonical private-beta first-run, receipt, cleanup, and repair path.
+- `docs/FIRST_RUN.md`: canonical Private-Beta first-run, receipt, cleanup, and repair path.
+- `docs/PRIVATE_BETA_TESTER_PACKET.md`: tester-facing install, dry-run, cleanup, reporting, and claim-boundary checklist.
 - `README.md`: product overview, source install path, command reference, and claims boundary.
 - `docs/TUNING.md`: benchmark/tune/validate guide.
 - `docs/INCREMENTAL_TUNING.md`: tuning staleness and future incremental tuning design.
 - `docs/CONTENT_FREE_TELEMETRY.md`: content-free local state and telemetry boundary.
 - `docs/DAILY_USE.md`: pCodex daily terminal flow.
 - `docs/PASTEABLE_CODEX_BOOTSTRAP.md`: pasteable repo bootstrap prompt.
-- `docs/PRIVATE_ALPHA_INSTALL.md`: private alpha and source install details.
+- `docs/PRIVATE_ALPHA_INSTALL.md`: Private-Beta source install and legacy private-alpha bundle details.
 - `docs/CLAIMS_AND_LIMITATIONS.md`: supported and unsupported claims.
 - `docs/history/`: preserved historical prompts and reports, not current operating instructions.

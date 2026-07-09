@@ -1,6 +1,6 @@
 # pCodex First Run
 
-This is the canonical private-beta first-run path for pCodex from a current source checkout.
+This is the canonical Private-Beta first-run path for pCodex from a current source checkout. For a tester-facing checklist, see `docs/PRIVATE_BETA_TESTER_PACKET.md`.
 
 pCodex is a local context compiler wrapper. It does not replace Codex, does not publish packages, does not require MCP for first value, and does not require tuning for first value.
 
@@ -13,7 +13,7 @@ pCodex is a local context compiler wrapper. It does not replace Codex, does not 
 
 Codex CLI is needed for real runs. It is not needed to view the receipt or run local dry-run preflight.
 
-For a private-beta checkout, SSH clone requires GitHub SSH access to the private repository. HTTPS clone is an approved fallback when SSH reports `Permission denied (publickey)`. Do not print tokens or change SSH keys during dogfood; record the SSH failure and proceed with HTTPS.
+For a Private-Beta checkout, SSH clone requires GitHub SSH access to the private repository. HTTPS clone is an approved fallback when SSH reports `Permission denied (publickey)`. Do not print tokens or change SSH keys during dogfood; record the SSH failure and proceed with HTTPS.
 
 ## Install From Current Source
 
@@ -73,43 +73,36 @@ Advisory mode is a no-write/no-mutation claim, not a no-read claim. Run the norm
 
 ## Receipt Shape
 
-`pcodex first-run --json` emits a content-free receipt with this shape:
+`pcodex first-run --json` emits a content-free non-advisory receipt with this shape:
 
 ```json
 {
-  "schema_version": "pcodex.first_run_receipt.v1",
-  "lcc_installed": true,
-  "lcc_version": "0.2.6.24",
-  "install": {
-    "status": "loaded",
-    "install_channel": "source_checkout",
-    "source_head": "<git-sha>",
-    "provenance_status": "clean_source"
-  },
-  "repo": {
-    "root_hash": "<hash>",
-    "path_summary": "<repo-name>",
-    "git_repo": true
-  },
-  "mode": {
-    "public_mode": "on",
-    "lcc_on": true,
-    "plugin_alias": "literal_symbol"
-  },
-  "state": {
-    "lockfile": {"status": "loaded"},
-    "cache_manifest": {"status": "loaded"},
-    "inventory": {"state": "fresh", "file_count": 42},
-    "topology": {"state": "fresh", "node_count": 1}
-  },
-  "first_run": {
-    "readiness": "ready_for_dry_run",
-    "next_action": "pcodex run --dry-run \"<task>\""
-  }
+  "schema_version": "pcodex.first_run.v1",
+  "status": "ok",
+  "repo_root": "/path/to/repo",
+  "public_mode": "source-visible private beta",
+  "plugin_alias": "literal_symbol",
+  "plugin_alias_available": true,
+  "configured_mode": "on",
+  "effective_mode": "on",
+  "state_status": "configured",
+  "advisory": false,
+  "writes_performed": false,
+  "codex_launch": "not_executed",
+  "global_codex_config_mutation": false,
+  "install_provenance_available": true,
+  "install_provenance": {},
+  "next_action": "pcodex setup --skip-tune --no-mcp --json",
+  "cleanup_commands": [
+    "pcodex cleanup --local-state --dry-run",
+    "pcodex cleanup --local-state --yes"
+  ]
 }
 ```
 
 The receipt does not include raw prompts, source bodies, source snippets, secrets, environment values, full packet text, inventory path lists, or topology path lists.
+
+`pcodex first-run --advisory --json` is a separate read-only advisory receipt. It may report missing or stale state and a repair next action, but it must keep `writes_performed=false` and must not repair state or launch Codex.
 
 ## Dry-Run And Compile-Only Checks
 

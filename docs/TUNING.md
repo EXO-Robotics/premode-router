@@ -74,21 +74,29 @@ Current supported pCodex commands:
 
 ```bash
 pcodex tune
+pcodex tune --static-only
 pcodex tune --validate
 pcodex tune --verify
+pcodex tuned --profile .premode/tuning/repo_profile.json
 pcodex status --json
 pcodex run --dry-run "<representative task>"
 ```
 
 `pcodex tune` runs static generation, validation, and offline verification by default. It does not run Codex or contact external services.
 
+`pcodex tune --static-only` generates static local tuning artifacts only.
+
 `pcodex tune --validate` validates existing artifacts.
 
 `pcodex tune --verify` runs the local compile-only mini verifier.
 
+`pcodex tuned --profile .premode/tuning/repo_profile.json` explicitly selects a validated tuned profile for strict tuned mode.
+
 `pcodex status --json` reports configured mode, effective mode, tuning state, fallback state, and related local status.
 
 Strict `pcodex tuned` requires a valid profile plus `.premode/tuning/VERIFY_RESULTS.json` verdict `PASS`. General `pcodex on` may use verified tuning, but falls back to generalized `literal_symbol` when tuning is missing, stale, invalid, or not verified.
+
+Unsupported forms remain unsupported: do not use `pcodex tune --dry-run` or `pcodex tuned --advisory`.
 
 ## 7. Benchmark-assisted tuning loop
 

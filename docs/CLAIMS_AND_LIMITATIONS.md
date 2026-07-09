@@ -1,10 +1,10 @@
 # Claims And Limitations
 
-This document defines the public wording boundary for the current private pCodex alpha.
+This document defines the wording boundary for the current pCodex Private-Beta.
 
 ## Supported Claims
 
-- On the six-prompt public same-run matrix, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero leakage.
+- In a bounded local six-prompt same-run matrix, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero leakage.
 - `premode compile --plugin literal_symbol` is the lead local plugin path.
 - Explicit compile-time tuning is available with `premode compile --plugin literal_symbol --tuning PATH`.
 - pCodex provides `pcodex setup` as the recommended local setup path for checks, optional isolated MCP registration, one-step tuning, safe mode selection, and dashboard output.
@@ -36,6 +36,7 @@ This document defines the public wording boundary for the current private pCodex
 - Hosted Codex UI integration.
 - Public package release readiness.
 - PyPI or pipx package availability unless a package has actually been published.
+- Public benchmark proof or generalized public performance proof.
 - No local reads in advisory mode; advisory mode is a no-write/no-mutation claim.
 - Live Codex token savings or live cost savings from compile-only benchmark output.
 
@@ -43,8 +44,8 @@ This document defines the public wording boundary for the current private pCodex
 
 Use:
 
-- measured public same-run matrix
-- private local alpha
+- bounded local same-run matrix
+- source-visible proprietary Private-Beta
 - command-backed MCP harness
 - not yet proven
 
@@ -58,7 +59,7 @@ Avoid:
 
 ## Current Claim Boundary
 
-The supported efficiency claim is limited to the measured public same-run matrix. It does not establish performance on every repository, every task, or every Codex workflow.
+The supported efficiency evidence is limited to the bounded local same-run matrix. It does not establish performance on every repository, every task, or every Codex workflow, and it is not public benchmark proof.
 
 Tuned-mode improvements are repo-specific and must be verified locally. `pcodex tune --verify` is a compile-only local-selection verifier; it is not a live Codex success guarantee.
 

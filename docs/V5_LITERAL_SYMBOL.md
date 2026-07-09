@@ -77,13 +77,13 @@ The following branches are not defaults:
 
 ## Safe Measured Claim
 
-On the measured public same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
+In a bounded local same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
 
-This is a measured public same-run matrix result, not a universal guarantee.
+This is bounded local evidence, not a public benchmark claim or universal guarantee.
 
 ## Known Limitations
 
-- The measured savings claim is limited to the six-prompt public same-run matrix.
+- The measured reduction evidence is limited to the six-prompt local same-run matrix.
 - The strategy does not prove savings on all Codex tasks.
 - Tuned behavior is repo-specific and must be verified locally before relying on it.
 - The strategy does not own Codex dispatch or subagent routing.

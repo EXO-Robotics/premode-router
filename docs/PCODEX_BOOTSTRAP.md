@@ -122,7 +122,7 @@ Generated repo-local skills resolve the `pcodex` executable before running comma
 
 If no executable is found, the resolver prints paste-safe setup guidance and exits without writing files, launching Codex, printing secrets, or dumping the environment.
 
-Terminal `pcodex` remains the guaranteed control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit; `--with-mcp` writes only repo-local scaffold/config files and warning text. It does not mutate `~/.codex/config.toml`, register globally, invoke MCP automatically, or run live Codex.
+Terminal `pcodex` remains the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit; `--with-mcp` writes only repo-local scaffold/config files and warning text. It does not mutate `~/.codex/config.toml`, register globally, invoke MCP automatically, or run live Codex.
 
 `pcodex plugin init --local-marketplace` creates or updates the local `plugins/pcodex` scaffold and `.agents/plugins/marketplace.json` without global mutation or publication.
 
