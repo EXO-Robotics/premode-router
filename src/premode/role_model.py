@@ -71,6 +71,7 @@ ROLE_BUCKETS = (
 SELECTOR_MATRIX_CLAIM_LEVEL = "Level 0 internal metric only"
 INTENT_V2_ROLE_BUCKETS_VARIANT = "intent_v2_role_buckets"
 WARM_INDEX_INVENTORY_VERSION = "warm-index-v1"
+WARM_INDEX_PATH_NORMALIZATION_VERSION = "posix-slash-v1"
 
 
 @dataclass(frozen=True)
@@ -160,6 +161,7 @@ class SelectorCandidateDryRun:
     stat_call_count: int = 0
     candidate_enumeration_count: int = 0
     warm_index_cache_key: str | None = None
+    warm_index_metadata_only_verified: bool = False
 
     def to_dict(self, *, include_paths: bool = False) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -173,6 +175,7 @@ class SelectorCandidateDryRun:
             "selection_lock_hash": self.selection_lock_hash,
             "selected_path_count": len(self.selected_paths),
             "selected_path_hash": selection_lock_hash_for_paths(list(self.selected_paths), intent=self.intent_v2),
+            "candidate_count": len(self.candidate_paths),
             "candidate_path_count": len(self.candidate_paths),
             "default_selected_path_count": len(self.default_selected_paths),
             "content_reads": self.content_reads,
@@ -190,6 +193,7 @@ class SelectorCandidateDryRun:
             "stat_call_count": self.stat_call_count,
             "candidate_enumeration_count": self.candidate_enumeration_count,
             "warm_index_cache_key": self.warm_index_cache_key,
+            "warm_index_metadata_only_verified": self.warm_index_metadata_only_verified,
         }
         if include_paths:
             payload["selected_paths"] = list(self.selected_paths)
@@ -234,6 +238,7 @@ class RepoWarmIndex:
     include_exclude_hash: str = ""
     ignore_file_hash: str = ""
     path_fingerprint: str = ""
+    path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION
     build_ms: float = 0.0
     content_reads: int = 0
 
@@ -248,6 +253,7 @@ class RepoWarmIndex:
         include_exclude_hash: str = "",
         ignore_file_hash: str = "",
         inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
+        path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION,
     ) -> "RepoWarmIndex":
         start = time.perf_counter()
         normalized = _normalize_path_list(paths)
@@ -261,7 +267,7 @@ class RepoWarmIndex:
             "ignore_file_hash": ignore_file_hash,
             "inventory_version": inventory_version,
             "path_fingerprint": fingerprint,
-            "platform_path_normalization": "posix-slash-v1",
+            "platform_path_normalization": path_normalization_version,
         }
         cache_key = hashlib.sha256(json.dumps(cache_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")).hexdigest()
         return cls(
@@ -275,6 +281,7 @@ class RepoWarmIndex:
             include_exclude_hash=include_exclude_hash,
             ignore_file_hash=ignore_file_hash,
             path_fingerprint=fingerprint,
+            path_normalization_version=path_normalization_version,
             build_ms=round((time.perf_counter() - start) * 1000, 3),
         )
 
@@ -283,9 +290,27 @@ class RepoWarmIndex:
         paths: list[str] | tuple[str, ...],
         *,
         inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
+        repo_root: str | None = None,
+        git_head: str | None = None,
+        dirty_state_hash: str | None = None,
+        include_exclude_hash: str | None = None,
+        ignore_file_hash: str | None = None,
+        path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION,
     ) -> tuple[bool, str | None]:
         if self.inventory_version != inventory_version:
             return False, "selector_inventory_version_changed"
+        if self.path_normalization_version != path_normalization_version:
+            return False, "path_normalization_version_changed"
+        if repo_root is not None and self.repo_root != repo_root:
+            return False, "repo_root_mismatch"
+        if git_head is not None and self.git_head != git_head:
+            return False, "git_head_changed"
+        if dirty_state_hash is not None and self.dirty_state_hash != dirty_state_hash:
+            return False, "dirty_state_changed"
+        if include_exclude_hash is not None and self.include_exclude_hash != include_exclude_hash:
+            return False, "include_exclude_config_changed"
+        if ignore_file_hash is not None and self.ignore_file_hash != ignore_file_hash:
+            return False, "ignore_config_changed"
         if self.content_reads != 0:
             return False, "warm_index_contains_content_reads"
         if len(self.paths) != len(self.path_metadata):
@@ -300,11 +325,13 @@ class RepoWarmIndex:
         payload: dict[str, object] = {
             "cache_key": self.cache_key,
             "inventory_version": self.inventory_version,
+            "path_normalization_version": self.path_normalization_version,
             "path_count": len(self.paths),
             "path_fingerprint": self.path_fingerprint,
             "build_ms": self.build_ms,
             "content_reads": self.content_reads,
             "metadata_only": True,
+            "metadata_only_verified": self.content_reads == 0,
             "cached_fields": [
                 "path",
                 "suffix",
@@ -989,6 +1016,7 @@ def _dry_run_fallback_result(
         stat_call_count=int(warm.get("stat_call_count") or 0),
         candidate_enumeration_count=int(warm.get("candidate_enumeration_count") or 0),
         warm_index_cache_key=warm.get("warm_index_cache_key") if isinstance(warm.get("warm_index_cache_key"), str) else None,
+        warm_index_metadata_only_verified=bool(warm.get("warm_index_metadata_only_verified", False)),
     )
 
 
@@ -1004,6 +1032,12 @@ def dry_run_selector_candidate(
     warm_index: RepoWarmIndex | None = None,
     build_warm_index: bool = True,
     selector_inventory_version: str = WARM_INDEX_INVENTORY_VERSION,
+    repo_root: str = "",
+    git_head: str = "",
+    dirty_state_hash: str = "",
+    include_exclude_hash: str = "",
+    ignore_file_hash: str = "",
+    path_normalization_version: str = WARM_INDEX_PATH_NORMALIZATION_VERSION,
 ) -> SelectorCandidateDryRun:
     """Evaluate a selector candidate as explicit dry-run metadata only.
 
@@ -1026,6 +1060,7 @@ def dry_run_selector_candidate(
         "stat_call_count": 0,
         "candidate_enumeration_count": len(_normalize_path_list(paths)),
         "warm_index_cache_key": None,
+        "warm_index_metadata_only_verified": False,
     }
     if selector_candidate is None:
         return _dry_run_fallback_result(
@@ -1055,7 +1090,16 @@ def dry_run_selector_candidate(
     selector_paths: list[str] | tuple[str, ...] = paths
     if warm_index_enabled:
         if warm_index is not None:
-            valid, reason = warm_index.validate_for_paths(paths, inventory_version=selector_inventory_version)
+            valid, reason = warm_index.validate_for_paths(
+                paths,
+                inventory_version=selector_inventory_version,
+                repo_root=repo_root or None,
+                git_head=git_head or None,
+                dirty_state_hash=dirty_state_hash or None,
+                include_exclude_hash=include_exclude_hash or None,
+                ignore_file_hash=ignore_file_hash or None,
+                path_normalization_version=path_normalization_version,
+            )
             if valid:
                 selector_paths = warm_index.paths
                 warm_stats.update(
@@ -1065,6 +1109,7 @@ def dry_run_selector_candidate(
                         "inventory_walk_count": 0,
                         "candidate_enumeration_count": len(warm_index.paths),
                         "warm_index_cache_key": warm_index.cache_key,
+                        "warm_index_metadata_only_verified": True,
                     }
                 )
             else:
@@ -1076,7 +1121,16 @@ def dry_run_selector_candidate(
                     }
                 )
         elif build_warm_index:
-            built_index = RepoWarmIndex.build(paths, inventory_version=selector_inventory_version)
+            built_index = RepoWarmIndex.build(
+                paths,
+                repo_root=repo_root,
+                git_head=git_head,
+                dirty_state_hash=dirty_state_hash,
+                include_exclude_hash=include_exclude_hash,
+                ignore_file_hash=ignore_file_hash,
+                inventory_version=selector_inventory_version,
+                path_normalization_version=path_normalization_version,
+            )
             selector_paths = built_index.paths
             warm_stats.update(
                 {
@@ -1086,6 +1140,7 @@ def dry_run_selector_candidate(
                     "inventory_walk_count": 1,
                     "candidate_enumeration_count": len(built_index.paths),
                     "warm_index_cache_key": built_index.cache_key,
+                    "warm_index_metadata_only_verified": True,
                 }
             )
         else:
@@ -1150,6 +1205,7 @@ def dry_run_selector_candidate(
         stat_call_count=int(warm_stats.get("stat_call_count") or 0),
         candidate_enumeration_count=int(warm_stats.get("candidate_enumeration_count") or 0),
         warm_index_cache_key=warm_stats.get("warm_index_cache_key") if isinstance(warm_stats.get("warm_index_cache_key"), str) else None,
+        warm_index_metadata_only_verified=bool(warm_stats.get("warm_index_metadata_only_verified", False)),
     )
 
 
