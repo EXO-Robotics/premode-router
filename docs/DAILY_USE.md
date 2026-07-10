@@ -21,7 +21,7 @@ Start with advisory and dry-run checks. These do not launch Codex:
 pcodex doctor --advisory --json
 pcodex status --advisory --json
 pcodex first-run --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status --json
 pcodex run --dry-run --json "Hypothetical dummy task: inspect this repo. Do not modify files."
 pcodex cleanup --local-state --dry-run --json

@@ -96,7 +96,8 @@ def test_enabled_pcodex_transforms_codex_created_subagent_prompt(repo: Path, mon
     assert result.enabled is True
     assert result.prompt != RAW_SUBAGENT_PROMPT
     assert RAW_SUBAGENT_PROMPT in result.prompt
-    assert "PREMODE_CONTEXT_PACKET_V5" in result.prompt
+    assert result.prompt.startswith(RAW_SUBAGENT_PROMPT)
+    assert "\n\n---\n\nPREMODE_CONTEXT_PACKET_V5" in result.prompt
 
 
 def test_transform_uses_literal_symbol_by_default(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -237,4 +238,7 @@ def test_real_compile_dry_run_integration_does_not_launch_codex(repo: Path, monk
     assert result.enabled is True
     assert result.prompt != RAW_SUBAGENT_PROMPT
     assert RAW_SUBAGENT_PROMPT in result.prompt
-    assert "PREMODE_CONTEXT_PACKET_V5" in result.prompt
+    assert result.prompt.startswith("TASK\n")
+    assert "\nLIKELY FILES\n" in result.prompt
+    assert result.prompt.count(RAW_SUBAGENT_PROMPT) == 1
+    assert "PREMODE_CONTEXT_PACKET" not in result.prompt

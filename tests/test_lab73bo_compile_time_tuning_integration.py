@@ -83,12 +83,12 @@ def _paths(items: list[dict] | list[str] | None) -> list[str]:
     return out
 
 
-def test_compile_help_includes_tuning(capsys: pytest.CaptureFixture[str]) -> None:
+def test_compile_help_hides_developer_tuning(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         cli.main(["compile", "--help"])
 
     assert exc.value.code == 0
-    assert "--tuning" in capsys.readouterr().out
+    assert "--tuning" not in capsys.readouterr().out
 
 
 def test_literal_symbol_default_output_unchanged_without_tuning(tmp_path: Path) -> None:

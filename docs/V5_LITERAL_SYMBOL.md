@@ -75,16 +75,16 @@ The following branches are not defaults:
 - `literal_symbol_collision_filter`
 - `literal_symbol_import_rank_json_only`
 
-## Safe Measured Claim
+## Structural Measurement Boundary
 
-In a bounded local same-run matrix of six prompts, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
+Local comparisons may record packet bytes, proxy token counts, selected paths, and leakage checks as structural observations.
 
-This is bounded local evidence, not a public benchmark claim or universal guarantee.
+These observations do not establish downstream token savings, task-quality gains, cost savings, or benchmark superiority.
 
 ## Known Limitations
 
-- The measured reduction evidence is limited to the six-prompt local same-run matrix.
-- The strategy does not prove savings on all Codex tasks.
+- Structural packet measurements are not downstream spend evidence.
+- The strategy does not prove savings or quality gains on Codex tasks.
 - Tuned behavior is repo-specific and must be verified locally before relying on it.
 - The strategy does not own Codex dispatch or subagent routing.
 - The plugin package is private and not published.

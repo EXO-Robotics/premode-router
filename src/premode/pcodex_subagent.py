@@ -36,6 +36,8 @@ def _write_packet(packet: str) -> str:
 
 
 def compose_transformed_prompt(subagent_prompt: str, packet: str) -> str:
+    if packet.startswith("TASK\n"):
+        return packet.rstrip() + "\n"
     return f"{subagent_prompt.rstrip()}\n\n---\n\n{packet.strip()}\n"
 
 

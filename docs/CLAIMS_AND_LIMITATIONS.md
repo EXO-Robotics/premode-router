@@ -4,10 +4,10 @@ This document defines the wording boundary for the current pCodex Private-Beta.
 
 ## Supported Claims
 
-- In a bounded local six-prompt same-run matrix, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero leakage.
-- `premode compile --plugin literal_symbol` is the lead local plugin path.
+- Normal pCodex routing preserves the exact task and emits ordered likely paths through one canonical compact renderer.
+- `literal_symbol` remains the compatibility-preserved production ranking path; it is not declared strategically final.
 - Explicit compile-time tuning is available with `premode compile --plugin literal_symbol --tuning PATH`.
-- pCodex provides `pcodex setup` as the recommended local setup path for checks, optional isolated MCP registration, one-step tuning, safe mode selection, and dashboard output.
+- Plain `pcodex setup` is the narrow path and skips tuning and MCP registration. Broader setup remains developer compatibility behavior.
 - pCodex can run static generation, validation, and offline verification locally with `pcodex tune`.
 - Advanced tuning maintenance remains available with `pcodex tune --static-only`, `pcodex tune --validate`, and `pcodex tune --verify`.
 - pCodex supports three repo-local modes: `off`, `on`, and `tuned`.
@@ -59,7 +59,7 @@ Avoid:
 
 ## Current Claim Boundary
 
-The supported efficiency evidence is limited to the bounded local same-run matrix. It does not establish performance on every repository, every task, or every Codex workflow, and it is not public benchmark proof.
+Packet byte counts and structural measurements are observations only. They do not establish downstream token savings, task-quality gains, or public benchmark superiority.
 
 Tuned-mode improvements are repo-specific and must be verified locally. `pcodex tune --verify` is a compile-only local-selection verifier; it is not a live Codex success guarantee.
 

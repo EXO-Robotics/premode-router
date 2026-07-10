@@ -38,7 +38,7 @@ In the target repo:
 
 ```bash
 pcodex doctor
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex on
 pcodex status
 pcodex first-run
@@ -49,7 +49,7 @@ pcodex run --dry-run "Hypothetical setup verification task. Do not modify files.
 This path keeps the first value local and auditable:
 
 - `doctor` checks local readiness.
-- `setup --skip-tune --no-mcp` avoids tuning and MCP registration.
+- `setup` selects the narrow local setup path without tuning or MCP registration.
 - `on` enables the safe default `literal_symbol` path.
 - `status` shows readiness and one next action.
 - `first-run` emits a support-safe receipt.
@@ -92,7 +92,7 @@ Advisory mode is a no-write/no-mutation claim, not a no-read claim. Run the norm
   "global_codex_config_mutation": false,
   "install_provenance_available": true,
   "install_provenance": {},
-  "next_action": "pcodex setup --skip-tune --no-mcp --json",
+  "next_action": "pcodex setup --json",
   "cleanup_commands": [
     "pcodex cleanup --local-state --dry-run",
     "pcodex cleanup --local-state --yes"
@@ -158,7 +158,7 @@ Use this repair path before real runs:
 pcodex doctor
 pcodex cleanup --local-state --dry-run
 pcodex cleanup --local-state --yes
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex on
 pcodex first-run --json
 pcodex run --dry-run "Hypothetical repair verification task. Do not modify files."

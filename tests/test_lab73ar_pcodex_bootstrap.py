@@ -237,12 +237,13 @@ def test_generated_prompt_preserves_model_facing_packet_boundary(
     compiled = pcodex.compile_pcodex_packet(repo, "Update build_config completion behavior in src/app.py.")
     packet = pcodex.compose_final_prompt("Update build_config completion behavior in src/app.py.", compiled["packet"])
 
-    assert "PREMODE_CONTEXT_PACKET_V5" in packet
-    assert "schema: ranked-paths-plus-anchors" in packet
-    assert "<TASK>" in packet
-    assert "<PRIMARY_FILES>" in packet
-    assert "<RELATED_TESTS>" in packet
-    assert "<END_PREMODE_CONTEXT_PACKET_V5>" in packet
+    assert packet.startswith("TASK\n")
+    assert "\nLIKELY FILES\n" in packet
+    assert "\nPRIMARY\n" in packet
+    assert "\nVERIFY\n" in packet
+    assert packet.count("Update build_config completion behavior in src/app.py.") == 1
+    assert "PREMODE_CONTEXT_PACKET" not in packet
+    assert "schema:" not in packet
     for forbidden in (
         "<TASK_CLASS>",
         "<SUPPORT_RELATIONS>",
@@ -251,6 +252,8 @@ def test_generated_prompt_preserves_model_facing_packet_boundary(
         "VALIDATION",
         "COMMANDS",
         "DO_NOT_EDIT",
+        "packet_strategy",
+        "selection_lock_hash",
     ):
         assert forbidden not in packet
 

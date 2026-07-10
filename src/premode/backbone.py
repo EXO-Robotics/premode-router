@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .locator import is_scaffold_meta_term
-from .role_model import classify_path_role, infer_prompt_intent
+from .role_core import classify_path_role, infer_prompt_intent
 
 MAX_DISCOVERY_BYTES_PER_FILE = 80_000
 MAX_PRIMARY_FILES = 4

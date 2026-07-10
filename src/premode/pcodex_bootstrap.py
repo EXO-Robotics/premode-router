@@ -37,6 +37,7 @@ from .pcodex_state import (
     set_mode_tuned,
 )
 from .plugins import PluginAliasError, available_plugin_aliases, resolve_packet_plugin
+from .review_patch import format_review_report, review_patch
 
 PCODEX_PLUGIN_ALIAS = "literal_symbol"
 PCODEX_PACKET_VERSION = "v5"
@@ -1028,7 +1029,8 @@ def compile_pcodex_packet(
         resolved = resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
         route = "plugin_alias"
         command = _premode_alias_command(prompt, repo_root, profile, tuning_profile)
-        kwargs = resolved.as_compile_kwargs()
+        resolved_kwargs = resolved.as_compile_kwargs()
+        kwargs = _literal_symbol_kwargs()
         plugin_resolution = resolved.as_dict()
     except PluginAliasError as exc:
         route = "explicit_fallback"
@@ -1037,7 +1039,12 @@ def compile_pcodex_packet(
         plugin_resolution = None
         fallback_reason = str(exc)
     else:
-        fallback_reason = None
+        if resolved_kwargs == kwargs:
+            fallback_reason = None
+        else:
+            route = "explicit_fixed_authority"
+            command = _premode_explicit_command(prompt, repo_root, profile, tuning_profile)
+            fallback_reason = "plugin_alias_metadata_ignored_for_fixed_production_authority"
     compiled = compile_prompt(
         repo_root,
         prompt,
@@ -1047,6 +1054,7 @@ def compile_pcodex_packet(
         save=False,
         record_artifacts=False,
         tuning_profile=tuning_profile,
+        canonical_core_packet=True,
         **kwargs,
     )
     result = {
@@ -1060,8 +1068,13 @@ def compile_pcodex_packet(
         "packet_version": compiled.get("packet_version"),
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
+        "canonical_core_packet": bool(compiled.get("canonical_core_packet")),
         "selected_paths": _selected_paths_from_compile_result(compiled),
-        "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "model_facing_sections": [
+            section
+            for section in ("TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT")
+            if f"{section}\n" in compiled["packet"]
+        ],
         "tuning_profile": tuning_profile,
         "context_selection_mode": compiled.get("context_selection_mode"),
         "large_repo_safety": compiled.get("large_repo_safety"),
@@ -1649,7 +1662,7 @@ def first_run(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, A
         "global_codex_config_mutation": False,
         "install_provenance_available": bool(provenance.get("install_provenance_available")),
         "install_provenance": provenance,
-        "next_action": "pcodex setup --skip-tune --no-mcp --json",
+        "next_action": "pcodex setup --json",
         "cleanup_commands": [
             "pcodex cleanup --local-state --dry-run",
             "pcodex cleanup --local-state --yes",
@@ -2404,6 +2417,7 @@ def run_enabled(repo_root: Path, prompt: str, profile: str | None = "lite") -> d
             lane="pcodex",
             tuning_profile=tuning_profile,
             child_env=child_env,
+            canonical_core_packet=True,
         ),
     )
 
@@ -2424,9 +2438,16 @@ def run_disabled(repo_root: Path, prompt: str, mode_state: dict[str, Any] | None
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="pcodex")
-    sub = parser.add_subparsers(dest="command", required=True)
-    doctor_parser = sub.add_parser("doctor")
+    parser = argparse.ArgumentParser(
+        prog="pcodex",
+        description="Locate and structure likely repository context before Codex runs.",
+    )
+    sub = parser.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="{setup,status,run,review,off,cleanup,doctor}",
+    )
+    doctor_parser = sub.add_parser("doctor", help="Check local pCodex readiness.")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
     doctor_parser.add_argument("--advisory", action="store_true", help="Read-only, no-write, paste-safe advisory receipt.")
     doctor_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
@@ -2434,7 +2455,7 @@ def _parser() -> argparse.ArgumentParser:
     first_run_parser.add_argument("--json", action="store_true", help="Print machine-readable first-run receipt.")
     first_run_parser.add_argument("--advisory", action="store_true", help="Read-only, no-write, paste-safe advisory receipt.")
     first_run_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
-    cleanup_parser = sub.add_parser("cleanup")
+    cleanup_parser = sub.add_parser("cleanup", help="Preview or remove generated local pCodex state.")
     cleanup_parser.add_argument("--local-state", action="store_true", help="Limit cleanup to repo-local generated pCodex/LCC state.")
     cleanup_mode = cleanup_parser.add_mutually_exclusive_group()
     cleanup_mode.add_argument("--dry-run", action="store_true", help="List generated local state that would be removed.")
@@ -2443,21 +2464,21 @@ def _parser() -> argparse.ArgumentParser:
     cleanup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
-    status_parser = sub.add_parser("status")
+    status_parser = sub.add_parser("status", help="Show the current local mode and readiness.")
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable pCodex mode state.")
     status_parser.add_argument("--advisory", action="store_true", help="Read-only, no-write, paste-safe advisory receipt.")
     status_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
-    setup_parser = sub.add_parser("setup")
-    setup_parser.add_argument("--skip-tune", action="store_true", help="Skip tune/validate/verify and enable general mode.")
-    setup_parser.add_argument("--no-mcp", action="store_true", help="Skip Codex MCP registration.")
-    setup_parser.add_argument("--isolated", action="store_true", help="Use isolated Codex config for MCP registration. This is the default.")
-    setup_parser.add_argument("--real-codex-registration", action="store_true", help="Explicitly mutate real local Codex MCP config.")
+    setup_parser = sub.add_parser("setup", help="Set up the supported local workflow.")
+    setup_parser.add_argument("--skip-tune", action="store_true", help=argparse.SUPPRESS)
+    setup_parser.add_argument("--no-mcp", action="store_true", help=argparse.SUPPRESS)
+    setup_parser.add_argument("--isolated", action="store_true", help=argparse.SUPPRESS)
+    setup_parser.add_argument("--real-codex-registration", action="store_true", help=argparse.SUPPRESS)
     setup_parser.add_argument("--verbose", action="store_true", help="Print detailed setup checks.")
     setup_parser.add_argument("--json", action="store_true", help="Print machine-readable setup result.")
     setup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     on = sub.add_parser("on")
     on.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
-    off = sub.add_parser("off")
+    off = sub.add_parser("off", help="Disable pCodex routing for this repository.")
     off.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     tuned = sub.add_parser("tuned")
     tuned.add_argument("--profile", default=DEFAULT_TUNING_PROFILE, help="Validated tuning profile to use for tuned mode.")
@@ -2495,12 +2516,20 @@ def _parser() -> argparse.ArgumentParser:
     comp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
     comp.add_argument("--dry-run", action="store_true")
     comp.add_argument("--json", action="store_true")
-    run = sub.add_parser("run")
+    run = sub.add_parser("run", help="Compile likely paths, then preview or run Codex.")
     run.add_argument("prompt")
     run.add_argument("--repo", default=None)
     run.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
     run.add_argument("--dry-run", action="store_true")
     run.add_argument("--json", action="store_true")
+    review = sub.add_parser("review", help="Review changes against the saved context contract.")
+    review.add_argument("--against", default="main")
+    review.add_argument("--packet", default=None)
+    review.add_argument("--claims", "--claims-file", dest="claims", default=None)
+    review.add_argument("--json", action="store_true")
+    review.add_argument("--out", default=None)
+    review.add_argument("--since-compile", action="store_true")
+    review.add_argument("--repo-root", default=None)
     return parser
 
 
@@ -2568,11 +2597,26 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(format_status(payload))
         return 0
+    if args.command == "review":
+        payload = review_patch(
+            repo_root,
+            base_ref=args.against,
+            packet_path=Path(args.packet) if args.packet else None,
+            claims_path=Path(args.claims) if args.claims else None,
+            out_path=Path(args.out) if args.out else None,
+            since_compile=args.since_compile,
+        )
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_review_report(payload))
+        return 1 if payload.get("error") else 0
     if args.command == "setup":
+        legacy_setup = bool(args.isolated or args.real_codex_registration)
         payload = setup(
             repo_root,
-            skip_tune=args.skip_tune,
-            no_mcp=args.no_mcp,
+            skip_tune=bool(args.skip_tune or not legacy_setup),
+            no_mcp=bool(args.no_mcp or not legacy_setup),
             isolated=True,
             real_codex_registration=args.real_codex_registration,
         )
@@ -2656,15 +2700,20 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "compile":
         if args.dry_run:
             try:
-                resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
-                command = _premode_alias_command(args.prompt, repo_root, args.profile)
-                route = "plugin_alias"
+                resolved = resolve_packet_plugin(PCODEX_PLUGIN_ALIAS)
             except PluginAliasError as exc:
                 command = _premode_explicit_command(args.prompt, repo_root, args.profile)
                 route = "explicit_fallback"
                 fallback_reason = str(exc)
             else:
-                fallback_reason = None
+                if resolved.as_compile_kwargs() == _literal_symbol_kwargs():
+                    command = _premode_alias_command(args.prompt, repo_root, args.profile)
+                    route = "plugin_alias"
+                    fallback_reason = None
+                else:
+                    command = _premode_explicit_command(args.prompt, repo_root, args.profile)
+                    route = "explicit_fixed_authority"
+                    fallback_reason = "plugin_alias_metadata_ignored_for_fixed_production_authority"
             print(json.dumps({"status": "dry_run", "route": route, "premode_command": command, "fallback_reason": fallback_reason}, indent=2, sort_keys=True))
             return 0
         compiled = compile_pcodex_packet(repo_root, args.prompt, args.profile)

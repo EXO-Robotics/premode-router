@@ -27,12 +27,12 @@ FORBIDDEN_AGGREGATE_TERMS = (
 )
 
 
-def test_harness_entrypoint_is_discoverable() -> None:
+def test_harness_entrypoint_is_callable_but_hidden_from_primary_help() -> None:
     parser = cli.build_parser()
 
     help_text = parser.format_help()
 
-    assert "lab" in help_text
+    assert "lab" not in help_text
     lab_action = next(action for action in parser._actions if getattr(action, "dest", None) == "command")
     assert "lab" in lab_action.choices
     lab_parser = lab_action.choices["lab"]

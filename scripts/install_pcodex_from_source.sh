@@ -102,8 +102,8 @@ run_smoke() {
   run_cmd "$INSTALL_ROOT/bin/premode" --help
   help_output="$("$INSTALL_ROOT/bin/pcodex" --help)"
   printf '%s\n' "$help_output"
-  [[ "$help_output" == *"first-run"* ]] || fail "installed pcodex --help is missing first-run"
   [[ "$help_output" == *"cleanup"* ]] || fail "installed pcodex --help is missing cleanup"
+  run_cmd "$INSTALL_ROOT/bin/pcodex" first-run --help
   run_cmd "$INSTALL_ROOT/bin/pcodex" status
   run_cmd "$INSTALL_ROOT/bin/pcodex" first-run --json
   run_cmd "$INSTALL_ROOT/bin/pcodex" cleanup --local-state --dry-run
@@ -232,7 +232,7 @@ log "install manifest: $INSTALL_ROOT/install_manifest.json"
 log "optional PATH line: export PATH=\"$INSTALL_ROOT/bin:\$PATH\""
 log "next checks:"
 log "  $INSTALL_ROOT/bin/pcodex doctor"
-log "  $INSTALL_ROOT/bin/pcodex setup --skip-tune --no-mcp"
+log "  $INSTALL_ROOT/bin/pcodex setup"
 log "  $INSTALL_ROOT/bin/pcodex on"
 log "  $INSTALL_ROOT/bin/pcodex status"
 log "  $INSTALL_ROOT/bin/pcodex first-run --json"

@@ -91,15 +91,15 @@ Advisory first-run performs no writes.
 
 ## Setup
 
-`pcodex setup` is the recommended default path after install:
+The narrow recommended path after install is:
 
 ```bash
 pcodex setup
 ```
 
-It runs local checks, optionally attempts isolated Codex MCP registration, runs one-step tuning unless `--skip-tune` is provided, writes `tuned` only when verification is `PASS`, writes `on` for skipped or non-PASS tuning, and prints a concise dashboard. Use `--json` for automation. Use `--no-mcp` to skip MCP registration. Real Codex config mutation requires the explicit `--real-codex-registration` flag.
+This runs local checks, skips tuning, writes general `on` mode, and skips MCP registration. The hidden compatibility flag `--isolated` retains the older tuning and isolated-MCP workflow; `--real-codex-registration` remains the explicit real-config path. Use `--json` for automation.
 
-For first-run value, prefer `pcodex setup --skip-tune --no-mcp` so tuning and MCP are not prerequisites.
+Plain `pcodex setup` requires neither tuning nor MCP.
 
 ## Codex Integration
 
@@ -219,7 +219,7 @@ The algorithm value is `literal_symbol`.
 
 `pcodex mcp-server` starts the stdio MCP server candidate. It exposes `pcodex_transform_subagent_prompt` and reads/writes JSON-RPC over stdin/stdout only.
 
-The transform respects off/on/tuned state. `off` returns the raw prompt. `on` appends the generalized compact packet. `tuned` appends a tuned compact packet when the profile validates; tuned failure returns the raw prompt plus out-of-band error metadata.
+The transform respects off/on/tuned state. `off` returns the raw prompt. `on` appends the canonical compact packet using generalized selection or an existing verified profile for compatibility. `tuned` requires a verified profile; tuned failure returns the raw prompt plus out-of-band error metadata.
 
 The transform also reports configured and effective mode in metadata. Smart `on` uses tuned packets only for verified PASS profiles; otherwise it appends the generalized compact packet and records fallback metadata out of band.
 

@@ -60,7 +60,7 @@ Run normal setup when local state creation or repair is intended:
 ```bash
 pcodex doctor
 pcodex first-run --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status
 pcodex first-run --json
 ```

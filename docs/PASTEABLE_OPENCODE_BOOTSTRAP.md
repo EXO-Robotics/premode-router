@@ -33,7 +33,7 @@ Steps:
    "$PCODEX_BIN" doctor || true
    "$PCODEX_BIN" status
    "$PCODEX_BIN" status --json
-   "$PCODEX_BIN" setup --no-mcp
+   "$PCODEX_BIN" setup
 5. Patch or create `.gitignore` with this bounded section. Append it only once. Do not blanket-ignore all `.premode/`, do not ignore source files, docs, templates, or setup files, and do not delete generated state during bootstrap.
 
 ```bash
@@ -192,7 +192,7 @@ PCODEX_SETUP_REPORT.md structure:
 - pCodex binary:
 - `pcodex doctor` ran:
 - `pcodex status` ran:
-- `pcodex setup --no-mcp` ran:
+- `pcodex setup` ran:
 - Dry-run completed:
 - `transform_applied`:
 - `codex_launch`:
@@ -231,7 +231,7 @@ PCODEX_SETUP_REPORT.md structure:
 
 Report warning states plainly:
 - `NEEDS_ADJUSTMENT` tuning is normal for a fresh repo until tuning/verifier passes.
-- MCP unknown is expected when setup uses `--no-mcp`.
+- MCP unknown is expected after the narrow default setup.
 - Savings estimate may be unavailable until telemetry exists.
 - Generated `.premode/` and `.pcodex/` local state is expected and should remain untracked unless deliberately versioning tuning artifacts.
 

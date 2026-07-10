@@ -57,11 +57,11 @@ cd "$HOME/.pcodex-tools/premode-router"
 scripts/install_pcodex_from_source.sh --install-root "$HOME/.pcodex-alpha"
 "$HOME/.pcodex-alpha/bin/pcodex" doctor || true
 "$HOME/.pcodex-alpha/bin/pcodex" status
-"$HOME/.pcodex-alpha/bin/pcodex" setup --no-mcp
+"$HOME/.pcodex-alpha/bin/pcodex" setup
 "$HOME/.pcodex-alpha/bin/pcodex" run --dry-run "Hypothetical setup verification task. Do not modify files."
 ```
 
-`pcodex setup --no-mcp` is the default setup command for onboarding. MCP registration requires separate explicit approval.
+Plain `pcodex setup` is the default setup command for onboarding and skips MCP registration. Real registration requires separate explicit approval.
 
 ## Safety Boundaries
 

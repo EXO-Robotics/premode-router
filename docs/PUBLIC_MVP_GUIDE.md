@@ -80,7 +80,7 @@ pcodex run --dry-run "Fix the build"
 Show:
 
 - active root detection
-- packet token savings
+- packet byte and proxy-token structure, without a savings claim
 - full-text vs summary vs manifest tiers
 - patch boundary
 - privacy report

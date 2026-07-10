@@ -17,7 +17,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 premode = "premode.cli:main"
-pcodex = "premode.cli:pcodex_main"
+pcodex = "premode.pcodex_bootstrap:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -57,7 +57,8 @@ def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
 def test_pcodex_mcp_server_command_is_registered() -> None:
     help_text = pcodex._parser().format_help()
 
-    assert "mcp-server" in help_text
+    assert "mcp-server" not in help_text
+    assert pcodex.main(["mcp-server", "--help"]) == 0
 
 
 def test_server_lists_pcodex_transform_tool() -> None:

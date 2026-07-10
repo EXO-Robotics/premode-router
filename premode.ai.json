@@ -15,7 +15,7 @@
       "scripts/install_pcodex_from_source.sh",
       "export PATH=\"$HOME/.pcodex-alpha/bin:$PATH\"",
       "pcodex doctor",
-      "pcodex setup --skip-tune --no-mcp",
+      "pcodex setup",
       "pcodex on",
       "pcodex status",
       "pcodex first-run",
@@ -37,7 +37,7 @@
   "setup": [
     "pcodex doctor",
     "pcodex doctor --json",
-    "pcodex setup --skip-tune --no-mcp",
+    "pcodex setup",
     "pcodex on",
     "pcodex status",
     "pcodex status --json",

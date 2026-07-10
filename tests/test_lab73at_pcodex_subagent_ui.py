@@ -210,8 +210,11 @@ def test_packet_boundary_remains_clean(
     compiled = pcodex.compile_pcodex_packet(repo, "Update build_config completion behavior in src/app.py.")
     packet = pcodex.compose_final_prompt("Update build_config completion behavior in src/app.py.", compiled["packet"])
 
-    assert "PREMODE_CONTEXT_PACKET_V5" in packet
-    assert "schema: ranked-paths-plus-anchors" in packet
+    assert packet.startswith("TASK\n")
+    assert "\nLIKELY FILES\n" in packet
+    assert packet.count("Update build_config completion behavior in src/app.py.") == 1
+    assert "PREMODE_CONTEXT_PACKET" not in packet
+    assert "schema:" not in packet
     for forbidden in (
         "<TASK_CLASS>",
         "<SUPPORT_RELATIONS>",

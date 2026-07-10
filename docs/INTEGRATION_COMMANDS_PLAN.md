@@ -60,7 +60,7 @@ OpenCode command files are OpenCode-specific and must not imply Codex command su
 - install/locate verification
 - `pcodex doctor || true`
 - `pcodex status`
-- `pcodex setup --no-mcp`
+- `pcodex setup`
 - `pcodex run --dry-run`
 - `PCODEX_SETUP_REPORT.md`
 

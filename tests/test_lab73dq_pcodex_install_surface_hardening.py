@@ -35,13 +35,14 @@ def _tracked_status(repo: Path) -> str:
     return completed.stdout
 
 
-def test_pcodex_help_includes_first_run_and_cleanup(capsys: pytest.CaptureFixture[str]) -> None:
+def test_pcodex_help_centers_cleanup_and_keeps_first_run_compatible(capsys: pytest.CaptureFixture[str]) -> None:
     assert pcodex.main(["--help"]) == 0
 
     help_text = capsys.readouterr().out
 
-    assert "first-run" in help_text
     assert "cleanup" in help_text
+    assert "first-run" not in help_text
+    assert pcodex.main(["first-run", "--help"]) == 0
 
 
 def test_pcodex_first_run_json_returns_content_free_status(
@@ -59,7 +60,7 @@ def test_pcodex_first_run_json_returns_content_free_status(
     assert payload["status"] == "ok"
     assert payload["codex_launch"] == "not_executed"
     assert payload["global_codex_config_mutation"] is False
-    assert payload["next_action"] == "pcodex setup --skip-tune --no-mcp --json"
+    assert payload["next_action"] == "pcodex setup --json"
     assert "pcodex cleanup --local-state --dry-run" in payload["cleanup_commands"]
     assert "packet" not in json.dumps(payload).lower()
 
@@ -185,7 +186,7 @@ def test_source_installer_smoke_checks_required_command_surface() -> None:
     assert "first-run --json" in script
     assert "cleanup --local-state --dry-run" in script
     assert "__definitely_unknown_command__" in script
-    assert "installed pcodex --help is missing first-run" in script
+    assert '"$INSTALL_ROOT/bin/pcodex" first-run --help' in script
     assert "installed pcodex --help is missing cleanup" in script
 
 
@@ -206,14 +207,16 @@ def test_install_surface_checks_do_not_mutate_tracked_source(
     assert _tracked_status(repo) == ""
 
 
-def test_docs_command_list_matches_first_run_and_cleanup_help_surface(capsys: pytest.CaptureFixture[str]) -> None:
+def test_docs_keep_first_run_compatibility_while_primary_help_stays_narrow(capsys: pytest.CaptureFixture[str]) -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     bootstrap = (ROOT / "docs" / "PCODEX_BOOTSTRAP.md").read_text(encoding="utf-8")
 
     assert pcodex.main(["--help"]) == 0
     help_text = capsys.readouterr().out
 
+    assert "cleanup" in help_text
+    assert "first-run" not in help_text
     for command in ("first-run", "cleanup"):
-        assert command in help_text
         assert f"pcodex {command}" in readme
         assert f"pcodex {command}" in bootstrap
+    assert pcodex.main(["first-run", "--help"]) == 0

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .context_constraints import is_sensitive_or_secret_path
 from .ignore import IgnoreMatcher
-from .role_model import classify_path_role
+from .role_core import classify_path_role
 from .safe_reader import is_probably_binary_path, is_secret_name
 
 

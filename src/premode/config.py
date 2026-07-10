@@ -38,6 +38,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "json_default": False,
         "output_last_message_default": ".premode/out/final.md",
     },
+    # Compatibility-only generated data. Normal production routing does not
+    # read this block, but existing external consumers may still expect it.
     "local_assist_lab": {
         "enabled": False,
         "provider": None,

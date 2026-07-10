@@ -28,6 +28,7 @@ from .context_constraints import (
     is_read_only_manifest_path,
     is_restricted_edit_bucket_path,
 )
+from .core_packet import CorePath, core_packet_leakage, render_core_packet
 from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, extract_evidence_snippets
 from .repo_summary import summarize_file
 from .repo_map import (
@@ -42,13 +43,7 @@ from .repo_map import (
     _prompt_has_negative_boundary,
     _prompt_is_swift_source_task,
 )
-from .role_model import (
-    classify_path_role,
-    infer_prompt_intent,
-    infer_prompt_intent_v2,
-    role_bucket_for_path,
-    selection_lock_hash_for_paths,
-)
+from .role_core import classify_path_role, infer_prompt_intent
 from .intake import intake_policy_from_detection, intake_score_delta
 from .locator import LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
 from .router import (
@@ -5667,6 +5662,51 @@ def _v5_internal_anchor_suffix_lines(manifest: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, str]:
+    backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
+    primary = [str(path) for path in (backbone.get("primary_files_after") or backbone.get("primary_files") or []) if path]
+    related = [str(path) for path in (backbone.get("related_tests_after") or backbone.get("related_tests") or []) if path]
+    anchors_by_path = backbone.get("anchors_by_path") if isinstance(backbone.get("anchors_by_path"), dict) else {}
+    exact_task = str(manifest.get("canonical_user_prompt") or "")
+    task_terms = {term.casefold() for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", exact_task)}
+    locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
+    include_optional_structure = str(locator.get("confidence") or "low") in {"high", "medium"}
+
+    def item(path: str, role: str) -> CorePath:
+        if not include_optional_structure:
+            return CorePath(path=path)
+        anchors = anchors_by_path.get(path) if isinstance(anchors_by_path.get(path), list) else []
+        rendered_anchor = None
+        for anchor in anchors:
+            if not isinstance(anchor, dict):
+                continue
+            anchor_type = str(anchor.get("anchor_type") or anchor.get("type") or "").strip()
+            anchor_text = _v5_anchor_value(anchor.get("anchor_text") or anchor.get("value"))
+            source = str(anchor.get("source") or "").strip()
+            quality = float(anchor.get("quality") or 0.0)
+            if not anchor_type or len(anchor_text) < 2 or quality < 0.6:
+                continue
+            if not bool(anchor.get("model_facing_allowed", True)):
+                continue
+            if source not in {"locator_signal", "symbol_scan", "test_scan", "config_scan", "heading_scan"}:
+                continue
+            if anchor_type not in {"symbol", "test_name", "config_section", "package_name", "heading", "import_name", "cli_flag"}:
+                continue
+            if anchor_type == "cli_flag" and anchor_text.startswith("-") and not anchor_text.startswith("--"):
+                continue
+            if anchor_type in {"symbol", "import_name", "cli_flag"} and anchor_text.casefold().lstrip("-") not in task_terms:
+                continue
+            rendered_anchor = f"{anchor_type}={anchor_text}"
+            break
+        return CorePath(path=path, role=role, anchor=rendered_anchor)
+
+    items = [item(path, "primary") for path in primary]
+    items.extend(item(path, "verification") for path in related)
+    packet = render_core_packet(exact_task, items)
+    prefix = "TASK\n"
+    return packet, prefix, packet[len(prefix):]
+
+
 def _v5_suffix_lines(manifest: dict[str, Any]) -> list[str]:
     variant = str(manifest.get("packet_variant") or PACKET_V5_DEFAULT_VARIANT)
     if variant in _v5_tool_assisted_variants():
@@ -5971,6 +6011,8 @@ def _sensitive_or_blocked_hits(paths: list[str], manifest: dict[str, Any]) -> li
 
 
 def _role_bucket_receipt(paths: list[str], manifest: dict[str, Any]) -> dict[str, Any]:
+    from .role_model import infer_prompt_intent_v2, role_bucket_for_path
+
     intent = infer_prompt_intent_v2(str(manifest.get("canonical_user_prompt") or ""))
     items: list[dict[str, str]] = []
     summary: dict[str, int] = {}
@@ -6032,6 +6074,8 @@ def _packet_component_accounting(manifest: dict[str, Any], packet: str, paths_by
 
 
 def _packet_audit_receipt(manifest: dict[str, Any], packet: str) -> dict[str, Any]:
+    from .role_model import selection_lock_hash_for_paths
+
     paths_by_role = _v5_active_paths_by_role(manifest) if manifest.get("packet_marker") == PACKET_V5_MARKER else {
         "primary": _paths_from_packet_items(manifest.get("candidate_edit_files") or manifest.get("likely_files") or manifest.get("likely_edit_files"), limit=48),
         "tests": _paths_from_packet_items(manifest.get("related_tests") or manifest.get("suggested_tests") or manifest.get("verification_files"), limit=48),
@@ -6293,6 +6337,8 @@ def _harness_review_metadata_from_manifest(manifest: dict[str, Any]) -> dict[str
 
 def _render_packet_parts_from_manifest(manifest: dict[str, Any], selected: list[dict[str, Any]]) -> tuple[str, str | None, str | None]:
     marker = str(manifest.get("packet_marker") or PACKET_MARKER)
+    if manifest.get("canonical_core_packet"):
+        return _canonical_core_packet_parts(manifest)
     if manifest.get("compile_degraded"):
         lines = [
             marker,
@@ -6501,9 +6547,11 @@ def build_compiled_packet(
     record: bool = True,
     include_packet_debug_metadata: bool = False,
     tuning_profile: Path | str | None = None,
+    canonical_core_packet: bool = False,
 ) -> dict[str, Any]:
     selected_context = select_context(repo_root, raw_prompt, profile_name, use_repo_map=use_repo_map, context_only=context_only, record=record)
     manifest = selected_context["manifest"]
+    manifest["canonical_core_packet"] = bool(canonical_core_packet)
     selected = selected_context["selected"]
     marker = _packet_marker_for_version(packet_version, cache_optimized=cache_optimized)
     manifest["packet_marker"] = marker
@@ -6544,6 +6592,9 @@ def build_compiled_packet(
     else:
         manifest["model_facing_packet_mode"] = manifest.get("packet_mode")
         manifest["packet_receipt_mode"] = "standard"
+    if canonical_core_packet:
+        manifest["model_facing_packet_mode"] = "canonical_core_v1"
+        manifest["packet_receipt_mode"] = "compatibility_sidecar"
     manifest["selected_paths_only_first_class"] = bool(marker == PACKET_V5_MARKER and detail_mode == PACKET_DETAIL_SELECTED_PATHS_ONLY)
     manifest["include_packet_debug_metadata"] = bool(include_packet_debug_metadata)
     manifest["metrics"]["packet_detail_mode"] = detail_mode
@@ -6695,7 +6746,11 @@ def build_compiled_packet(
 
     packet, prefix, suffix = _render_packet_parts_from_manifest(manifest, selected)
     if marker == PACKET_V5_MARKER:
-        manifest["model_facing_leakage_check"] = _v5_model_facing_leakage(packet)
+        manifest["model_facing_leakage_check"] = (
+            core_packet_leakage(str(manifest.get("canonical_user_prompt") or ""), packet)
+            if canonical_core_packet
+            else _v5_model_facing_leakage(packet)
+        )
     metrics = _metric_from_manifest(manifest, packet, cacheable_prefix=prefix, dynamic_suffix=suffix)
     if marker in {PACKET_V3_MARKER, PACKET_V4_MARKER, PACKET_V5_MARKER}:
         metrics["packet_detail_mode_requested"] = requested_detail_mode
@@ -6711,7 +6766,11 @@ def build_compiled_packet(
     # placeholder pre-final metrics. Then refresh metrics/receipt again.
     packet, prefix, suffix = _render_packet_parts_from_manifest(manifest, selected)
     if marker == PACKET_V5_MARKER:
-        manifest["model_facing_leakage_check"] = _v5_model_facing_leakage(packet)
+        manifest["model_facing_leakage_check"] = (
+            core_packet_leakage(str(manifest.get("canonical_user_prompt") or ""), packet)
+            if canonical_core_packet
+            else _v5_model_facing_leakage(packet)
+        )
     metrics = _metric_from_manifest(manifest, packet, cacheable_prefix=prefix, dynamic_suffix=suffix)
     if marker in {PACKET_V3_MARKER, PACKET_V4_MARKER, PACKET_V5_MARKER}:
         metrics["packet_detail_mode_requested"] = requested_detail_mode
@@ -6723,7 +6782,7 @@ def build_compiled_packet(
             metrics["model_facing_diagnostic_leakage"] = bool((manifest.get("model_facing_leakage_check") or {}).get("model_facing_diagnostic_leakage"))
     manifest["metrics"] = metrics
     manifest["context_receipt"] = _context_receipt(manifest)
-    manifest["packet_audit_receipt"] = _packet_audit_receipt(manifest, packet)
+    manifest["packet_audit_receipt"] = {} if canonical_core_packet else _packet_audit_receipt(manifest, packet)
     if marker == PACKET_V3_MARKER and requested_detail_mode == PACKET_DETAIL_AUTO:
         forced_mode = str(manifest.get("packet_detail_mode_selected") or detail_mode)
         forced_packet = _render_model_facing_packet_for_detail_mode(manifest, selected, forced_mode)
@@ -7104,6 +7163,7 @@ def compile_prompt(
     record_artifacts: bool | None = None,
     include_packet_debug_metadata: bool = False,
     tuning_profile: Path | str | None = None,
+    canonical_core_packet: bool = False,
 ) -> dict[str, Any]:
     if record_artifacts is None:
         record_artifacts = record
@@ -7122,6 +7182,7 @@ def compile_prompt(
         record=record_artifacts,
         include_packet_debug_metadata=include_packet_debug_metadata,
         tuning_profile=tuning_profile,
+        canonical_core_packet=canonical_core_packet,
     )
     packet = compiled["packet"]
     manifest = compiled["manifest"]
@@ -7144,6 +7205,7 @@ def compile_prompt(
         "resource_profile": manifest["resource_profile"],
         "packet_mode": manifest.get("packet_mode"),
         "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
+        "canonical_core_packet": bool(manifest.get("canonical_core_packet")),
         "packet_receipt_mode": manifest.get("packet_receipt_mode"),
         "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
         "packet_detail_mode": manifest.get("packet_detail_mode"),

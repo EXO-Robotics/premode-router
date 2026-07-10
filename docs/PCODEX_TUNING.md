@@ -89,6 +89,6 @@ Generated control-plane files include `.premode/lcc.lock.json` and `.premode/out
 
 ## Safety Boundary
 
-Tuning artifacts are local repo artifacts. They should not contain secrets, absolute local paths, source snippets, or expanded model-facing diagnostics. Model-facing packet rendering remains the V5 `TASK`, `PRIMARY_FILES`, `RELATED_TESTS`, and end-marker boundary.
+Tuning artifacts are local repo artifacts. They should not contain secrets, absolute local paths, source snippets, or expanded model-facing diagnostics. Normal pCodex model-facing rendering uses the canonical `TASK` and `LIKELY FILES` packet. The older V5 marker renderer remains available only through developer/compatibility compile surfaces.
 
-Use `pcodex setup` for the default setup path. Use `pcodex tuned` only when you intentionally want strict tuned mode after the profile validates and the verifier result is acceptable for the repo.
+Plain `pcodex setup` is the narrow setup path. Automatic verified-profile use in `on`, explicit tuning commands, and the hidden legacy `pcodex setup --isolated` workflow remain compatibility/developer behavior pending CONFIG-A.

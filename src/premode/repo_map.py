@@ -13,7 +13,7 @@ from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
 from .profiles import resolve_profile
 from .context_constraints import classify_path_for_routing, is_restricted_edit_bucket_path
-from .role_model import classify_path_role, infer_prompt_intent, path_role_rank
+from .role_core import classify_path_role, infer_prompt_intent, path_role_rank
 from .safe_reader import safe_read
 from .timeutil import timestamp_iso
 

@@ -319,12 +319,12 @@ def test_pcodex_main_tune_routes_to_bootstrap_without_codex_exec_defaults(monkey
     assert "--output-last-message" not in calls[0]
 
 
-def test_generalized_compile_default_remains_unchanged() -> None:
+def test_generalized_compile_keeps_tuning_compatible_but_out_of_primary_help() -> None:
     source = Path(cli.__file__).read_text(encoding="utf-8")
 
     assert 'comp.add_argument("--plugin"' in source
     assert 'comp.add_argument("--tuning"' in source
-    assert "Explicit opt-in only" in source
+    assert "help=argparse.SUPPRESS" in source
 
 
 def test_model_facing_packet_rendering_constants_remain_internal_only() -> None:

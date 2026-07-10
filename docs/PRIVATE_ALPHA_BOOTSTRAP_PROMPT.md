@@ -66,7 +66,7 @@ Verify commands without running live tasks:
 ~/.pcodex-alpha/bin/premode compile --plugin literal_symbol --no-record "Hypothetical dummy task: inspect a file named hello.txt and report whether it contains the text hello from pcodex. Do not modify files."
 ~/.pcodex-alpha/bin/pcodex --help
 ~/.pcodex-alpha/bin/pcodex doctor
-~/.pcodex-alpha/bin/pcodex setup --no-mcp
+~/.pcodex-alpha/bin/pcodex setup
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex status --json
 ~/.pcodex-alpha/bin/pcodex compile --help
@@ -85,7 +85,7 @@ Post-install recommended flow:
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect login flow. Do not modify files."
 ```
 
-`pcodex setup` is the default finishing step. It runs local checks, optional isolated MCP registration, one-step tuning, safe mode selection, and a concise dashboard. Use `pcodex setup --no-mcp` to skip MCP registration and `pcodex setup --json` for automation.
+`pcodex setup` is the default finishing step. It runs local checks, skips tuning and MCP registration, writes safe `on` mode, and prints a concise dashboard. Use `pcodex setup --json` for automation.
 
 `pcodex tune` now runs static generation, validation, and verification by default. `pcodex tune --static-only`, `pcodex tune --validate`, and `pcodex tune --verify` remain available for focused maintenance.
 

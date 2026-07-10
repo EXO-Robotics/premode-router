@@ -2,7 +2,7 @@
 
 Pre-mode Router is a private local context compiler and routing formatter for AI coding agents.
 
-It runs before an agent action to select compact repo context and format a model-facing packet. It is not a local reasoning engine, planner, or replacement for the coding agent. The current Private-Beta path is centered on the V5 `literal_symbol` plugin and the local pCodex wrapper.
+It preserves the exact task, ranks likely repository paths, adds minimal optional roles and anchors, and renders one compact packet for Codex. It is not a local reasoning engine, planner, evidence platform, or replacement for the coding agent.
 
 ## For AI agents
 
@@ -13,6 +13,7 @@ Start with:
 - `AGENTS.md`
 - `docs/FIRST_RUN.md`
 - `docs/PRIVATE_BETA_TESTER_PACKET.md`
+- `docs/CORE_PRODUCT.md`
 
 These files define the current install, setup, validation, benchmark, tuning, and safety boundaries for agents. Do not infer current behavior from historical prompt files. Historical prompts live under `docs/history/` and are not current operating instructions.
 
@@ -20,90 +21,27 @@ These files define the current install, setup, validation, benchmark, tuning, an
 
 Base package version: `v0.2.6.24`.
 
-Current lead command:
+The primary workflow is deliberately narrow:
 
 ```bash
-premode compile --plugin literal_symbol "Fix the failing test"
-```
-
-Explicit repo tuning is available only when a validated local profile is supplied:
-
-```bash
-premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Fix the failing test"
-```
-
-The `literal_symbol` plugin maps to:
-
-```text
---packet-version v5
---packet-variant tool_assisted_anchors_internal
---packet-strategy literal_symbol
-```
-
-`ranked_paths_plus_anchors` remains the fallback and comparison baseline. `literal_symbol_config_gated`, `literal_symbol_collision_filter`, and `literal_symbol_import_rank_json_only` are not defaults.
-
-## What pCodex Is
-
-pCodex is a private local wrapper layer around the lead Pre-mode path. It provides local toggle, compile, run, dry-run, and stdio MCP server commands for routing Codex-created prompts through Pre-mode before local action when explicitly used.
-
-Current pCodex command surface:
-
-```bash
-pcodex install
-pcodex doctor
-pcodex doctor --json
-pcodex first-run
-pcodex first-run --json
-pcodex first-run --advisory --json
 pcodex setup
-pcodex setup --json
-pcodex setup --skip-tune
-pcodex setup --no-mcp
 pcodex status
-pcodex status --json
-pcodex status --advisory
-pcodex status --advisory --json
-pcodex doctor --advisory
-pcodex doctor --advisory --json
-pcodex first-run --advisory
-pcodex first-run --advisory --json
-pcodex on
-pcodex off
-pcodex tuned
-pcodex tuned --profile .premode/tuning/repo_profile.json
-pcodex tune
-pcodex tune --static-only
-pcodex tune --validate
-pcodex tune --verify
-pcodex integrate codex --dry-run
-pcodex integrate codex --write
-pcodex integrate codex --write --with-mcp
-pcodex plugin init --local-marketplace --dry-run
-pcodex plugin init --local-marketplace
-pcodex ui
-pcodex ui --json
-pcodex compile "Fix the failing test"
 pcodex run --dry-run "Fix the failing test"
+pcodex run "Fix the failing test"
+pcodex review --since-compile
+pcodex off
 pcodex cleanup --local-state --dry-run
-pcodex cleanup --local-state --yes
-pcodex mcp-server
 ```
 
-Mode meanings:
+Optional maintenance:
 
-- `off`: raw prompt, no pCodex transform
-- `on`: best safe available pCodex behavior
-- `tuned`: force tuned behavior or fail clearly
+```bash
+pcodex doctor
+```
 
-The explicit effective states are `OFF_RAW`, `ON_GENERALIZED`, `ON_TUNED_VERIFIED`, `TUNED_STRICT`, and `SAFE_PASSTHROUGH`.
+Plain `pcodex setup` is narrow: it skips tuning and MCP registration. For compatibility, normal `on` still activates an existing valid repo-local tuning profile whose verifier verdict is `PASS`; otherwise it uses the generalized authority. Alternate packet formats, tuning maintenance, benchmarks, integrations, plugin scaffolds, MCP, and direct compile controls remain developer or compatibility surfaces.
 
-`on` resolves to effective tuned behavior only when a valid profile exists and `.premode/tuning/VERIFY_RESULTS.json` has verdict `PASS`. Otherwise, `on` falls back to generalized `literal_symbol`. `tuned` remains strict: missing, invalid, or unverified tuned state fails before `pcodex run` launches Codex, and MCP tuned failures return the raw prompt with out-of-band metadata instead of appending a stale packet.
-
-`pcodex setup` is the recommended default configuration path. It runs local checks, optional isolated MCP registration, one-step tuning, safe mode selection, and prints a concise dashboard. Real Codex config mutation remains opt-in only.
-
-`pcodex tune` now runs static generation, validation, and verification by default. The `--static-only`, `--validate`, and `--verify` flags remain available for focused maintenance.
-
-`pcodex status` reports configured mode, effective mode, effective state, tuning status, MCP status, Codex CLI availability, fallback state, local telemetry counters, lockfile status, cache-manifest status, and savings-estimate availability. The savings estimate is local-only and unavailable until enough data exists; it is not a guaranteed or monetary savings claim.
+See [pCodex core product](docs/CORE_PRODUCT.md) for the packet contract and product boundary.
 
 `pcodex status --advisory`, `pcodex doctor --advisory`, and `pcodex first-run --advisory` are read-only/no-write support surfaces. They may inspect existing state and report missing/stale state, but they do not create `.premode/`, refresh caches, write lockfiles, write telemetry/audit/metrics, write temp packets, register MCP, alter Codex config, repair state, or launch Codex. The JSON receipts include `writes_performed=false`, `would_write`, and `would_refresh` fields and are designed to be paste-safe.
 
@@ -127,9 +65,7 @@ Terminal `pcodex` commands remain the primary supported control plane. A custom 
 
 ## Supported Claims
 
-In a bounded local six-prompt same-run matrix, `literal_symbol` reduced derived cache-adjusted input by 17.02% versus standard and 11.68% versus `ranked_paths_plus_anchors`, with zero scope issues and zero model-facing leakage.
-
-This is a measured local same-run matrix result. It is not a universal token-savings guarantee.
+pCodex deterministically locates and structures likely repository paths before Codex runs. Structural packet size observations do not establish downstream token savings or task-quality gains.
 
 ## Unsupported Claims
 
@@ -158,7 +94,7 @@ cd premode-router
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex first-run --json
-~/.pcodex-alpha/bin/pcodex setup --skip-tune --no-mcp
+~/.pcodex-alpha/bin/pcodex setup
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex first-run
 ~/.pcodex-alpha/bin/pcodex first-run --json
@@ -210,7 +146,7 @@ Daily-use starter flow:
 ```bash
 pcodex status
 pcodex first-run --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status --json
 pcodex status --advisory --json
 pcodex first-run --json
@@ -258,7 +194,7 @@ Smoke commands:
 .venv/bin/premode compile --plugin literal_symbol --tuning .premode/tuning/repo_profile.json "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
 .venv/bin/pcodex first-run --json
-.venv/bin/pcodex setup --no-mcp
+.venv/bin/pcodex setup
 .venv/bin/pcodex status
 .venv/bin/pcodex status --json
 .venv/bin/pcodex tune
@@ -324,7 +260,7 @@ premode review-patch --since-compile
 premode benchmark --profile lite
 ```
 
-Estimated savings is a local heuristic that compares the compiled packet to the eligible repo surface. Cacheable-prefix percent measures how much of the remaining packet is positioned for provider prefix caching.
+Packet-size and cache-prefix fields are structural local observations only; they do not establish downstream token savings, cost savings, or task-quality gains.
 
 Use `premode review-patch` for local patch-boundary review. It is a human review aid, not automatic merge approval.
 

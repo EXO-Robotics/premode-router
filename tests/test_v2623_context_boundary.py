@@ -109,7 +109,7 @@ def test_review_patch_uses_context_contract_wording(repo: Path) -> None:
     assert "Allowed:" not in rendered
 
 
-def test_cli_context_only_and_experimental_help(repo: Path, monkeypatch, capsys) -> None:
+def test_cli_context_only_and_primary_help_hides_experiments(repo: Path, monkeypatch, capsys) -> None:
     (repo / "src").mkdir(exist_ok=True)
     (repo / "src" / "app.py").write_text("def value():\n    return 1\n", encoding="utf-8")
     _commit_baseline(repo)
@@ -121,7 +121,9 @@ def test_cli_context_only_and_experimental_help(repo: Path, monkeypatch, capsys)
     assert payload["context_boundary_mode"] == "context_only"
 
     help_text = build_parser().format_help()
-    assert "Experimental/deferred surface" in help_text
+    assert "Experimental/deferred surface" not in help_text
+    for command in ("plugin", "lab", "hook", "mcp-server"):
+        assert command not in help_text
 
 
 def test_context_only_compile_no_record_avoids_premode_writes(tmp_path: Path) -> None:

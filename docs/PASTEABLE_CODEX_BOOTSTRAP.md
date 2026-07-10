@@ -52,7 +52,7 @@ Steps:
    - "$PCODEX_BIN" status --json
 
 5. Run setup without MCP registration:
-   - "$PCODEX_BIN" setup --no-mcp
+   - "$PCODEX_BIN" setup
 
 6. Patch or create `.gitignore` with this bounded section. Append it only once. Do not blanket-ignore all `.premode/`, do not ignore source files, docs, templates, or setup files, and do not delete generated state during bootstrap.
 
@@ -103,7 +103,7 @@ Use terminal commands as the reliable interface:
 pcodex doctor || true
 pcodex status
 pcodex status --json
-pcodex setup --no-mcp
+pcodex setup
 pcodex run --dry-run "Hypothetical task. Do not modify files."
 ```
 
@@ -214,7 +214,7 @@ Use terminal commands as the reliable control plane:
 
 - `pcodex doctor`
 - `pcodex status`
-- `pcodex setup --no-mcp`
+- `pcodex setup`
 - `pcodex on`
 - `pcodex off`
 - `pcodex tuned`
@@ -273,7 +273,7 @@ If anything else changes, stop and inspect the diff.
 - pCodex binary:
 - `pcodex doctor` ran:
 - `pcodex status` ran:
-- `pcodex setup --no-mcp` ran:
+- `pcodex setup` ran:
 - Dry-run completed:
 - `transform_applied`:
 - `codex_launch`:

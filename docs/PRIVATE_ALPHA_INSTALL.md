@@ -10,7 +10,7 @@ For an authorized source checkout, use the source-build installer from the repos
 scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex doctor
-~/.pcodex-alpha/bin/pcodex setup --skip-tune --no-mcp
+~/.pcodex-alpha/bin/pcodex setup
 ~/.pcodex-alpha/bin/pcodex on
 ~/.pcodex-alpha/bin/pcodex status
 ~/.pcodex-alpha/bin/pcodex first-run
@@ -96,7 +96,7 @@ dist_plugin/premode_plugin_literal_symbol-0.1.0-py3-none-any.whl
 .venv/bin/premode compile --plugin literal_symbol --help
 .venv/bin/premode compile --plugin literal_symbol "Inspect hello.txt" --profile lite --json
 .venv/bin/pcodex doctor
-.venv/bin/pcodex setup --skip-tune --no-mcp
+.venv/bin/pcodex setup
 .venv/bin/pcodex status
 .venv/bin/pcodex status --json
 .venv/bin/pcodex first-run
@@ -123,7 +123,7 @@ Do not use `pcodex tuned --advisory`, `pcodex tune --dry-run`, or `pcodex cleanu
 
 `pcodex install` defaults to a dry run. Use `pcodex install --apply` only when you intentionally want to write repo-local pCodex config.
 
-`pcodex setup --skip-tune --no-mcp` is the recommended first-run path after local install. It runs local checks, skips tuning, skips MCP registration, writes safe `on` mode, and keeps the first value local. Use `pcodex setup` when you intentionally want the fuller setup path with one-step tuning. Real Codex config mutation is never the default.
+Plain `pcodex setup` is the recommended first-run path after local install. It runs local checks, skips tuning and MCP registration, writes safe `on` mode, and keeps the first value local. The hidden `--isolated` flag retains the older tuning/isolated-MCP compatibility workflow. Real Codex config mutation is never the default.
 
 Modes:
 
@@ -177,7 +177,7 @@ Start daily use with:
 
 ```bash
 pcodex status
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status --json
 pcodex first-run --json
 pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."

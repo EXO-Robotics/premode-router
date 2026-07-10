@@ -1,10 +1,10 @@
 # AI Start Here
 
-This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, `AGENTS.md`, `docs/FIRST_RUN.md`, and `docs/PRIVATE_BETA_TESTER_PACKET.md` before using historical docs or prompts.
+This is the canonical operating entrypoint for AI agents working in this repo. Read this file, `premode.ai.json`, `AGENTS.md`, `docs/CORE_PRODUCT.md`, `docs/FIRST_RUN.md`, and `docs/PRIVATE_BETA_TESTER_PACKET.md` before using historical docs or prompts.
 
 ## 1. What this repo is
 
-Pre-mode Router is a private local context compiler and routing formatter for AI coding agents. It runs before an agent action to select compact repo context and format a model-facing packet.
+Pre-mode Router is a private deterministic file-routing and context-structure layer for AI coding agents. It preserves the exact task, ranks likely repository paths, and formats one compact packet.
 
 Pre-mode is not a local reasoning engine, task planner, autonomous agent, or replacement for the coding agent.
 
@@ -42,7 +42,7 @@ scripts/install_pcodex_from_source.sh
 export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 pcodex doctor || true
 pcodex first-run --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status
 pcodex first-run
 pcodex first-run --json
@@ -92,7 +92,7 @@ pcodex doctor || true
 pcodex doctor --json
 pcodex status
 pcodex first-run --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
 premode review-patch --since-compile
@@ -104,7 +104,7 @@ Status JSON reports the public mode (`on`, `off`, or `tuned`) and the explicit e
 
 - `OFF_RAW`: no Pre-mode transform.
 - `ON_GENERALIZED`: generalized `literal_symbol` packet.
-- `ON_TUNED_VERIFIED`: `on` mode using a verified repo-local profile.
+- `ON_TUNED_VERIFIED`: compatibility-preserved `on` state when an existing verified repo-local profile is present.
 - `TUNED_STRICT`: strict tuned mode; invalid or unverified tuning fails.
 - `SAFE_PASSTHROUGH`: raw prompt passthrough when LCC cannot safely compile.
 
@@ -136,9 +136,9 @@ premode benchmark --profile lite --json
 premode stress --profile lite --json
 ```
 
-## 12. Tuning workflow
+## 12. Developer tuning compatibility workflow
 
-Tuning selects or validates repo-local defaults. It is not a universal savings claim and is not a live Codex task.
+Tuning is a developer/compatibility surface, not part of the narrow default setup. For compatibility, `on` still activates an existing valid profile with a `PASS` verifier result. Tuning is not a universal savings claim and is not a live Codex task.
 
 Current supported pCodex tuning flow:
 
@@ -273,7 +273,7 @@ pcodex doctor --json
 pcodex status
 pcodex status --json
 pcodex status --advisory --json
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex first-run --json
 pcodex first-run --advisory --json
 pcodex run --dry-run "Hypothetical troubleshooting task. Do not modify files."

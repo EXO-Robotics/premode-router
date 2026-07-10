@@ -11,18 +11,10 @@ from .indexer import index_project
 from .compiler import inspect_prompt, compile_prompt
 from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, attach_snippets_to_files
 from .locator import locate_files
-from .codex_exec import CodexOptions, run_codex
 from .doctor import doctor
-from .fixture import run_fixture
-from .stress import run_universal_stress, format_stress_table
-from .plugin import install_local_plugin
-from .metrics import read_metrics, summarize_savings, last_metric
 from .adapters import detect_projects
-from .hook import main as hook_main
-from .mcp_server import serve as mcp_serve
 from .repo_map import build_repo_map, compact_repo_map_summary, estimate_repo_map_json_bytes, limit_repo_map_files, summarize_repo_map
 from .review_patch import review_patch, format_review_report
-from .benchmark import run_benchmark, format_benchmark_report
 from .launch_safety import RootGuardError, resolve_cli_repo
 from .plugins import PluginAliasError, apply_packet_plugin
 from .tuning import TuningProfileError
@@ -33,6 +25,19 @@ def _print_json(obj) -> None:
 
 
 PACKET_MODE_CHOICES = ["auto", "paths-only", "evidence-snippets", "compact", "selected-paths-only", "selected_paths_only"]
+
+def run_codex(*args, **kwargs):
+    """Compatibility forwarding import without eager developer-module loading."""
+    from .codex_exec import run_codex as implementation
+
+    return implementation(*args, **kwargs)
+
+
+def run_benchmark(*args, **kwargs):
+    """Compatibility forwarding import without eager benchmark-module loading."""
+    from .benchmark import run_benchmark as implementation
+
+    return implementation(*args, **kwargs)
 
 
 def _packet_mode_from_cli(value: str, *, evidence_snippets: bool = False) -> str:
@@ -112,9 +117,16 @@ def _compile_receipt(result: dict, *, out: Path | None, json_out: Path | None) -
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="premode")
+    p = argparse.ArgumentParser(
+        prog="premode",
+        description="Deterministic local repository context routing and maintenance.",
+    )
     p.add_argument("--version", action="version", version=f"premode {__version__}")
-    sub = p.add_subparsers(dest="command", required=True)
+    sub = p.add_subparsers(
+        dest="command",
+        required=True,
+        metavar="{locate,compile,review-patch,doctor}",
+    )
 
     sub.add_parser("init")
 
@@ -136,7 +148,7 @@ def build_parser() -> argparse.ArgumentParser:
     insp.add_argument("prompt")
     insp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
 
-    loc = sub.add_parser("locate")
+    loc = sub.add_parser("locate", help="Rank likely repository paths for an exact task.")
     loc.add_argument("prompt")
     loc.add_argument("--repo", default=None)
     loc.add_argument("--fail-on-root-escalation", action="store_true")
@@ -145,7 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
     loc.add_argument("--no-snippets", action="store_true")
     loc.add_argument("--json", action="store_true")
 
-    comp = sub.add_parser("compile")
+    comp = sub.add_parser("compile", help="Render a deterministic repository context packet.")
     comp.add_argument("prompt")
     comp.add_argument("--repo", default=None, help="Repository to compile. Defaults to the current repo root.")
     comp.add_argument("--fail-on-root-escalation", action="store_true")
@@ -156,8 +168,8 @@ def build_parser() -> argparse.ArgumentParser:
     comp.add_argument("--show-raw", action="store_true")
     comp.add_argument("--use-repo-map", action="store_true", help="Include deterministic repo-map summary and impact hints in the compiled packet.")
     comp.add_argument("--plugin", default=None, help="Resolve packet options from an installed Pre-mode plugin alias.")
-    comp.add_argument("--tuning", default=None, help="Apply a validated pCodex repo tuning profile to internal ranking. Explicit opt-in only.")
-    comp.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help="Compiled packet renderer version. v5 is ranked context only.")
+    comp.add_argument("--tuning", default=None, help=argparse.SUPPRESS)
+    comp.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None, help=argparse.SUPPRESS)
     v5_variants = ["ranked_paths", "ranked_snippets", "primary_tests_only", "top1_plus_tests", "ranked_paths_plus_anchors", "ranked_paths_selective_snippets", "ranked_paths_no_support", "ranked_paths_tests_first", "ranked_paths_top1", "tool_assisted_backbone", "tool_assisted_backbone_no_task_class", "tool_assisted_backbone_no_relations", "tool_assisted_anchors_internal"]
     anchor_strategies = [
         "literal_symbol",
@@ -175,16 +187,16 @@ def build_parser() -> argparse.ArgumentParser:
         "top1_primary",
         "policy_by_prompt_type",
     ]
-    comp.add_argument("--packet-variant", choices=v5_variants, default=None, help="Packet V5 variant. Defaults to ranked_snippets.")
-    comp.add_argument("--packet-strategy", choices=anchor_strategies, default=None, help="Internal V5 anchor strategy for tool_assisted_anchors_internal.")
-    comp.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only", help="Packet detail mode. compact and selected-paths-only are V5 opt-ins.")
-    comp.add_argument("--evidence-snippets", action="store_true", help="Shortcut for --packet-mode evidence-snippets.")
-    comp.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
-    comp.add_argument("--cache-optimized", action="store_true", help="Select cache-aware Packet V3 unless --packet-version v2 is explicitly set.")
-    comp.add_argument("--context-only", action="store_true", help="Compile candidate context and safety boundaries without strong allowed-edit narrowing.")
+    comp.add_argument("--packet-variant", choices=v5_variants, default=None, help=argparse.SUPPRESS)
+    comp.add_argument("--packet-strategy", choices=anchor_strategies, default=None, help=argparse.SUPPRESS)
+    comp.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only", help=argparse.SUPPRESS)
+    comp.add_argument("--evidence-snippets", action="store_true", help=argparse.SUPPRESS)
+    comp.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS, help=argparse.SUPPRESS)
+    comp.add_argument("--cache-optimized", action="store_true", help=argparse.SUPPRESS)
+    comp.add_argument("--context-only", action="store_true", help=argparse.SUPPRESS)
     comp.add_argument("--save", action="store_true", help="Save last_packet artifacts under .premode/out/.")
     comp.add_argument("--no-record", action="store_true", help="Do not write .premode index, audit, metrics, or discovered-command artifacts.")
-    comp.add_argument("--include-packet-debug-metadata", action="store_true", help="Opt in to selector diagnostics in the model-facing packet.")
+    comp.add_argument("--include-packet-debug-metadata", action="store_true", help=argparse.SUPPRESS)
 
     mp = sub.add_parser("map")
     mp.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default=None)
@@ -225,7 +237,7 @@ def build_parser() -> argparse.ArgumentParser:
     cod.add_argument("--no-save", action="store_true", help="Do not write .premode packet, audit, metrics, or default final-output artifacts.")
 
 
-    review = sub.add_parser("review-patch")
+    review = sub.add_parser("review-patch", help="Review changes against the saved context contract.")
     review.add_argument("--against", default="main", help="Base ref to compare against. Defaults to main.")
     review.add_argument("--packet", default=None, help="Saved packet JSON path. Defaults to .premode/out/last_packet.json.")
     review.add_argument("--claims", "--claims-file", dest="claims", default=None, help="Optional agent report/claims file to inspect for validation claims.")
@@ -255,7 +267,7 @@ def build_parser() -> argparse.ArgumentParser:
     bench.add_argument("--json", action="store_true")
     bench.add_argument("--out", default=None, help="Write benchmark JSON report to this path.")
 
-    doc = sub.add_parser("doctor")
+    doc = sub.add_parser("doctor", help="Check local repository and runtime readiness.")
     doc.add_argument("--recommend-profile", action="store_true")
 
     sub.add_parser("run-fixture")
@@ -266,7 +278,7 @@ def build_parser() -> argparse.ArgumentParser:
     stress.add_argument("--out", default=None)
     stress.add_argument("--keep", action="store_true", help="Keep generated fixture repos and include their base path in output.")
 
-    plug = sub.add_parser("plugin", help="Experimental/deferred surface; not part of the primary MVP workflow.")
+    plug = sub.add_parser("plugin")
     plug_sub = plug.add_subparsers(dest="plugin_command", required=True)
     install = plug_sub.add_parser("install-local")
     install.add_argument("--scope", choices=["repo"], default="repo")
@@ -276,7 +288,7 @@ def build_parser() -> argparse.ArgumentParser:
     stats.add_argument("--last", action="store_true")
     stats.add_argument("--json", action="store_true", help="Accepted for compatibility; stats output is JSON by default.")
 
-    lab = sub.add_parser("lab", help="Experimental/deferred surface; not part of the primary MVP workflow.")
+    lab = sub.add_parser("lab")
     lab_sub = lab.add_subparsers(dest="lab_command", required=True)
     compare = lab_sub.add_parser("compare")
     compare.add_argument("prompt")
@@ -295,12 +307,12 @@ def build_parser() -> argparse.ArgumentParser:
     live_token.add_argument("--matrix-seed", type=int, default=None)
     live_token.add_argument("--json", action="store_true")
 
-    hook = sub.add_parser("hook", help="Experimental/deferred surface; not part of the primary MVP workflow.")
+    hook = sub.add_parser("hook")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
     ups = hook_sub.add_parser("user-prompt-submit")
     ups.add_argument("--mode", choices=["strict", "augment"], default="augment")
 
-    sub.add_parser("mcp-server", help="Experimental/deferred surface; not part of the primary MVP workflow.")
+    sub.add_parser("mcp-server")
     return p
 
 
@@ -329,6 +341,8 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(init_project(repo))
         return 0
     if args.command == "setup":
+        from .plugin import install_local_plugin
+
         setup_result = {"init": init_project(repo), "index": index_project(repo, None), "detect": detect_projects(repo), "plugin": None}
         if not args.skip_plugin:
             try:
@@ -487,6 +501,8 @@ def main(argv: list[str] | None = None) -> int:
             print("\n".join(lines))
         return 0
     if args.command == "codex":
+        from .codex_exec import CodexOptions
+
         launch_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         opts = CodexOptions(
             sandbox=args.sandbox,
@@ -534,6 +550,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if result.get("error") else 0
 
     if args.command == "benchmark":
+        from .benchmark import format_benchmark_report
+
         bench_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
         plugin_resolution = _apply_packet_plugin_or_exit(args)
         packet_mode = _packet_mode_from_cli(args.packet_mode)
@@ -578,9 +596,13 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(doctor(repo, args.recommend_profile))
         return 0
     if args.command == "run-fixture":
+        from .fixture import run_fixture
+
         _print_json(run_fixture())
         return 0
     if args.command == "stress":
+        from .stress import format_stress_table, run_universal_stress
+
         out_path = Path(args.out) if args.out else None
         report = run_universal_stress(profile=args.profile, keep=args.keep, out_path=out_path)
         if args.json:
@@ -590,9 +612,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if int(report.get("failed", 0) or 0) == 0 else 1
     if args.command == "plugin":
         if args.plugin_command == "install-local":
+            from .plugin import install_local_plugin
+
             _print_json(install_local_plugin(repo, args.scope))
             return 0
     if args.command == "stats":
+        from .metrics import last_metric, read_metrics, summarize_savings
+
         if args.last:
             _print_json(last_metric(repo))
         elif args.savings:
@@ -640,8 +666,12 @@ def main(argv: list[str] | None = None) -> int:
             return 0
     if args.command == "hook":
         if args.hook_command == "user-prompt-submit":
+            from .hook import main as hook_main
+
             return hook_main(["--mode", args.mode])
     if args.command == "mcp-server":
+        from .mcp_server import serve as mcp_serve
+
         return mcp_serve()
     return 2
 

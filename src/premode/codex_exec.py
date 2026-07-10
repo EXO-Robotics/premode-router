@@ -14,7 +14,6 @@ from .compiler import compile_prompt
 from .config import premode_dir
 from .audit import sha256_text, write_audit
 from .launch_safety import write_external_payload_manifest
-from .live_ledger import normalize_token_usage
 from .metrics import append_metric
 
 
@@ -49,6 +48,7 @@ class CodexOptions:
     private_paths_forbidden: bool = False
     tuning_profile: str | None = None
     child_env: dict[str, str] = field(default_factory=dict)
+    canonical_core_packet: bool = False
 
 
 @dataclass(frozen=True)
@@ -256,6 +256,7 @@ def run_codex(
         context_only=options.context_only,
         record_artifacts=options.record,
         tuning_profile=options.tuning_profile,
+        canonical_core_packet=options.canonical_core_packet,
     )
     packet = compiled["packet"]
     if packet == raw_prompt:
@@ -405,6 +406,8 @@ def run_codex(
 
 
 def _extract_usage_from_jsonl(text: str) -> dict[str, Any] | None:
+    from .live_ledger import normalize_token_usage
+
     usage: dict[str, Any] = {}
     raw_usage_events: list[dict[str, Any]] = []
     schema_sources: set[str] = set()
