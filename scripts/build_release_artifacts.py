@@ -220,14 +220,25 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         setup_payload = json.loads(run(str(smoke_bin / "pcodex"), "setup", "--skip-tune", "--no-mcp", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         status_payload = json.loads(run(str(smoke_bin / "pcodex"), "status", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         before_user_files = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file() and ".premode" not in path.parts}
-        dry_payload = json.loads(run(str(smoke_bin / "pcodex"), "run", "--dry-run", "--json", "Change calculate_total in src/app.py and update tests/test_app.py", cwd=fixture, env=smoke_env))
+        smoke_task = "Change calculate_total in src/app.py and update tests/test_app.py"
+        dry_payload = json.loads(run(str(smoke_bin / "pcodex"), "run", "--dry-run", "--json", smoke_task, cwd=fixture, env=smoke_env))
+        compile_payload = json.loads(run(
+            str(smoke_python), "-c",
+            "import json,sys; from pathlib import Path; from premode.compiler import compile_prompt; "
+            "r=compile_prompt(Path(sys.argv[1]),sys.argv[2],'lite',packet_version='v5',"
+            "packet_variant='tool_assisted_anchors_internal',packet_strategy='literal_symbol',"
+            "canonical_core_packet=True,record_artifacts=False); "
+            "d=r.get('routing_decision') or {}; "
+            "print(json.dumps({'routing_decision':d,'selected_paths':[*(d.get('primary_paths') or []),*(d.get('verification_paths') or []),*(d.get('support_paths') or [])]}))",
+            str(fixture), smoke_task, cwd=temp, env=smoke_env,
+        ))
         after_user_files = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file() and ".premode" not in path.parts}
         if before_user_files != after_user_files:
             raise RuntimeError("installed dry-run mutated non-owned fixture files")
-        selected = dry_payload.get("selected_paths") or []
+        selected = compile_payload.get("selected_paths") or []
         if any(part in str(path).split("/") for path in selected for part in {".git", ".pcodex", ".premode"}):
             raise RuntimeError(f"installed smoke selected runtime state: {selected}")
-        decision = dry_payload.get("routing_decision") if isinstance(dry_payload.get("routing_decision"), dict) else {}
+        decision = compile_payload.get("routing_decision") if isinstance(compile_payload.get("routing_decision"), dict) else {}
         if decision.get("mode") == "abstain" or "src/app.py" not in selected:
             raise RuntimeError(f"installed smoke did not exercise routed default strategy: {decision} {selected}")
         write_json(output / "receipts" / "install-smoke.json", {
