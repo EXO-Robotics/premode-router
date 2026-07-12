@@ -82,10 +82,10 @@ def test_multi_file_cli_wording_is_not_low_when_targets_are_selected(repo: Path)
     )
     _write(
         repo / "cpp" / "src" / "main.cpp",
-        'int main(){ std::cout << "Usage: robotriage command-line output"; std::cerr << "error: missing input"; }\n',
+        'int main(){ std::cout << "Usage: exampleservice command-line output"; std::cerr << "error: missing input"; }\n',
     )
     _write(
-        repo / "ros2" / "robotriage_ros" / "tools" / "export_scenarios_to_csv.py",
+        repo / "ros2" / "exampleservice_ros" / "tools" / "export_scenarios_to_csv.py",
         """
         import argparse
         parser = argparse.ArgumentParser(description="Export command-line CSV output")
@@ -106,7 +106,7 @@ def test_multi_file_cli_wording_is_not_low_when_targets_are_selected(repo: Path)
     assert "tools/run_diagnostic_batch.py" in selected
     assert "tools/create_demo_outputs.py" in selected
     assert "cpp/src/main.cpp" in selected
-    assert "ros2/robotriage_ros/tools/export_scenarios_to_csv.py" in selected
+    assert "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py" in selected
     assert "setup.py" not in _paths(result.primary_files)
     assert "tests/test_cli.py" not in _paths(result.primary_files)
 

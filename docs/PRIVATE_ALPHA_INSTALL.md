@@ -18,7 +18,7 @@ export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex run --dry-run "Hypothetical dummy task: inspect this repo. Do not modify files."
 ```
 
-The source-build installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the checked-out source tree into `~/.pcodex-alpha` by default. It prunes generated/runtime state from the temporary build copy and writes `~/.pcodex-alpha/install_manifest.json`. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source-build installer builds and installs `premode-router`, including the bundled default `literal_symbol` strategy, from the checked-out source tree into `~/.pcodex-alpha` by default. It prunes generated/runtime state from the temporary build copy and writes `~/.pcodex-alpha/install_manifest.json`. It does not publish packages, install pCodex from PyPI, run live Codex tasks, or mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
 ## Optional Host Codex Verification
 
@@ -54,7 +54,7 @@ If this dogfood pass includes focused pytest checks, install the repository dev 
 .venv/bin/python -m pip install -e ".[dev]"
 ```
 
-Install the private literal-symbol plugin locally:
+The separate plugin tree is optional and is used only to test third-party entry-point compatibility:
 
 ```bash
 .venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
@@ -84,8 +84,6 @@ ARTIFACT_MANIFEST.json
 SHA256SUMS.txt
 dist_core/
 dist_core/premode_router-0.2.6.24-py3-none-any.whl
-dist_plugin/
-dist_plugin/premode_plugin_literal_symbol-0.1.0-py3-none-any.whl
 ```
 
 `scripts/install_pcodex_private_alpha.sh` is not an arbitrary wheel-drop installer and is not expected to work from a source-only checkout.
@@ -208,7 +206,7 @@ The pasteable prompts configure repo-local pCodex UX files. Terminal `pcodex` co
 Use an isolated Codex home for lab registration:
 
 ```bash
-export CODEX_HOME=/private/tmp/premode_labs/<lab>/codex_home
+export CODEX_HOME=/example/pcodex-lab/codex_home
 codex mcp add pcodex -- pcodex mcp-server
 codex mcp list
 codex mcp get pcodex

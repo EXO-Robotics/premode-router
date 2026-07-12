@@ -87,4 +87,4 @@ Invalid metadata fails closed when:
 
 ## Private Status
 
-The literal-symbol plugin is private and proprietary. It is intended for local private alpha use only and is not a public package release.
+The literal-symbol compatibility plugin source is publicly visible and proprietary. It is intended for local Private-Beta compatibility testing only and is not a public package release.

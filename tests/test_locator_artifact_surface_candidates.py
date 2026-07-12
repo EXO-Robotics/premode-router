@@ -49,7 +49,7 @@ def _make_docs_repo(repo: Path) -> None:
     _write(
         repo / "README.md",
         """
-        # RoboTriage
+        # ExampleService
 
         ## Setup
         Install locally, then run the diagnostic regression:
@@ -107,14 +107,14 @@ def _make_artifact_repo(repo: Path) -> None:
     _write(repo / "tests" / "run_replay_regression.py", "print('runtime timeout regression passed')\n")
 
 
-def _make_robotriage_cli_repo(repo: Path) -> None:
+def _make_exampleservice_cli_repo(repo: Path) -> None:
     _write(repo / "tools" / "create_demo_outputs.py", "import argparse\np=argparse.ArgumentParser(description='Create demo outputs')\np.add_argument('--out', help='output folder')\nprint('success: demo outputs created')\n")
     _write(repo / "tools" / "run_diagnostic_batch.py", "import argparse\np=argparse.ArgumentParser(description='Run diagnostic batch')\np.add_argument('--input', help='input folder')\nraise SystemExit('error: missing input')\nprint('status: complete')\n")
-    _write(repo / "cpp" / "src" / "main.cpp", '#include <iostream>\nint main(){ std::cerr << "Usage: robotriage_diag --input <csv>"; std::cerr << " error: missing input"; std::cout << "status ok success"; }\n')
-    _write(repo / "ros2" / "robotriage_ros" / "tools" / "export_scenarios_to_csv.py", "import argparse\np=argparse.ArgumentParser(description='Export scenario CSVs')\np.add_argument('--output', help='output folder')\nraise SystemExit('error: missing scenario')\nprint('success: exported scenarios')\n")
-    _write(repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "diagnostic_bridge_node.py", "class DiagnosticBridgeNode: pass\n")
+    _write(repo / "cpp" / "src" / "main.cpp", '#include <iostream>\nint main(){ std::cerr << "Usage: exampleservice_diag --input <csv>"; std::cerr << " error: missing input"; std::cout << "status ok success"; }\n')
+    _write(repo / "ros2" / "exampleservice_ros" / "tools" / "export_scenarios_to_csv.py", "import argparse\np=argparse.ArgumentParser(description='Export scenario CSVs')\np.add_argument('--output', help='output folder')\nraise SystemExit('error: missing scenario')\nprint('success: exported scenarios')\n")
+    _write(repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "diagnostic_bridge_node.py", "class DiagnosticBridgeNode: pass\n")
     _write(repo / "tests" / "test_cli.py", "def test_cli(): pass\n")
-    _write(repo / "setup.py", "setup(name='robotriage')\n")
+    _write(repo / "setup.py", "setup(name='exampleservice')\n")
 
 
 def test_docs_setup_prompt_promotes_docs_to_locator_primary_and_compiler_candidate(repo: Path) -> None:
@@ -162,8 +162,8 @@ def test_report_behavior_verb_does_not_promote_report_artifacts(repo: Path) -> N
     assert {"src/diagnostic_bridge_node.py", "src/actuator_profile.cpp"} & primary
 
 
-def test_robotriage_cli_target_set_remains_stable(repo: Path) -> None:
-    _make_robotriage_cli_repo(repo)
+def test_exampleservice_cli_target_set_remains_stable(repo: Path) -> None:
+    _make_exampleservice_cli_repo(repo)
     _prepare(repo)
     compiled = compile_prompt(repo, CLI_PROMPT, "lite", record=False)
     candidates = set(_paths(compiled["candidate_edit_files"]))
@@ -171,9 +171,9 @@ def test_robotriage_cli_target_set_remains_stable(repo: Path) -> None:
         "tools/create_demo_outputs.py",
         "tools/run_diagnostic_batch.py",
         "cpp/src/main.cpp",
-        "ros2/robotriage_ros/tools/export_scenarios_to_csv.py",
+        "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py",
     } <= candidates
-    assert "ros2/robotriage_ros/robotriage_ros/diagnostic_bridge_node.py" not in candidates
+    assert "ros2/exampleservice_ros/exampleservice_ros/diagnostic_bridge_node.py" not in candidates
     assert "setup.py" not in candidates
     assert not any(path.startswith("tests/") for path in candidates)
 

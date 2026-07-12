@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import tempfile
 from typing import Any
 
 from .sharded_runner import (
@@ -15,7 +16,7 @@ from .sharded_runner import (
 )
 
 
-DEFAULT_ARTIFACT_ROOT = Path("/private/tmp/premode_labs/lab_7_3ab_measurement_harness_repair")
+DEFAULT_ARTIFACT_ROOT = Path(tempfile.gettempdir()) / "premode_labs" / "measurement_harness"
 DEFAULT_PROMPTS = [
     "click_shell_completion_runtime",
     "yargs_validation_test_only",
@@ -83,7 +84,7 @@ def _default_public_matrix_units(repeat: int) -> list[dict[str, Any]]:
                     "packet_variant": packet_variant,
                     "repeat": repeat_index,
                     "raw_task_hash": raw_task_hash,
-                    "fixture_source": f"/private/tmp/premode_public_fixtures/{prompt_id}",
+                    "fixture_source": f"/example/public_fixtures/{prompt_id}",
                 })
     return units
 

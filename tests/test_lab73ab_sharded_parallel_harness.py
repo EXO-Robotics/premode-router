@@ -29,7 +29,7 @@ def _units(count: int = 6) -> list[dict[str, object]]:
             "packet_variant": "ranked_paths" if index % 2 else None,
             "repeat": 1,
             "raw_task_hash": f"hash-{index}",
-            "fixture_source": f"/private/tmp/public_fixtures/repo_{index}",
+            "fixture_source": f"/example/public_fixtures/repo_{index}",
         }
         for index in range(count)
     ]
@@ -114,7 +114,7 @@ def test_duplicate_run_ids_and_private_fixture_paths_are_rejected(tmp_path: Path
         build_run_plan(duplicate, config)
 
     private_unit = _units(1)[0]
-    private_unit["fixture_source"] = "/Users/example/Documents/New project/GoldpineValley-iOS"
+    private_unit["fixture_source"] = "/example/private-project-fixture"
     with pytest.raises(ValueError, match="private fixture"):
         build_run_plan([private_unit], config)
 

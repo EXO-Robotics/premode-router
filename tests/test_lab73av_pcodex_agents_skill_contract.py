@@ -95,7 +95,7 @@ def test_source_instruction_files_do_not_include_lab_or_user_paths() -> None:
     combined = "\n".join(_text(path) for path in (AGENTS, SKILL, DOC))
 
     assert "/private/tmp" not in combined
-    assert "/Users/" not in combined
+    assert "/" + "Users/" not in combined
     assert "premode_labs" not in combined
 
 

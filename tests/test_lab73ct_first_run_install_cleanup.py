@@ -138,7 +138,8 @@ def test_source_install_manifest_schema_records_provenance(tmp_path: Path) -> No
     assert validated["source_head"]
     assert validated["source_dirty"] is False
     assert validated["console_scripts"] == ["premode", "pcodex"]
-    assert validated["plugin_packages"] == ["premode-plugin-literal-symbol"]
+    assert validated["plugin_packages"] == []
+    assert validated["builtin_strategies"] == ["literal_symbol"]
     assert validated["files_installed_count"] >= 1
     assert validated["provenance_status"] == "clean_source"
 
@@ -162,6 +163,14 @@ def test_source_installer_excludes_generated_runtime_and_lab_state() -> None:
         assert should_exclude_source_install_path(path), path
     for path in included:
         assert not should_exclude_source_install_path(path), path
+
+
+def test_legacy_v1_install_manifest_remains_readable(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    manifest = build_install_manifest(install_root=tmp_path / "install", source_repo=repo)
+    manifest.pop("builtin_strategies")
+    validated = validate_install_manifest(manifest)
+    assert validated["builtin_strategies"] == []
 
 
 def test_cleanup_dry_run_lists_only_generated_local_state_and_does_not_delete(tmp_path: Path, monkeypatch: Any) -> None:

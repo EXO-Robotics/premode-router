@@ -81,7 +81,7 @@ Do not claim:
 
 ## Private Status
 
-This repository and the literal-symbol plugin package are private and proprietary. Nothing here has been published to PyPI or another external registry. Access to the repository does not grant permission to use, copy, publish, distribute, commercialize, host, train on, or sublicense the software.
+This repository is publicly visible but remains proprietary, and the literal-symbol compatibility package is not a public registry release. Nothing here has been published to PyPI or another external registry. Source visibility does not grant permission to use, copy, publish, distribute, commercialize, host, train on, or sublicense the software.
 
 ## Source Install And First Run
 
@@ -102,7 +102,7 @@ export PATH="$HOME/.pcodex-alpha/bin:$PATH"
 ~/.pcodex-alpha/bin/pcodex cleanup --local-state --dry-run
 ```
 
-The source installer builds and installs `premode-router` and `premode-plugin-literal-symbol` from the local checkout into `~/.pcodex-alpha` by default. It verifies the installed `pcodex` help, first-run, cleanup, and unknown-command fail-closed surface. It does not publish packages, does not install from PyPI for the pCodex packages, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
+The source installer builds and installs `premode-router`, including its bundled `literal_symbol` default strategy, from the local checkout into `~/.pcodex-alpha` by default. It verifies the installed `pcodex` help, first-run, cleanup, and unknown-command fail-closed surface. It does not publish packages, does not install pCodex from PyPI, does not run live Codex tasks, and does not mutate real Codex config unless `--real-codex-registration` is passed explicitly.
 
 Current install means the source install above or the development editable install below. Future public package installation, such as `pipx install premode-router`, is not active unless package publication exists.
 
@@ -112,7 +112,7 @@ The legacy private-alpha bundle installer is separate:
 scripts/install_pcodex_private_alpha.sh --artifact-root /path/to/pcodex-private-alpha-v0.3.0
 ```
 
-That bundle installer requires the prepared `dist_core/` and `dist_plugin/` wheel artifacts for that bundle and is not expected to work from a source-only checkout.
+That legacy bundle installer requires the prepared core wheel for that bundle and is not expected to work from a source-only checkout. Older external strategy wheels remain compatibility inputs, not a requirement for the default strategy.
 
 ## Fastest repo bootstrap
 
@@ -167,8 +167,9 @@ Python >=3.11 is required. macOS system Python may be too old; Python 3.9 will n
 ```bash
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
+
+The core editable install includes the default `literal_symbol` strategy. Install the separate plugin tree only when testing third-party entry-point compatibility.
 
 For local pytest checks in a fresh development checkout, install the repository dev extra:
 

@@ -13,7 +13,7 @@ pCodex is a local context compiler wrapper. It does not replace Codex, does not 
 
 Codex CLI is needed for real runs. It is not needed to view the receipt or run local dry-run preflight.
 
-For a Private-Beta checkout, SSH clone requires GitHub SSH access to the private repository. HTTPS clone is an approved fallback when SSH reports `Permission denied (publickey)`. Do not print tokens or change SSH keys during dogfood; record the SSH failure and proceed with HTTPS.
+For a Private-Beta checkout, use the public HTTPS repository URL. The source is publicly visible but proprietary; no private-repository credential or SSH-key setup is required.
 
 ## Install From Current Source
 

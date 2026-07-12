@@ -15,7 +15,7 @@ from premode.compiler import compile_prompt
 
 
 RAW_PROMPT = "Hypothetical dummy task: inspect login flow. Do not modify files."
-MODEL_FACING_SECTIONS = ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"]
+MODEL_FACING_SECTIONS = ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY"]
 
 
 LITERAL_SYMBOL_KWARGS = {
@@ -85,19 +85,24 @@ def _isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _packet(task: str, marker: str = "generalized") -> str:
     return (
-        "PREMODE_CONTEXT_PACKET_V5\n"
-        "schema: ranked-paths-plus-anchors\n"
-        "<TASK>\n"
+        "TASK\n"
         f"{task}\n"
-        "</TASK>\n"
-        "<PRIMARY_FILES>\n"
-        f"1. src/auth/login.py\n   anchors: symbol=login_user marker={marker}\n"
-        "</PRIMARY_FILES>\n"
-        "<RELATED_TESTS>\n"
-        "1. tests/test_login.py\n   anchors: test_name=test_login_user\n"
-        "</RELATED_TESTS>\n"
-        "<END_PREMODE_CONTEXT_PACKET_V5>\n"
+        "LIKELY FILES\n\nPRIMARY\n\n* src/auth/login.py\n\n"
+        "VERIFY\n\n* tests/test_login.py\n\n"
+        "Start with these files. Expand only when required by the task.\n"
     )
+
+
+def _decision() -> dict[str, Any]:
+    return {
+        "schema_version": "routing-decision.v1", "mode": "narrow", "confidence": "high",
+        "primary_paths": ["src/auth/login.py"], "verification_paths": ["tests/test_login.py"], "support_paths": [],
+        "ambiguity_indicators": [], "decision_reasons": ["fixture"],
+        "candidate_provenance": [
+            {"schema_version": "candidate-evidence.v1", "path": "src/auth/login.py", "role": "primary", "rank": 0, "score": 10, "confidence": "high", "matched_signals": ["explicit_path:src/auth/login.py"], "provenance": ["fixture"]},
+            {"schema_version": "candidate-evidence.v1", "path": "tests/test_login.py", "role": "verification", "rank": 1, "score": 8, "confidence": "high", "matched_signals": ["source_test_relation:src/auth/login.py"], "provenance": ["fixture"]},
+        ],
+    }
 
 
 def _runner(calls: list[dict[str, Any]]):
@@ -127,6 +132,7 @@ def _runner(calls: list[dict[str, Any]]):
             "packet_sha256": "sha-tuned" if tuning_profile else "sha-generalized",
             "model_facing_sections": MODEL_FACING_SECTIONS,
             "tuning_profile": tuning_profile,
+            "routing_decision": _decision(),
         }
 
     return compile_runner
@@ -287,9 +293,10 @@ def test_transform_on_preserves_raw_prompt_and_appends_generalized_packet(tmp_pa
 
     assert result.mode == "on"
     assert result.transform_applied is True
-    assert result.transformed_prompt.startswith(RAW_PROMPT)
-    assert "PREMODE_CONTEXT_PACKET_V5" in result.transformed_prompt
-    assert "marker=generalized" in result.transformed_prompt
+    assert result.transformed_prompt.startswith("TASK\n")
+    assert RAW_PROMPT in result.transformed_prompt
+    assert result.transformed_prompt.startswith("TASK\n")
+    assert "* src/auth/login.py" in result.transformed_prompt
     assert calls[0]["tuning_profile"] is None
 
 
@@ -310,8 +317,9 @@ def test_transform_tuned_preserves_raw_prompt_and_uses_tuning_profile(tmp_path: 
     assert result.mode == "tuned"
     assert result.transform_applied is True
     assert result.tuning_profile == ".premode/tuning/repo_profile.json"
-    assert result.transformed_prompt.startswith(RAW_PROMPT)
-    assert "marker=tuned" in result.transformed_prompt
+    assert result.transformed_prompt.startswith("TASK\n")
+    assert RAW_PROMPT in result.transformed_prompt
+    assert "* src/auth/login.py" in result.transformed_prompt
     assert calls[0]["tuning_profile"] == ".premode/tuning/repo_profile.json"
 
 
@@ -375,7 +383,7 @@ def test_mcp_server_call_mirrors_mode_aware_transform(tmp_path: Path, monkeypatc
 
     result = pcodex_mcp_server.call_tool(
         "pcodex_transform_subagent_prompt",
-        {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+        {"subagent_prompt": RAW_PROMPT, "dry_run": True},
         cwd=repo,
         compile_runner=_runner(calls),
     )["structuredContent"]
@@ -417,8 +425,8 @@ def test_model_facing_packet_boundary_and_forbidden_terms_remain_unchanged(tmp_p
         compile_runner=_runner([]),
     )
 
-    assert "\n\n---\n\nPREMODE_CONTEXT_PACKET_V5" in result.transformed_prompt
-    for required in ("<TASK>", "<PRIMARY_FILES>", "<RELATED_TESTS>", "<END_PREMODE_CONTEXT_PACKET_V5>"):
+    assert result.transformed_prompt.startswith("TASK\n")
+    for required in ("TASK\n", "LIKELY FILES", "PRIMARY", "VERIFY"):
         assert required in result.transformed_prompt
     for forbidden in (
         "TASK_CLASS",

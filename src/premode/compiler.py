@@ -1586,11 +1586,11 @@ def _swiftui_tutorial_scope_score(path: str) -> int:
     if not lower.endswith(".swift"):
         return 0
     score = 0
-    if lower in {
-        "goldpinevalley/views/bottombarview.swift",
-        "goldpinevalley/views/mainmenuview.swift",
-        "goldpinevalley/viewmodels/gamesessionviewmodel+homesteadnavigation.swift",
-    }:
+    if lower.endswith((
+        "/views/bottombarview.swift",
+        "/views/mainmenuview.swift",
+        "/viewmodels/gamesessionviewmodel+homesteadnavigation.swift",
+    )):
         score += 1000
     in_views = "/views/" in lower
     in_viewmodels = "/viewmodels/" in lower
@@ -4396,7 +4396,6 @@ def select_context(
             "decision_count": len(candidate_policy_decisions),
             "denied": [
                 {
-                    "path": decision.raw_path,
                     "normalized_path": decision.normalized_path,
                     "classification": decision.classification.value,
                     "reason": decision.reason,
@@ -5736,41 +5735,13 @@ def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, st
     primary = [str(path) for path in routing.get("primary_paths") or [] if path]
     related = [str(path) for path in routing.get("verification_paths") or [] if path]
     support = [str(path) for path in routing.get("support_paths") or [] if path]
-    anchors_by_path = backbone.get("anchors_by_path") if isinstance(backbone.get("anchors_by_path"), dict) else {}
     exact_task = str(manifest.get("canonical_user_prompt") or "")
     if routing.get("mode") == "abstain":
         return exact_task, "", exact_task
-    task_terms = {term.casefold() for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", exact_task)}
-    locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
-    include_optional_structure = str(locator.get("confidence") or "low") in {"high", "medium"}
-
     def item(path: str, role: str) -> CorePath:
-        if not include_optional_structure:
-            return CorePath(path=path)
-        anchors = anchors_by_path.get(path) if isinstance(anchors_by_path.get(path), list) else []
-        rendered_anchor = None
-        for anchor in anchors:
-            if not isinstance(anchor, dict):
-                continue
-            anchor_type = str(anchor.get("anchor_type") or anchor.get("type") or "").strip()
-            anchor_text = _v5_anchor_value(anchor.get("anchor_text") or anchor.get("value"))
-            source = str(anchor.get("source") or "").strip()
-            quality = float(anchor.get("quality") or 0.0)
-            if not anchor_type or len(anchor_text) < 2 or quality < 0.6:
-                continue
-            if not bool(anchor.get("model_facing_allowed", True)):
-                continue
-            if source not in {"locator_signal", "symbol_scan", "test_scan", "config_scan", "heading_scan"}:
-                continue
-            if anchor_type not in {"symbol", "test_name", "config_section", "package_name", "heading", "import_name", "cli_flag"}:
-                continue
-            if anchor_type == "cli_flag" and anchor_text.startswith("-") and not anchor_text.startswith("--"):
-                continue
-            if anchor_type in {"symbol", "import_name", "cli_flag"} and anchor_text.casefold().lstrip("-") not in task_terms:
-                continue
-            rendered_anchor = f"{anchor_type}={anchor_text}"
-            break
-        return CorePath(path=path, role=role, anchor=rendered_anchor)
+        # The public canonical packet is a deterministic projection of the
+        # validated routing decision.  Internal anchors remain diagnostic-only.
+        return CorePath(path=path, role=role)
 
     items = [item(path, "primary") for path in primary]
     items.extend(item(path, "verification") for path in related)

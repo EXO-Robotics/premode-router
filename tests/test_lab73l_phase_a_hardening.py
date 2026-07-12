@@ -29,7 +29,7 @@ def _write(path: Path, text: str) -> None:
 
 def test_scaffold_meta_terms_do_not_become_locator_terms_but_domain_survives(repo: Path) -> None:
     _write(
-        repo / "src" / "rich_cli" / "__main__.py",
+        repo / "src" / "example_cli" / "__main__.py",
         """
 import argparse
 
@@ -61,7 +61,7 @@ def build_parser():
 def test_evidence_prompt_terms_filter_scaffold_but_keep_literals_flags_paths_and_symbols() -> None:
     pairs = _prompt_terms(
         'Lab benchmark constraints validation repository prompt "Export ready" '
-        "--theme TodayPlanView src/rich_cli/__main__.py"
+        "--theme TodayPlanView src/example_cli/__main__.py"
     )
     signals = {signal for signal, _term in pairs}
 
@@ -71,7 +71,7 @@ def test_evidence_prompt_terms_filter_scaffold_but_keep_literals_flags_paths_and
     assert 'quoted_literal:Export ready' in signals
     assert "option_flag:--theme" in signals
     assert "symbol:TodayPlanView" in signals
-    assert "path:src/rich_cli/__main__.py" in signals
+    assert "path:src/example_cli/__main__.py" in signals
 
 
 def test_snippet_line_matching_is_token_aware_for_words_and_substring_for_code_terms() -> None:
@@ -80,7 +80,7 @@ def test_snippet_line_matching_is_token_aware_for_words_and_substring_for_code_t
     assert _line_matches("the theme value is listed here", "theme")
     assert _line_matches('parser.add_argument("--theme")', "--theme")
     assert _line_matches("struct TodayPlanView: View {}", "TodayPlanView")
-    assert _line_matches("open src/rich_cli/__main__.py", "src/rich_cli/__main__.py")
+    assert _line_matches("open src/example_cli/__main__.py", "src/example_cli/__main__.py")
 
 
 def test_scaffold_terms_do_not_create_lab_snippet_matches(repo: Path) -> None:
@@ -98,7 +98,7 @@ def test_scaffold_terms_do_not_create_lab_snippet_matches(repo: Path) -> None:
 
 def test_clean_narrow_cli_auto_selects_paths_only_without_loose_scaffold_escalation(repo: Path) -> None:
     _write(
-        repo / "src" / "rich_cli" / "__main__.py",
+        repo / "src" / "example_cli" / "__main__.py",
         """
 import argparse
 
@@ -108,13 +108,13 @@ def build_parser():
     return parser
 """,
     )
-    _write(repo / "tests" / "test_cli.py", "from rich_cli.__main__ import build_parser\n")
+    _write(repo / "tests" / "test_cli.py", "from example_cli.__main__ import build_parser\n")
     _index(repo)
 
     result = compile_v3_scaffold_free(
         repo,
-        "Clarify the --theme CLI help text in src/rich_cli/__main__.py.",
-        repo / "snapshots" / "rich_cli",
+        "Clarify the --theme CLI help text in src/example_cli/__main__.py.",
+        repo / "snapshots" / "example_cli",
         harness_constraints="Do not stage changes. Do not commit.",
         snippet_budget_tokens=600,
     )
@@ -124,14 +124,14 @@ def build_parser():
     assert "review-patch" not in result["packet"]
     snapshot = result["stdin_snapshot"]
     assert Path(snapshot["raw_task_prompt_path"]).read_text(encoding="utf-8").startswith("Clarify the --theme")
-    assert Path(snapshot["packet_compile_input_task_path"]).read_text(encoding="utf-8") == "Clarify the --theme CLI help text in src/rich_cli/__main__.py."
+    assert Path(snapshot["packet_compile_input_task_path"]).read_text(encoding="utf-8") == "Clarify the --theme CLI help text in src/example_cli/__main__.py."
     assert Path(snapshot["final_codex_stdin_path"]).exists()
-    assert len(Path(repo / "snapshots" / "rich_cli" / "final_codex_stdin.sha256").read_text(encoding="utf-8").strip()) == 64
+    assert len(Path(repo / "snapshots" / "example_cli" / "final_codex_stdin.sha256").read_text(encoding="utf-8").strip()) == 64
 
 
 def test_command_ledger_extracts_reads_memory_and_xcode_actuals_from_argv() -> None:
     events = [
-        {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'rg \"Lab 7.3J\" /Users/example/.codex/memories/MEMORY.md'", "exit_code": 0, "status": "completed", "stdout": "Lab 7.3J\n"}},
+        {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'rg \"Lab 7.3J\" /example/codex/memories/MEMORY.md'", "exit_code": 0, "status": "completed", "stdout": "Lab 7.3J\n"}},
         {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'rg \"theme\" src tests'", "exit_code": 0, "status": "completed", "stdout": "src/app.py:1:theme\n"}},
         {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'sed -n 1,20p src/app.py'", "exit_code": 0, "status": "completed"}},
         {"type": "item.completed", "item": {"type": "command_execution", "command": "/bin/zsh -lc 'nl -ba src/view.py'", "exit_code": 0, "status": "completed"}},

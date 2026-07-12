@@ -90,18 +90,24 @@ def _corrupt_profile(profile: Path) -> None:
 
 def _packet(task: str, marker: str) -> str:
     return (
-        "PREMODE_CONTEXT_PACKET_V5\n"
-        "<TASK>\n"
+        "TASK\n"
         f"{task}\n"
-        "</TASK>\n"
-        "<PRIMARY_FILES>\n"
-        f"1. src/auth/login.py\n   anchors: symbol=login_user marker={marker}\n"
-        "</PRIMARY_FILES>\n"
-        "<RELATED_TESTS>\n"
-        "1. tests/test_login.py\n   anchors: test_name=test_login_user\n"
-        "</RELATED_TESTS>\n"
-        "<END_PREMODE_CONTEXT_PACKET_V5>\n"
+        "LIKELY FILES\n\nPRIMARY\n\n* src/auth/login.py\n\n"
+        "VERIFY\n\n* tests/test_login.py\n\n"
+        "Start with these files. Expand only when required by the task.\n"
     )
+
+
+def _decision() -> dict[str, Any]:
+    return {
+        "schema_version": "routing-decision.v1", "mode": "narrow", "confidence": "high",
+        "primary_paths": ["src/auth/login.py"], "verification_paths": ["tests/test_login.py"], "support_paths": [],
+        "ambiguity_indicators": [], "decision_reasons": ["fixture"],
+        "candidate_provenance": [
+            {"schema_version": "candidate-evidence.v1", "path": "src/auth/login.py", "role": "primary", "rank": 0, "score": 10, "confidence": "high", "matched_signals": ["explicit_path:src/auth/login.py"], "provenance": ["fixture"]},
+            {"schema_version": "candidate-evidence.v1", "path": "tests/test_login.py", "role": "verification", "rank": 1, "score": 8, "confidence": "high", "matched_signals": ["source_test_relation:src/auth/login.py"], "provenance": ["fixture"]},
+        ],
+    }
 
 
 def _runner(calls: list[dict[str, Any]]):
@@ -124,6 +130,7 @@ def _runner(calls: list[dict[str, Any]]):
             "packet_sha256": "sha-tuned" if tuning_profile else "sha-generalized",
             "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
             "tuning_profile": tuning_profile,
+            "routing_decision": _decision(),
         }
 
     return compile_runner
@@ -280,7 +287,7 @@ def test_mcp_transform_on_pass_uses_tuned_packet(tmp_path: Path, monkeypatch: py
     assert result.mode == "on"
     assert result.effective_mode == "tuned"
     assert result.tuning_profile == ".premode/tuning/repo_profile.json"
-    assert "marker=tuned" in result.transformed_prompt
+    assert "* src/auth/login.py" in result.transformed_prompt
     assert calls[0]["tuning_profile"] == ".premode/tuning/repo_profile.json"
 
 
@@ -307,7 +314,7 @@ def test_mcp_transform_on_invalid_tuning_falls_back_to_generalized_packet(
     assert result.transform_applied is True
     assert result.metadata["fallback"]["active"] is True
     assert calls[0]["tuning_profile"] is None
-    assert "marker=generalized" in result.transformed_prompt
+    assert "* src/auth/login.py" in result.transformed_prompt
 
 
 def test_mcp_transform_tuned_invalid_returns_raw_prompt_with_metadata(
@@ -420,6 +427,6 @@ def test_model_facing_packet_and_compile_invariants_remain_unchanged(
     assert "PREMODE_CONTEXT_PACKET_V5" in generalized["packet"]
     assert "PREMODE_CONTEXT_PACKET_V5" in tuned["packet"]
     assert "tuning_profile_diagnostics" not in tuned["packet"]
-    assert "\n\n---\n\nPREMODE_CONTEXT_PACKET_V5" in result.transformed_prompt
+    assert result.transformed_prompt.startswith("TASK\n")
     for forbidden in ("TASK_CLASS", "SUPPORT_RELATIONS", "diagnostics", "CONFIDENCE", "VALIDATION", "COMMANDS", "DO_NOT_EDIT"):
         assert forbidden not in result.transformed_prompt

@@ -4,6 +4,7 @@ import json
 import math
 import statistics
 import subprocess
+import tempfile
 from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any
@@ -11,9 +12,10 @@ from typing import Any
 from .live_ledger import parse_command_ledger_from_jsonl
 from .review_patch import review_patch
 
-LAB_73H_ROOT = Path("/private/tmp/premode_labs/lab_7_3h_clean_auto_live")
-LAB_73I_ROOT = Path("/private/tmp/premode_labs/lab_7_3i_validation_claims_command_audit")
-LAB_73J_ROOT = Path("/private/tmp/premode_labs/lab_7_3j_parallel_multi_prompt_cache_harness")
+_LAB_ROOT = Path(tempfile.gettempdir()) / "premode_labs"
+LAB_73H_ROOT = _LAB_ROOT / "clean_auto_live"
+LAB_73I_ROOT = _LAB_ROOT / "validation_claims_command_audit"
+LAB_73J_ROOT = _LAB_ROOT / "parallel_multi_prompt_cache_harness"
 
 PROTECTED_BRANCH_PATTERNS = (
     "main",
@@ -82,7 +84,7 @@ def run_lab73i(
         "claims_dir": str(claims_dir),
         "lanes": lane_results,
         "comparisons": compare_standard_auto(lane_results),
-        "robotriage_auto_loss_inference": infer_robotriage_auto_loss(lane_results),
+        "exampleservice_auto_loss_inference": infer_exampleservice_auto_loss(lane_results),
         "harness": harness,
         "branch_cleanup": cleanup,
     }
@@ -236,12 +238,12 @@ def compare_standard_auto(lanes: dict[str, Any]) -> dict[str, Any]:
     return comparisons
 
 
-def infer_robotriage_auto_loss(lanes: dict[str, Any]) -> dict[str, Any]:
-    standard = lanes.get("robotriage_standard") or {}
-    auto = lanes.get("robotriage_auto") or {}
+def infer_exampleservice_auto_loss(lanes: dict[str, Any]) -> dict[str, Any]:
+    standard = lanes.get("exampleservice_standard") or {}
+    auto = lanes.get("exampleservice_auto") or {}
     delta = _optional_delta(auto.get("cache_adjusted_input_tokens"), standard.get("cache_adjusted_input_tokens"))
     if delta is None or delta <= 0:
-        return {"inference": "not_applicable", "evidence": "robotriage auto did not lose on cache-adjusted input"}
+        return {"inference": "not_applicable", "evidence": "exampleservice auto did not lose on cache-adjusted input"}
     return {
         "inference": "unclear_but_packet_selection_is_unlikely_primary",
         "confidence": "low_to_medium",
@@ -336,24 +338,24 @@ def build_lab73j_prompts(metadata: dict[str, Any]) -> dict[str, list[dict[str, A
     tasks = metadata.get("tasks") if isinstance(metadata.get("tasks"), dict) else {}
     canaries = {repo: str((tasks.get(repo) or {}).get("prompt") or "") for repo in tasks}
     prompt_sets = {
-        "robotriage": [
-            ("canary", canaries.get("robotriage") or "Improve CLI wording for the diagnostic demo flow without changing behavior.", "canary"),
+        "exampleservice": [
+            ("canary", canaries.get("exampleservice") or "Improve CLI wording for the diagnostic demo flow without changing behavior.", "canary"),
             ("narrow_obvious_file_task", "Clarify one help sentence in tools/run_diagnostic_batch.py without changing command behavior.", "narrow"),
             ("ambiguous_multi_surface_task", "Improve diagnostic output wording where users see both batch output and demo output summaries.", "ambiguous"),
             ("docs_help_copy_task", "Update README wording that describes running the demo outputs, without touching runtime code.", "docs"),
             ("validation_test_related_task", "Add or adjust lightweight regression wording around diagnostic batch validation without changing classifications.", "validation"),
             ("support_context_heavy_task", "Explain how generated sample data, expected classifications, and report output relate in the portfolio evidence flow.", "support"),
         ],
-        "goldpine": [
-            ("canary", canaries.get("goldpine") or "Improve Homestead next-action clarity from the Today Plan or Homestead surface.", "canary"),
+        "examplegame": [
+            ("canary", canaries.get("examplegame") or "Improve Homestead next-action clarity from the Today Plan or Homestead surface.", "canary"),
             ("narrow_obvious_file_task", "Clarify one visible next-action label in the Today Plan view.", "narrow"),
             ("ambiguous_multi_surface_task", "Improve the player-facing Homestead guidance that may appear in both view and view-model surfaces.", "ambiguous"),
             ("docs_help_copy_task", "Update handoff documentation describing the Homestead next-action polish scope.", "docs"),
             ("validation_test_related_task", "Add a source-level parse-safe check plan for touched Swift UI files without running Xcode.", "validation"),
             ("support_context_heavy_task", "Trace how Today Plan, Homestead navigation, and report-line context connect before choosing edit files.", "support"),
         ],
-        "rich_cli": [
-            ("canary", canaries.get("rich_cli") or "Improve CLI help text for choosing an output theme.", "canary"),
+        "example_cli": [
+            ("canary", canaries.get("example_cli") or "Improve CLI help text for choosing an output theme.", "canary"),
             ("narrow_obvious_file_task", "Clarify the --theme help text in the CLI entrypoint only.", "narrow"),
             ("ambiguous_multi_surface_task", "Improve theme error/help wording across CLI parsing and any nearby tests.", "ambiguous"),
             ("docs_help_copy_task", "Update README help copy for choosing an output theme.", "docs"),
@@ -627,9 +629,9 @@ def render_lab73i_report(results: dict[str, Any]) -> str:
         "",
         "Proceed with 7.3J only after reviewing `HARNESS_CONFIG.json`; run live lanes later under explicit approval and keep forced controls limited to canaries.",
         "",
-        "## RoboTriage auto-loss inference",
+        "## ExampleService auto-loss inference",
         "",
-        json.dumps(results.get("robotriage_auto_loss_inference"), indent=2, sort_keys=True),
+        json.dumps(results.get("exampleservice_auto_loss_inference"), indent=2, sort_keys=True),
         "",
     ])
     return "\n".join(lines)

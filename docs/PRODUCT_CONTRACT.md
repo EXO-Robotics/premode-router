@@ -4,7 +4,7 @@ Status: source-visible proprietary Private-Beta. This document is the authority 
 
 ## Product promise
 
-pCodex is the Codex CLI product surface for Pre-mode Router. It preserves the user's task, selects likely repository paths reproducibly for identical eligible inputs, configuration, and version, formats a compact V5 packet, and can launch Codex with that packet. The production package is `premode-router`; the production ranking and packet path is the separately packaged `literal_symbol` plugin mapped to packet version `v5`, variant `tool_assisted_anchors_internal`, and strategy `literal_symbol`.
+pCodex is the Codex CLI product surface for Pre-mode Router. It preserves the user's task, selects likely repository paths reproducibly for identical eligible inputs, configuration, and version, formats a compact canonical core packet, and can launch Codex with that packet. The public renderer is `canonical_core_v1`, with `TASK`, `LIKELY FILES`, and role-labelled path sections; internal anchors are diagnostic-only. The production package is `premode-router`; its bundled `literal_symbol` selector retains the internal identifiers packet version `v5` and variant `tool_assisted_anchors_internal`, but those identifiers do not describe the legacy XML renderer or authorize extra model-facing fields. Compatible third-party entry points remain optional extensions and are not required for the default strategy.
 
 The first supported runtime is Python 3.11 or newer on a local source installation, driving Codex CLI through explicit terminal commands. Source installation is documented in `docs/FIRST_RUN.md`. No package-registry release is asserted.
 
@@ -25,11 +25,13 @@ pcodex status
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
 pcodex doctor
-pcodex integrate codex --dry-run
+pcodex review --since-compile
+pcodex off
+pcodex cleanup --local-state --dry-run
 premode review-patch --since-compile
 ```
 
-Supported public pCodex commands are `setup`, `status`, `run`, `doctor`, and `integrate codex`; `premode review-patch` is the currently supported review command. The intended headline commands `pcodex review` and `pcodex uninstall` are not implemented and are therefore recorded gaps, not supported commands. The implemented `pcodex cleanup --local-state` command owns bounded local cleanup but is not a complete uninstaller. `first-run`, `on`, `off`, `tuned`, `tune`, `ui`, and `compile` are advanced compatibility or operator surfaces. MCP, plugin scaffolding, benchmarks, stress tools, labs, hooks, selector identifiers, and tuning internals are not normal public help promises.
+Supported public pCodex commands are `setup`, `status`, `run`, `doctor`, `review`, `off`, and `cleanup`; `premode review-patch` remains the lower-level review command. The intended headline command `pcodex uninstall` is not implemented and is therefore a recorded gap, not a supported command. `cleanup --local-state` owns bounded local cleanup but is not a complete uninstaller. `first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, and `integrate codex` are advanced compatibility or operator surfaces. MCP, plugin scaffolding, benchmarks, stress tools, labs, hooks, selector identifiers, and tuning internals are not normal public help promises.
 
 ## Read and write boundaries
 

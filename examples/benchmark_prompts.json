@@ -57,9 +57,9 @@
       "expected_tests": ["tests/test_v2615_swift_source_recovery.py"]
     },
     {
-      "name": "robotriage_like_diagnostic_tooling",
-      "category": "robotriage_like_diagnostic_tooling",
-      "prompt": "For a RoboTriage-like diagnostic replay tool, improve log parsing and review-patch evidence reporting without touching private repos.",
+      "name": "exampleservice_like_diagnostic_tooling",
+      "category": "exampleservice_like_diagnostic_tooling",
+      "prompt": "For a ExampleService-like diagnostic replay tool, improve log parsing and review-patch evidence reporting without touching private repos.",
       "expected_files": ["src/premode/log_scanner.py", "src/premode/review_patch.py"],
       "expected_tests": ["tests/test_v260_review_patch.py"]
     },

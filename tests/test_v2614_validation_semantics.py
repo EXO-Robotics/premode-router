@@ -66,7 +66,8 @@ def test_compile_show_raw_preserves_packet_stdout(monkeypatch, capsys, tmp_path:
 
     assert rc == 0
     stdout = capsys.readouterr().out
-    assert "PREMODE_COMPILED_PACKET" in stdout
+    assert stdout.startswith("Fix src/app.py\n")
+    assert "PREMODE_COMPILED_PACKET" not in stdout
     assert "[raw prompt requested with --show-raw]" in stdout
 
 

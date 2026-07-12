@@ -32,7 +32,7 @@ This is historical dogfood evidence for the source install path. It is not a pro
 
 ## Fresh Private-Beta Tester Notes
 
-Private repository SSH clone requires the tester's GitHub account and local SSH key to have access to `EXO-Robotics/premode-router`. Do not create, print, or modify SSH keys during dogfood. If SSH clone fails with `Permission denied (publickey)`, record that result and continue with the approved HTTPS clone path.
+The repository is publicly visible and proprietary. Use the public HTTPS clone path; do not create, print, or modify SSH keys during dogfood.
 
 ```bash
 git clone https://github.com/EXO-Robotics/premode-router.git
@@ -54,14 +54,15 @@ pcodex run --dry-run --json "Hypothetical dogfood smoke. Do not modify files."
 pcodex cleanup --local-state --dry-run --json
 ```
 
-For development-checkout smoke, install the core package and plugin:
+For development-checkout smoke, install the core package:
 
 ```bash
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
+
+The default `literal_symbol` strategy is bundled. The separate plugin tree is an optional compatibility fixture.
 
 Editable installs may create `src/premode_router.egg-info/`; that is generated packaging metadata and should remain untracked.
 

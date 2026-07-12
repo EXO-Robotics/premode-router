@@ -9,8 +9,8 @@ from premode.indexer import index_project
 from premode.locator import LocateResult
 from premode.context_constraints import classify_path_for_routing
 from premode.routing_safety import classify_path_for_routing as legacy_classify_path_for_routing
-from tests.test_v2615_swift_source_recovery import PROMPT as GOLDPINE_PROMPT
-from tests.test_v2615_swift_source_recovery import _make_goldpine_like_repo
+from tests.test_v2615_swift_source_recovery import PROMPT as EXAMPLE_GAME_PROMPT
+from tests.test_v2615_swift_source_recovery import _make_examplegame_like_repo
 
 
 LOCATOR_DISABLED = LocateResult([], [], [], "low", [], [], ["locator_disabled_for_ab_validation"])
@@ -87,22 +87,22 @@ def test_ab_replayrunner_generic_filename_locator_recovers_symbol_file(repo: Pat
     assert "content:timeout" in signals
 
 
-def test_ab_robotriage_cli_candidate_set_stays_stable(repo: Path) -> None:
+def test_ab_exampleservice_cli_candidate_set_stays_stable(repo: Path) -> None:
     _write(repo / "tools" / "run_diagnostic_batch.py", "import argparse\ndef run_diagnostic_batch(): return 'diagnostic batch CLI wording'\n")
     _write(repo / "tools" / "create_demo_outputs.py", "def create_demo_outputs(): return 'demo outputs created'\n")
-    _write(repo / "ros2" / "robotriage_ros" / "tools" / "export_scenarios_to_csv.py", "def export_scenarios_to_csv(): return 'CSV scenario export output folder'\n")
+    _write(repo / "ros2" / "exampleservice_ros" / "tools" / "export_scenarios_to_csv.py", "def export_scenarios_to_csv(): return 'CSV scenario export output folder'\n")
     _write(repo / "tools" / "build_html_report.py", "import argparse\n")
     _prepare(repo)
 
     before, after = _compile_pair(
         repo,
-        "Update RoboTriage CLI wording for diagnostic batch, CSV scenario export, and demo output creation.",
+        "Update ExampleService CLI wording for diagnostic batch, CSV scenario export, and demo output creation.",
         use_repo_map=True,
     )
     expected = {
         "tools/run_diagnostic_batch.py",
         "tools/create_demo_outputs.py",
-        "ros2/robotriage_ros/tools/export_scenarios_to_csv.py",
+        "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py",
     }
 
     assert expected <= set(_paths(before["candidate_edit_files"]))
@@ -110,19 +110,19 @@ def test_ab_robotriage_cli_candidate_set_stays_stable(repo: Path) -> None:
     assert after["metrics"]["packet_total_tokens"] <= before["metrics"]["packet_total_tokens"] + 50
 
 
-def test_ab_goldpine_swiftui_candidate_set_stays_stable(tmp_path: Path) -> None:
+def test_ab_examplegame_swiftui_candidate_set_stays_stable(tmp_path: Path) -> None:
     repo = tmp_path
-    _make_goldpine_like_repo(repo)
+    _make_examplegame_like_repo(repo)
     _git(repo, "init")
     _prepare(repo)
 
-    before, after = _compile_pair(repo, GOLDPINE_PROMPT, use_repo_map=True)
+    before, after = _compile_pair(repo, EXAMPLE_GAME_PROMPT, use_repo_map=True)
     expected = {
-        "GoldpineValley/Views/MainMenuView.swift",
-        "GoldpineValley/Views/BottomBarView.swift",
-        "GoldpineValley/Views/HomesteadView.swift",
-        "GoldpineValley/Views/HomesteadLocationSceneView.swift",
-        "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
+        "ExampleGame/Views/MainMenuView.swift",
+        "ExampleGame/Views/BottomBarView.swift",
+        "ExampleGame/Views/HomesteadView.swift",
+        "ExampleGame/Views/HomesteadLocationSceneView.swift",
+        "ExampleGame/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
     }
 
     assert expected <= set(_paths(before["candidate_edit_files"]))
@@ -135,7 +135,7 @@ def test_docs_tests_config_ci_and_migrations_are_normal_relevant_artifacts(repo:
     _write(repo / "docs" / "troubleshooting.md", "Troubleshooting install steps.\n")
     _write(repo / "tests" / "test_checkout_flow.py", "def test_checkout_flow(): assert checkout_total() == 10\n")
     _write(repo / "src" / "checkout.py", "def checkout_total(): return 0\n")
-    _write(repo / "pyproject.toml", "[project.scripts]\nrobotriage = 'src.cli:main'\n")
+    _write(repo / "pyproject.toml", "[project.scripts]\nexampleservice = 'src.cli:main'\n")
     _write(repo / "src" / "cli.py", "def main(): pass\n")
     _write(repo / ".github" / "workflows" / "ci.yml", "name: CI\njobs:\n  test:\n    steps:\n      - run: pytest\n")
     _write(repo / "migrations" / "001_add_inventory.sql", "ALTER TABLE inventory ADD COLUMN timeout INTEGER;\n")

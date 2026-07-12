@@ -196,7 +196,7 @@ def test_no_lab_or_user_paths_are_baked_into_product_code() -> None:
     source = Path(pcodex.__file__).read_text(encoding="utf-8")
 
     assert "/private/tmp" not in source
-    assert "/Users/" not in source
+    assert "/" + "Users/" not in source
     assert "premode_labs" not in source
 
 

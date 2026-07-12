@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import sys
+import tempfile
 
 from . import __version__
 from .config import init_project
@@ -294,18 +296,19 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("prompt")
     compare.add_argument("--provider", default="mock")
     compare.add_argument("--model", default=None)
-    live_token = lab_sub.add_parser("live-token-harness", help="Run the standard-vs-enhanced live token harness.")
-    live_token.add_argument("--mode", choices=["dry_run_mock", "live_minimal", "live_matrix"], default="dry_run_mock")
-    live_token.add_argument("--artifact-root", default="/private/tmp/premode_labs/lab_7_3cy_live_token_harness_recovery")
-    live_token.add_argument("--prompt", default=None)
-    live_token.add_argument("--prompt-id", default="disposable_smoke")
-    live_token.add_argument("--model", default=None)
-    live_token.add_argument("--effort", default=None)
-    live_token.add_argument("--fixture-repo", default=None)
-    live_token.add_argument("--task-matrix", default=None)
-    live_token.add_argument("--fixture-root", default=None)
-    live_token.add_argument("--matrix-seed", type=int, default=None)
-    live_token.add_argument("--json", action="store_true")
+    if importlib.util.find_spec("premode.live_token_harness") is not None:
+        live_token = lab_sub.add_parser("live-token-harness", help="Run the standard-vs-enhanced live token harness.")
+        live_token.add_argument("--mode", choices=["dry_run_mock", "live_minimal", "live_matrix"], default="dry_run_mock")
+        live_token.add_argument("--artifact-root", default=str(Path(tempfile.gettempdir()) / "premode_labs" / "live_token_harness"))
+        live_token.add_argument("--prompt", default=None)
+        live_token.add_argument("--prompt-id", default="disposable_smoke")
+        live_token.add_argument("--model", default=None)
+        live_token.add_argument("--effort", default=None)
+        live_token.add_argument("--fixture-repo", default=None)
+        live_token.add_argument("--task-matrix", default=None)
+        live_token.add_argument("--fixture-root", default=None)
+        live_token.add_argument("--matrix-seed", type=int, default=None)
+        live_token.add_argument("--json", action="store_true")
 
     hook = sub.add_parser("hook")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
@@ -450,6 +453,7 @@ def main(argv: list[str] | None = None) -> int:
                 record_artifacts=not args.no_record,
                 include_packet_debug_metadata=args.include_packet_debug_metadata,
                 tuning_profile=Path(args.tuning) if args.tuning else None,
+                canonical_core_packet=True,
             )
         except TuningProfileError as exc:
             print(f"premode: error: {exc}", file=sys.stderr)
@@ -529,6 +533,7 @@ def main(argv: list[str] | None = None) -> int:
             context_only=args.context_only,
             save=not args.no_save,
             record=not args.no_save,
+            canonical_core_packet=True,
         )
         result = run_codex(launch_repo, args.prompt, args.profile, opts)
         _print_json(result)

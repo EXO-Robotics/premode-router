@@ -49,7 +49,7 @@ def _write_packet_contract(repo: Path, contract: dict) -> None:
 
 def test_lane_final_and_harness_claims_write_structured_claims_file(repo: Path) -> None:
     lane = {
-        "task": "robotriage",
+        "task": "exampleservice",
         "lane": "auto",
         "worktree": str(repo),
         "lightweight_validation_results": [
@@ -179,17 +179,17 @@ def test_command_output_path_mentions_do_not_count_as_explicit_file_reads() -> N
 def test_lab73j_harness_config_balances_order_and_limits_forced_controls() -> None:
     metadata = {
         "tasks": {
-            "robotriage": {
-                "baseline": "/tmp/robotriage",
-                "prompt": "canary robotriage",
+            "exampleservice": {
+                "baseline": "/tmp/exampleservice",
+                "prompt": "canary exampleservice",
                 "lanes": {"standard": {"baseline_head": "abc"}, "auto": {"baseline_head": "abc"}},
             },
-            "goldpine": {
-                "baseline": "/tmp/goldpine",
-                "prompt": "canary goldpine",
+            "examplegame": {
+                "baseline": "/tmp/examplegame",
+                "prompt": "canary examplegame",
                 "lanes": {"standard": {"baseline_head": "def"}, "auto": {"baseline_head": "def"}},
             },
-            "rich_cli": {
+            "example_cli": {
                 "baseline": "/tmp/rich",
                 "prompt": "canary rich",
                 "lanes": {"standard": {"baseline_head": "ghi"}, "auto": {"baseline_head": "ghi"}},
@@ -204,7 +204,7 @@ def test_lab73j_harness_config_balances_order_and_limits_forced_controls() -> No
     assert all(run["worktree_path"] for run in config["runs"])
     canary_primary = [
         run for run in config["runs"]
-        if run["repo"] == "robotriage" and run["prompt_id"] == "robotriage_p1" and run["lane"] in {"standard", "v3_auto"}
+        if run["repo"] == "exampleservice" and run["prompt_id"] == "exampleservice_p1" and run["lane"] in {"standard", "v3_auto"}
     ]
     assert len(canary_primary) == 6
     assert any(run["repeat_index"] == 2 and run["lane_order"][0] == "v3_auto" for run in canary_primary)

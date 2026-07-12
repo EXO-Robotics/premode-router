@@ -3,10 +3,13 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+import re
 import tempfile
 from typing import Any
 
 from . import pcodex_bootstrap as pcodex
+from .candidate_policy import CandidateIntent, classify_candidate, is_generated_candidate_path
+from .core_packet import CorePath, render_core_packet
 
 
 CompileRunner = Callable[..., dict[str, Any]]
@@ -39,6 +42,115 @@ def compose_transformed_prompt(subagent_prompt: str, packet: str) -> str:
     if packet.startswith("TASK\n"):
         return packet.rstrip() + "\n"
     return f"{subagent_prompt.rstrip()}\n\n---\n\n{packet.strip()}\n"
+
+
+def _validated_decision_and_packet(
+    project_root: Path,
+    prompt: str,
+    compiled: Mapping[str, Any],
+) -> tuple[dict[str, Any] | None, str | None]:
+    raw = compiled.get("routing_decision")
+    if not isinstance(raw, dict) or raw.get("schema_version") != "routing-decision.v1":
+        return None, None
+    mode = raw.get("mode")
+    confidence = raw.get("confidence")
+    if mode not in {"narrow", "broad", "abstain"} or confidence not in {"low", "medium", "high"}:
+        return None, None
+    roles = (("primary_paths", "primary"), ("verification_paths", "verification"), ("support_paths", "support"))
+    explicit_paths = {
+        path.casefold()
+        for path in re.findall(r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w.-])", prompt)
+    }
+    generated_intent = bool(re.search(r"(?i)\b(generated|vendor|dist|build output|generated code)\b", prompt))
+
+    def intent_for(path: str, role: str) -> CandidateIntent:
+        explicit = path.casefold() in explicit_paths
+        return CandidateIntent(
+            explicit=explicit,
+            generated_required=explicit and (generated_intent or is_generated_candidate_path(path)),
+            support_only=role == "support",
+        )
+    normalized: dict[str, list[str]] = {}
+    seen: set[str] = set()
+    for key, role in roles:
+        values = raw.get(key)
+        if not isinstance(values, (list, tuple)) or any(not isinstance(value, str) for value in values):
+            return None, None
+        normalized[key] = []
+        for value in values:
+            policy = classify_candidate(
+                project_root,
+                value,
+                intent=intent_for(value, role),
+                provenance=("subagent_routing_decision",),
+            )
+            if not policy.admitted or not policy.normalized_path or policy.normalized_path.casefold() in seen:
+                return None, None
+            seen.add(policy.normalized_path.casefold())
+            normalized[key].append(policy.normalized_path)
+    evidence = raw.get("candidate_provenance")
+    if not isinstance(evidence, (list, tuple)) or any(not isinstance(item, dict) for item in evidence):
+        return None, None
+    evidence_paths: set[tuple[str, str]] = set()
+    ranks: set[int] = set()
+    support_relations = ("import_", "imported_by:", "source_test_", "shared_", "option_", "symbol:")
+    for item in evidence:
+        role = item.get("role")
+        path = item.get("path")
+        signals = item.get("matched_signals")
+        provenance = item.get("provenance")
+        rank = item.get("rank")
+        score = item.get("score")
+        if (
+            item.get("schema_version") != "candidate-evidence.v1"
+            or role not in {"primary", "verification", "support"}
+            or not isinstance(path, str)
+            or not isinstance(rank, int) or isinstance(rank, bool) or rank < 0 or rank in ranks
+            or not isinstance(score, int) or isinstance(score, bool)
+            or item.get("confidence") not in {"low", "medium", "high"}
+            or not isinstance(signals, (list, tuple)) or any(not isinstance(value, str) for value in signals)
+            or not isinstance(provenance, (list, tuple)) or any(not isinstance(value, str) for value in provenance)
+        ):
+            return None, None
+        policy = classify_candidate(
+            project_root,
+            path,
+            intent=intent_for(path, str(role)),
+            provenance=("subagent_candidate_evidence",),
+        )
+        if not policy.admitted or not policy.normalized_path:
+            return None, None
+        key = (str(role), policy.normalized_path.casefold())
+        if key in evidence_paths or (role == "support" and not any(signal.startswith(support_relations) for signal in signals)):
+            return None, None
+        ranks.add(rank)
+        evidence_paths.add(key)
+    if mode == "abstain":
+        if any(normalized.values()):
+            return None, None
+        return {**raw, **normalized}, ""
+    budget = 2 if mode == "narrow" else 4
+    selected_evidence = {
+        (role, path.casefold())
+        for key, role in roles
+        for path in normalized[key]
+    }
+    if (
+        not normalized["primary_paths"]
+        or (mode == "narrow" and len(normalized["primary_paths"]) > 2)
+        or len(normalized["support_paths"]) > budget
+        or not selected_evidence.issubset(evidence_paths)
+    ):
+        return None, None
+    items = [
+        CorePath(path=path, role=role)  # type: ignore[arg-type]
+        for key, role in roles
+        for path in normalized[key]
+    ]
+    expected = render_core_packet(prompt, items)
+    if compiled.get("packet") != expected:
+        return None, None
+    return {**raw, **normalized}, expected
 
 
 def transform_subagent_prompt(
@@ -134,9 +246,20 @@ def transform_subagent_prompt(
             metadata={**base_metadata, "status": "compile_failed_raw_prompt", "error_type": type(exc).__name__},
         )
 
-    packet = str(compiled.get("packet") or "")
-    routing_decision = compiled.get("routing_decision") if isinstance(compiled.get("routing_decision"), dict) else {}
-    if routing_decision.get("mode") == "abstain":
+    routing_decision, packet = _validated_decision_and_packet(project_root, subagent_prompt, compiled)
+    if routing_decision is None:
+        return SubagentTransformResult(
+            prompt=subagent_prompt,
+            enabled=True,
+            mode=mode,
+            effective_mode=effective_mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
+            error="invalid_routing_decision",
+            metadata={**base_metadata, "status": "invalid_routing_decision_raw_prompt"},
+        )
+    routing_mode = routing_decision["mode"]
+    if routing_mode == "abstain":
         return SubagentTransformResult(
             prompt=subagent_prompt,
             enabled=True,
@@ -147,17 +270,7 @@ def transform_subagent_prompt(
             route="abstain",
             metadata={**base_metadata, "status": "abstained_raw_prompt", "routing_decision": routing_decision},
         )
-    if not packet:
-        return SubagentTransformResult(
-            prompt=subagent_prompt,
-            enabled=True,
-            mode=mode,
-            effective_mode=effective_mode,
-            transform_applied=False,
-            tuning_profile=tuning_profile,
-            error="compile runner returned no packet",
-            metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
-        )
+    assert packet is not None
     telemetry = (
         {"telemetry": {"status": "not_recorded", "reason": "no_write"}}
         if no_write
@@ -188,6 +301,7 @@ def transform_subagent_prompt(
             "premode_command": compiled.get("premode_command"),
             "packet_sha256": compiled.get("packet_sha256"),
             "model_facing_sections": compiled.get("model_facing_sections"),
+            "routing_decision": routing_decision,
             "telemetry": telemetry.get("telemetry"),
         },
     )

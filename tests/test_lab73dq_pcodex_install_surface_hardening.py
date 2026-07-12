@@ -188,6 +188,32 @@ def test_source_installer_smoke_checks_required_command_surface() -> None:
     assert "__definitely_unknown_command__" in script
     assert '"$INSTALL_ROOT/bin/pcodex" first-run --help' in script
     assert "installed pcodex --help is missing cleanup" in script
+    assert "refusing to install into an existing path" in script
+
+
+def test_legacy_artifact_installer_refuses_preexisting_install_root(tmp_path: Path) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    install_root = tmp_path / "existing-install"
+    install_root.mkdir()
+    sentinel = install_root / "user-owned.txt"
+    sentinel.write_text("preserve\n", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            "bash", str(ROOT / "scripts" / "install_pcodex_private_alpha.sh"),
+            "--artifact-root", str(artifact), "--install-root", str(install_root),
+            "--skip-codex-registration",
+        ],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    assert "refusing to install into pre-existing root" in completed.stderr
+    assert sentinel.read_text(encoding="utf-8") == "preserve\n"
+    assert not (install_root / ".pcodex-private-alpha-owned").exists()
 
 
 def test_install_surface_checks_do_not_mutate_tracked_source(

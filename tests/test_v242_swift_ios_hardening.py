@@ -20,14 +20,14 @@ def _repo(tmp_path: Path) -> Path:
 
 def test_compile_detection_preserves_xcodeproj_directory_marker(tmp_path):
     repo = _repo(tmp_path)
-    (repo / "GoldpineValley.xcodeproj").mkdir()
-    (repo / "GoldpineValley").mkdir()
-    (repo / "GoldpineValley" / "GameState.swift").write_text("struct GameState {}\n", encoding="utf-8")
+    (repo / "ExampleGame.xcodeproj").mkdir()
+    (repo / "ExampleGame").mkdir()
+    (repo / "ExampleGame" / "GameState.swift").write_text("struct GameState {}\n", encoding="utf-8")
     init_project(repo)
     idx = index_project(repo, "lite")
 
     # The readable index contains Swift source files, but not the .xcodeproj directory itself.
-    assert "GoldpineValley.xcodeproj" not in {e["path"] for e in idx["entries"]}
+    assert "ExampleGame.xcodeproj" not in {e["path"] for e in idx["entries"]}
 
     detection = detect_projects(repo, entries=idx["entries"])
     assert detection["active_project"]["project_kind"] == "ios_swift"
@@ -45,14 +45,14 @@ def test_compile_detection_preserves_xcodeproj_directory_marker(tmp_path):
 
 def test_long_swift_repo_path_survives_redaction_and_path_extraction(tmp_path):
     repo = _repo(tmp_path)
-    (repo / "GoldpineValley.xcodeproj").mkdir()
-    target = repo / "GoldpineValley" / "Views" / "PlayerActivities" / "StarterMinigames" / "RepairAssistGameEngine.swift"
+    (repo / "ExampleGame.xcodeproj").mkdir()
+    target = repo / "ExampleGame" / "Views" / "PlayerActivities" / "StarterMinigames" / "RepairAssistGameEngine.swift"
     target.parent.mkdir(parents=True)
     target.write_text("struct RepairAssistGameEngine {}\n", encoding="utf-8")
     init_project(repo)
     index_project(repo, "lite")
 
-    rel = "GoldpineValley/Views/PlayerActivities/StarterMinigames/RepairAssistGameEngine.swift"
+    rel = "ExampleGame/Views/PlayerActivities/StarterMinigames/RepairAssistGameEngine.swift"
     redacted = redact_text(f"Fix {rel}")
     assert rel in redacted.text
     assert "[REDACTED:high_entropy].swift" not in redacted.text
@@ -65,9 +65,9 @@ def test_long_swift_repo_path_survives_redaction_and_path_extraction(tmp_path):
 
 def test_day_report_prompt_is_not_documentation_intent(tmp_path):
     repo = _repo(tmp_path)
-    (repo / "GoldpineValley.xcodeproj").mkdir()
-    (repo / "GoldpineValley").mkdir()
-    (repo / "GoldpineValley" / "DayReport.swift").write_text("struct DayReport {}\n", encoding="utf-8")
+    (repo / "ExampleGame.xcodeproj").mkdir()
+    (repo / "ExampleGame").mkdir()
+    (repo / "ExampleGame" / "DayReport.swift").write_text("struct DayReport {}\n", encoding="utf-8")
     init_project(repo)
     index_project(repo, "lite")
 

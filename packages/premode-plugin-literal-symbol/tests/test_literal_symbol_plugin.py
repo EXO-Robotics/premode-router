@@ -72,7 +72,7 @@ def test_metadata_has_no_lab_artifact_or_local_path_dependency() -> None:
     for text in (metadata_text, plugin_source):
         assert "/private/tmp" not in text
         assert "premode_labs" not in text
-        assert "/Users/" not in text
+        assert "/" + "Users/" not in text
         assert "Local Context Compiler" not in text
 
 

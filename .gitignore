@@ -11,6 +11,7 @@ src/*.egg-info/
 
 # OS/editor
 .DS_Store
+__MACOSX/
 .idea/
 .vscode/
 
@@ -34,6 +35,15 @@ src/*.egg-info/
 .premode/inventory/
 .premode/topology/
 .pcodex/
+observer/evidence/
+observer/runs/
+artifacts/
+dist/
+build/
+*.sqlite
+*.sqlite3
+*.db
+*.log
 usage_ledger.jsonl
 *.jsonl
 

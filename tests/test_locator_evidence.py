@@ -158,7 +158,7 @@ def test_tests_are_normal_repo_artifacts_when_prompt_asks_for_test(repo: Path) -
 
 
 def test_config_is_normal_repo_artifact_for_entry_point_prompt(repo: Path) -> None:
-    _write(repo / "pyproject.toml", "[project.scripts]\nrobotriage = 'src.cli:main'\n")
+    _write(repo / "pyproject.toml", "[project.scripts]\nexampleservice = 'src.cli:main'\n")
     _write(repo / "src" / "cli.py", "def main(): pass\n")
 
     result = locate_files(repo, "Fix the console script entry point.")

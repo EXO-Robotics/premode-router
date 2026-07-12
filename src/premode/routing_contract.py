@@ -69,9 +69,9 @@ def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> Routing
         return _unique(accepted)
     primary = admitted(list(backbone.get("primary_files_after") or backbone.get("primary_files") or []), "canonical_primary")
     verification = admitted(list(backbone.get("related_tests_after") or backbone.get("related_tests") or []), "canonical_verification")
-    primary_keys = {path.casefold() for path in primary}
-    verification = tuple(path for path in verification if path.casefold() not in primary_keys)
     verification_keys = {path.casefold() for path in verification}
+    primary = tuple(path for path in primary if path.casefold() not in verification_keys)
+    primary_keys = {path.casefold() for path in primary}
     locator_support = [item for item in locator.get("support_files") or [] if isinstance(item, dict)]
     qualified_support: list[str] = []
     for item in locator_support:
@@ -91,21 +91,47 @@ def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> Routing
         for item in items:
             if not isinstance(item, dict) or not item.get("path"):
                 continue
+            raw_path = str(item["path"])
+            is_explicit = raw_path.casefold() in explicit_paths
+            policy = classify_candidate(
+                repo_root,
+                raw_path,
+                intent=CandidateIntent(
+                    explicit=is_explicit,
+                    generated_required=is_explicit and (generated_intent or is_generated_candidate_path(raw_path)),
+                    support_only=role == "support",
+                ),
+                provenance=(f"locator_{role}",),
+            )
+            if not policy.admitted or not policy.normalized_path:
+                continue
             signals = tuple(str(signal) for signal in item.get("matched_signals") or [])
             evidence.append(CandidateEvidenceV1(
                 schema_version="candidate-evidence.v1",
-                path=str(item["path"]), role=role, rank=rank,
+                path=policy.normalized_path, role=role, rank=rank,
                 score=int(item.get("score") or 0), confidence=confidence,
                 matched_signals=signals,
-                provenance=tuple(dict.fromkeys(["inventory", *[signal.split(":", 1)[0] for signal in signals]])),
+                provenance=tuple(dict.fromkeys([*policy.provenance, *[signal.split(":", 1)[0] for signal in signals]])),
             ))
             rank += 1
+    selected_by_role = {
+        "primary": {path.casefold() for path in primary},
+        "verification": {path.casefold() for path in verification},
+        "support": {path.casefold() for path in qualified_support},
+    }
+    # Locator confidence may only authorize paths that the canonical backbone
+    # actually selected.  Keeping unrelated locator hits here would allow one
+    # file's evidence to open a route for a different file.
+    evidence = [candidate for candidate in evidence if candidate.path.casefold() in selected_by_role[candidate.role]]
+    evidenced_primary = {candidate.path.casefold() for candidate in evidence if candidate.role == "primary"}
+    primary = tuple(path for path in primary if path.casefold() in evidenced_primary)
+    primary_keys = {path.casefold() for path in primary}
     strong_prefixes = ("explicit_path:", "prompt_mentioned", "symbol:", "symbol_term:", "filename_match:", "option_flag:", "behavior_source:", "source_test_relation:")
     strong_primary = any(
         candidate.role == "primary" and any(signal.startswith(strong_prefixes) for signal in candidate.matched_signals)
         for candidate in evidence
     )
-    if any(path.casefold() in explicit_paths for path in primary):
+    if any(path.casefold() in explicit_paths and path.casefold() in evidenced_primary for path in primary):
         strong_primary = True
     if not primary or (confidence == "low" and not strong_primary):
         return RoutingDecisionV1("routing-decision.v1", "abstain", (), (), (), confidence, ambiguity or ("insufficient_candidate_evidence",), tuple(evidence), ("no sufficiently supported primary path",))

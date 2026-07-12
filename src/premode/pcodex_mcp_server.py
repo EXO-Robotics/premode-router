@@ -19,6 +19,10 @@ TOOLS = [
 ]
 
 
+class ToolRequestError(ValueError):
+    """A bounded client-input error whose message is safe for JSON-RPC."""
+
+
 def _response(id_value: Any, result: Any = None, error: Any = None) -> dict[str, Any]:
     out = {"jsonrpc": "2.0", "id": id_value}
     if error is not None:
@@ -44,15 +48,15 @@ def call_tool(
     compile_runner: CompileRunner | None = None,
 ) -> dict[str, Any]:
     if name != TOOL_NAME:
-        raise ValueError(f"unsupported tool: {name}")
+        raise ToolRequestError(f"unsupported tool: {name}")
     if "project_root" in arguments:
-        raise ValueError("project_root is server-bound and cannot be supplied by a tool call")
+        raise ToolRequestError("project_root is server-bound and cannot be supplied by a tool call")
     prompt = arguments.get("subagent_prompt")
     if not isinstance(prompt, str):
-        raise ValueError("subagent_prompt is required")
+        raise ToolRequestError("subagent_prompt is required")
     project_root = (cwd or Path.cwd()).resolve()
     if not project_root.is_dir():
-        raise ValueError("bound workspace root is not a directory")
+        raise ToolRequestError("bound workspace root is not a directory")
     parent_prompt = arguments.get("parent_prompt")
     spawn_metadata = arguments.get("spawn_metadata")
     dry_run = arguments.get("dry_run")
@@ -95,8 +99,10 @@ def handle_request(
                 cwd=cwd,
                 compile_runner=compile_runner,
             )
-        except Exception as exc:
+        except ToolRequestError as exc:
             return _response(request_id, error={"code": -32000, "message": str(exc)})
+        except Exception:
+            return _response(request_id, error={"code": -32603, "message": "internal tool error"})
         return _response(request_id, result=result)
     return _response(request_id, error={"code": -32601, "message": "method not found"})
 

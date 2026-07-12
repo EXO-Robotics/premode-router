@@ -31,7 +31,7 @@ SOURCE_INSTALL_EXCLUDE_NAMES = {
 }
 SOURCE_INSTALL_EXCLUDE_SUFFIXES = (".egg-info",)
 SOURCE_INSTALL_EXCLUDE_PATHS = {
-    "/private/tmp",
+    "private/tmp",
     ".premode/inventory",
     ".premode/topology",
     ".premode/out",
@@ -120,7 +120,8 @@ def build_install_manifest(
         "python_executable": python_executable or sys.executable,
         "python_version": platform.python_version(),
         "console_scripts": ["premode", "pcodex"],
-        "plugin_packages": ["premode-plugin-literal-symbol"],
+        "plugin_packages": [],
+        "builtin_strategies": ["literal_symbol"],
         "files_installed_count": _count_files(build_repo or install_root),
         "installer_version": INSTALLER_VERSION,
         "installer_script": installer_script,
@@ -167,7 +168,11 @@ def validate_install_manifest(payload: Any) -> dict[str, Any]:
         raise ValueError("Invalid install manifest: console_scripts must be a list")
     if not isinstance(payload.get("plugin_packages"), list):
         raise ValueError("Invalid install manifest: plugin_packages must be a list")
-    return dict(payload)
+    if "builtin_strategies" in payload and not isinstance(payload.get("builtin_strategies"), list):
+        raise ValueError("Invalid install manifest: builtin_strategies must be a list")
+    validated = dict(payload)
+    validated.setdefault("builtin_strategies", [])
+    return validated
 
 
 def install_manifest_path(install_root: Path | str | None = None) -> Path:
@@ -218,7 +223,7 @@ def should_exclude_source_install_path(rel_path: str) -> bool:
         return True
     if normalized in {path.strip("/") for path in SOURCE_INSTALL_EXCLUDE_PATHS if not path.startswith("/")}:
         return True
-    return normalized.startswith("private/tmp/") or normalized.startswith("/private/tmp/")
+    return normalized.startswith("private/tmp/")
 
 
 def _main(argv: list[str] | None = None) -> int:

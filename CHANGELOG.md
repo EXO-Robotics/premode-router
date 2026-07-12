@@ -16,7 +16,7 @@
 - Documented the adapter expansion freeze: prefer `.premode/profile.yml` or generic structural profiles unless a major safety false-positive requires core support.
 - Marked `premode plugin`, `premode hook`, `premode mcp-server`, and `premode lab` as experimental/deferred surfaces outside the primary MVP workflow.
 - Added release manifest exclusions for git, virtualenv, pycache, pytest cache, `.DS_Store`, and generated `.premode` runtime outputs.
-- Removed Goldpine-specific root-affinity logic from universal adapter detection while preserving generalized Swift/iOS routing and profile-scoped OpenClaw/control-plane behavior.
+- Removed ExampleGame-specific root-affinity logic from universal adapter detection while preserving generalized Swift/iOS routing and profile-scoped OpenClaw/control-plane behavior.
 - Bumped package version to `0.2.6.23`.
 
 ## v0.2.6.22
@@ -107,7 +107,7 @@
 
 ## v0.2.6.11
 
-- Added prompt-affinity scoring for direct child Git roots so OpenClaw/Unreal prompts select `openclaw_repo` and Goldpine/iOS/Swift prompts select the matching iOS repo.
+- Added prompt-affinity scoring for direct child Git roots so OpenClaw/Unreal prompts select `openclaw_repo` and ExampleGame/iOS/Swift prompts select the matching iOS repo.
 - Expanded `active_root_candidates` diagnostics with markers, marker bonuses, prompt-affinity bonuses, and ignored/reference penalties.
 - Added ambiguity diagnostics when multiple direct child Git roots remain close-scoring without prompt affinity.
 - Compacted dirty authority/runbook/history/memory docs under lite source/gameplay prompts so they remain visible without dominating full-text context.

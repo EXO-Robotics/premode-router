@@ -1,6 +1,6 @@
-# Goldpine Valley Pre-mode Setup Template
+# ExampleGame Valley Pre-mode Setup Template
 
-This is an example project-local setup for using Pre-mode as a Qwen/Codex/Opus context governor on Goldpine Valley.
+This is an example project-local setup for using Pre-mode as a Qwen/Codex/Opus context governor on ExampleGame Valley.
 
 This file is a template. Do not hardcode these rules into Pre-mode itself.
 
@@ -13,14 +13,14 @@ Adjust simulator destination if your local simulator name differs.
   "schema_version": 2,
   "commands": {
     "build_debug_sim": {
-      "command": "xcodebuild -project GoldpineValley.xcodeproj -scheme GoldpineValley -destination 'platform=iOS Simulator,name=iPhone 17' build CODE_SIGNING_ALLOWED=NO",
-      "description": "Goldpine debug simulator build",
+      "command": "xcodebuild -project ExampleGame.xcodeproj -scheme ExampleGame -destination 'platform=iOS Simulator,name=iPhone 17' build CODE_SIGNING_ALLOWED=NO",
+      "description": "ExampleGame debug simulator build",
       "safe_to_suggest": true,
       "auto_run": false
     },
     "build_release_sim": {
-      "command": "xcodebuild -project GoldpineValley.xcodeproj -scheme GoldpineValley -destination 'platform=iOS Simulator,name=iPhone 17' -configuration Release build CODE_SIGNING_ALLOWED=NO",
-      "description": "Goldpine release simulator build without code signing",
+      "command": "xcodebuild -project ExampleGame.xcodeproj -scheme ExampleGame -destination 'platform=iOS Simulator,name=iPhone 17' -configuration Release build CODE_SIGNING_ALLOWED=NO",
+      "description": "ExampleGame release simulator build without code signing",
       "safe_to_suggest": true,
       "auto_run": false
     }
@@ -31,9 +31,9 @@ Adjust simulator destination if your local simulator name differs.
 ## `.premode/rules.md`
 
 ```markdown
-# Goldpine Valley Rules
+# ExampleGame Valley Rules
 
-- Goldpine Valley is a cozy frontier survival narrative game.
+- ExampleGame Valley is a cozy frontier survival narrative game.
 - Do not expand MVP scope unless explicitly asked.
 - Do not add new systems unless they replace or clarify an existing one.
 - Do not touch Assets.xcassets unless the active task is asset import.
@@ -102,8 +102,8 @@ premode compile "Implement Frontier Risk Patch 2 campaign upkeep in GameState.sw
 After Qwen edits, save the build log:
 
 ```bash
-xcodebuild -project GoldpineValley.xcodeproj \
-  -scheme GoldpineValley \
+xcodebuild -project ExampleGame.xcodeproj \
+  -scheme ExampleGame \
   -destination 'platform=iOS Simulator,name=iPhone 17' \
   build CODE_SIGNING_ALLOWED=NO 2>&1 | tee xcodebuild.log
 ```

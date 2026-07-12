@@ -400,12 +400,9 @@ def _ensure_inside(path: Path, root: Path) -> None:
 def _is_private_fixture(path: str) -> bool:
     lowered = path.lower()
     private_markers = (
-        "goldpine",
-        "robotriage",
-        "rich-cli",
-        "rich_cli",
-        "/users/example/documents/new project/",
-        "/users/example/documents/protfolio projects/",
+        "private-project-fixture",
+        "internal-repo-fixture",
+        "/example/private-project/",
     )
     return any(marker in lowered for marker in private_markers)
 

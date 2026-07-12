@@ -15,19 +15,20 @@
     "pcodex status",
     "pcodex run",
     "pcodex doctor",
-    "pcodex integrate codex",
+    "pcodex review",
+    "pcodex off",
+    "pcodex cleanup",
     "premode review-patch"
   ],
   "advanced_commands": [
     "pcodex first-run",
-    "pcodex cleanup",
     "pcodex on",
-    "pcodex off",
     "pcodex tuned",
     "pcodex tune",
     "pcodex ui",
     "pcodex compile",
     "pcodex mcp-server",
+    "pcodex integrate codex",
     "pcodex plugin init",
     "premode compile",
     "premode benchmark",
@@ -41,13 +42,16 @@
   ],
   "production_ranking_authority": {
     "plugin": "literal_symbol",
-    "package": "premode-plugin-literal-symbol",
+    "package": "premode-router",
     "fallback": "ranked_paths_plus_anchors"
   },
   "canonical_packet_authority": {
     "version": "v5",
     "variant": "tool_assisted_anchors_internal",
-    "strategy": "literal_symbol"
+    "strategy": "literal_symbol",
+    "public_renderer": "canonical_core_v1",
+    "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"],
+    "internal_anchors_model_facing": false
   },
   "generated_state_ownership": [
     {"path": ".premode/out/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
@@ -69,7 +73,6 @@
     "openclaw": "advanced_repo_profile_not_execution_runtime"
   },
   "known_public_command_gaps": [
-    "pcodex review",
     "pcodex uninstall"
   ]
 }

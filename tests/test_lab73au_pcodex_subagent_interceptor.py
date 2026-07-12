@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from premode import pcodex_bootstrap as pcodex
+from premode.core_packet import CorePath, render_core_packet
 from premode.pcodex_subagent import transform_subagent_prompt
 
 
@@ -24,22 +25,24 @@ def _isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _packet(task: str) -> str:
     return (
-        "PREMODE_CONTEXT_PACKET_V5\n"
-        "schema: ranked-paths-plus-anchors\n"
-        "format_version: 1\n"
-        "<TASK>\n"
+        "TASK\n"
         f"{task}\n"
-        "</TASK>\n"
-        "<PRIMARY_FILES>\n"
-        "1. src/example.py\n"
-        "   anchors: symbol=load_example\n"
-        "</PRIMARY_FILES>\n"
-        "<RELATED_TESTS>\n"
-        "1. tests/test_example.py\n"
-        "   anchors: test_name=test_load_example\n"
-        "</RELATED_TESTS>\n"
-        "<END_PREMODE_CONTEXT_PACKET_V5>\n"
+        "LIKELY FILES\n\nPRIMARY\n\n* src/example.py\n\n"
+        "VERIFY\n\n* tests/test_example.py\n\n"
+        "Start with these files. Expand only when required by the task.\n"
     )
+
+
+def _decision() -> dict:
+    return {
+        "schema_version": "routing-decision.v1", "mode": "narrow", "confidence": "high",
+        "primary_paths": ["src/example.py"], "verification_paths": ["tests/test_example.py"], "support_paths": [],
+        "ambiguity_indicators": [], "decision_reasons": ["fixture"],
+        "candidate_provenance": [
+            {"schema_version": "candidate-evidence.v1", "path": "src/example.py", "role": "primary", "rank": 0, "score": 10, "confidence": "high", "matched_signals": ["explicit_path:src/example.py"], "provenance": ["fixture"]},
+            {"schema_version": "candidate-evidence.v1", "path": "tests/test_example.py", "role": "verification", "rank": 1, "score": 8, "confidence": "high", "matched_signals": ["source_test_relation:src/example.py"], "provenance": ["fixture"]},
+        ],
+    }
 
 
 def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
@@ -49,7 +52,8 @@ def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
         "premode_command": ["premode", "compile", prompt, "--repo", str(project_root), "--plugin", "literal_symbol"],
         "packet": _packet(prompt),
         "packet_sha256": "abc123",
-        "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY"],
+        "routing_decision": _decision(),
     }
 
 
@@ -72,7 +76,8 @@ def _fallback_runner(project_root: Path, prompt: str, profile: str | None) -> di
         ],
         "packet": _packet(prompt),
         "packet_sha256": "fallback123",
-        "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY"],
+        "routing_decision": _decision(),
     }
 
 
@@ -96,8 +101,7 @@ def test_enabled_pcodex_transforms_codex_created_subagent_prompt(repo: Path, mon
     assert result.enabled is True
     assert result.prompt != RAW_SUBAGENT_PROMPT
     assert RAW_SUBAGENT_PROMPT in result.prompt
-    assert result.prompt.startswith(RAW_SUBAGENT_PROMPT)
-    assert "\n\n---\n\nPREMODE_CONTEXT_PACKET_V5" in result.prompt
+    assert result.prompt.startswith("TASK\n")
 
 
 def test_transform_uses_literal_symbol_by_default(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -107,6 +111,67 @@ def test_transform_uses_literal_symbol_by_default(repo: Path, monkeypatch: pytes
     result = transform_subagent_prompt(RAW_SUBAGENT_PROMPT, repo, compile_runner=_alias_runner, dry_run=True)
 
     assert result.algorithm == "literal_symbol"
+
+
+def test_injected_packet_or_shallow_decision_fails_raw_safe(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolated_home(monkeypatch, tmp_path)
+    pcodex.set_enabled(repo, True)
+
+    def injected(_root: Path, prompt: str, _profile: str | None) -> dict:
+        return {
+            "packet": f"TASK\n{prompt}\nLIKELY FILES\n\nPRIMARY\n\n* .pcodex/config.toml\n",
+            "routing_decision": {"mode": "narrow"},
+        }
+
+    result = transform_subagent_prompt(RAW_SUBAGENT_PROMPT, repo, compile_runner=injected, dry_run=True)
+
+    assert result.prompt == RAW_SUBAGENT_PROMPT
+    assert result.transform_applied is False
+    assert result.error == "invalid_routing_decision"
+
+
+def test_narrow_decision_rejects_unevidenced_over_budget_support(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolated_home(monkeypatch, tmp_path)
+    pcodex.set_enabled(repo, True)
+    for rel in ("src/app.py", "src/s1.py", "src/s2.py", "src/s3.py"):
+        path = repo / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("value = 1\n", encoding="utf-8")
+    decision = _decision()
+    decision["primary_paths"] = ["src/app.py"]
+    decision["verification_paths"] = []
+    decision["support_paths"] = ["src/s1.py", "src/s2.py", "src/s3.py"]
+    decision["candidate_provenance"] = decision["candidate_provenance"][:1]
+    decision["candidate_provenance"][0]["path"] = "src/app.py"
+    packet = render_core_packet(
+        RAW_SUBAGENT_PROMPT,
+        [CorePath("src/app.py", "primary"), CorePath("src/s1.py", "support"), CorePath("src/s2.py", "support"), CorePath("src/s3.py", "support")],
+    )
+
+    result = transform_subagent_prompt(RAW_SUBAGENT_PROMPT, repo, compile_runner=lambda *_args: {"packet": packet, "routing_decision": decision}, dry_run=True)
+
+    assert result.prompt == RAW_SUBAGENT_PROMPT
+    assert result.transform_applied is False
+
+
+def test_explicit_generated_primary_preserves_generated_intent(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolated_home(monkeypatch, tmp_path)
+    pcodex.set_enabled(repo, True)
+    path = repo / "dist/generated.js"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("export const value = 1;\n", encoding="utf-8")
+    prompt = "Update generated code in dist/generated.js"
+    decision = _decision()
+    decision["primary_paths"] = ["dist/generated.js"]
+    decision["verification_paths"] = []
+    decision["candidate_provenance"] = decision["candidate_provenance"][:1]
+    decision["candidate_provenance"][0]["path"] = "dist/generated.js"
+    packet = render_core_packet(prompt, [CorePath("dist/generated.js", "primary")])
+
+    result = transform_subagent_prompt(prompt, repo, compile_runner=lambda *_args: {"packet": packet, "routing_decision": decision}, dry_run=True)
+
+    assert result.transform_applied is True
+    assert "* dist/generated.js" in result.prompt
 
 
 def test_transform_calls_preferred_alias_route(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -153,7 +218,7 @@ def test_fake_codex_dispatcher_receives_transformed_prompt(repo: Path, monkeypat
     assert dispatcher.spawned_prompt is not None
     assert dispatcher.spawned_prompt != raw_prompt
     assert raw_prompt in dispatcher.spawned_prompt
-    assert "<PRIMARY_FILES>" in dispatcher.spawned_prompt
+    assert "LIKELY FILES" in dispatcher.spawned_prompt
 
 
 def test_fake_dispatcher_never_launches_live_codex(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -187,7 +252,7 @@ def test_prompt_format_contains_only_allowed_packet_sections(repo: Path, monkeyp
 
     result = transform_subagent_prompt(RAW_SUBAGENT_PROMPT, repo, compile_runner=_alias_runner, dry_run=True)
 
-    for allowed in ("<TASK>", "<PRIMARY_FILES>", "<RELATED_TESTS>", "<END_PREMODE_CONTEXT_PACKET_V5>"):
+    for allowed in ("TASK\n", "LIKELY FILES", "PRIMARY", "VERIFY"):
         assert allowed in result.prompt
     for forbidden in (
         "TASK_CLASS",
@@ -221,7 +286,7 @@ def test_no_lab_or_user_paths_are_baked_into_product_code() -> None:
     source = Path(__import__("premode.pcodex_subagent").pcodex_subagent.__file__).read_text(encoding="utf-8")
 
     assert "/private/tmp" not in source
-    assert "/Users/" not in source
+    assert "/" + "Users/" not in source
     assert "premode_labs" not in source
 
 

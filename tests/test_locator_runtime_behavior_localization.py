@@ -54,7 +54,7 @@ def _signals(result, path: str) -> list[str]:
 
 def _write_replay_runtime_fixture(repo: Path) -> None:
     _write(
-        repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "scenario_loader.py",
+        repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "scenario_loader.py",
         """
         import yaml
 
@@ -67,7 +67,7 @@ def _write_replay_runtime_fixture(repo: Path) -> None:
         """,
     )
     _write(
-        repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "replay_runner.py",
+        repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "replay_runner.py",
         """
         from .diagnostic_result import build_timeout_failure_result
 
@@ -79,7 +79,7 @@ def _write_replay_runtime_fixture(repo: Path) -> None:
         """,
     )
     _write(
-        repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "diagnostic_result.py",
+        repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "diagnostic_result.py",
         """
         def build_timeout_failure_result(message):
             if "timeout" in message:
@@ -88,7 +88,7 @@ def _write_replay_runtime_fixture(repo: Path) -> None:
         """,
     )
     _write(
-        repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "diagnostic_bridge_node.py",
+        repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "diagnostic_bridge_node.py",
         """
         import rclpy
 
@@ -100,7 +100,7 @@ def _write_replay_runtime_fixture(repo: Path) -> None:
     _write(
         repo / "tests" / "run_ros_replay_regression.py",
         """
-        from ros2.robotriage_ros.robotriage_ros.replay_runner import ReplayRunner
+        from ros2.exampleservice_ros.exampleservice_ros.replay_runner import ReplayRunner
         print("replay regression still passes")
         """,
     )
@@ -125,17 +125,17 @@ def test_replay_timeout_behavior_prefers_runtime_and_result_sources(repo: Path) 
     assert evidence.test_verification_intent
     assert not evidence.test_edit_intent
     assert "behavior" in evidence.behavior_terms or "timeout" in evidence.behavior_terms
-    assert "ros2/robotriage_ros/robotriage_ros/replay_runner.py" in primary_paths
-    assert "ros2/robotriage_ros/robotriage_ros/diagnostic_result.py" in _paths(result.primary_files + result.support_files)
-    assert "ros2/robotriage_ros/robotriage_ros/scenario_loader.py" not in primary_paths
-    assert "ros2/robotriage_ros/robotriage_ros/scenario_loader.py" in all_paths
-    assert "ros2/robotriage_ros/robotriage_ros/diagnostic_bridge_node.py" not in primary_paths
+    assert "ros2/exampleservice_ros/exampleservice_ros/replay_runner.py" in primary_paths
+    assert "ros2/exampleservice_ros/exampleservice_ros/diagnostic_result.py" in _paths(result.primary_files + result.support_files)
+    assert "ros2/exampleservice_ros/exampleservice_ros/scenario_loader.py" not in primary_paths
+    assert "ros2/exampleservice_ros/exampleservice_ros/scenario_loader.py" in all_paths
+    assert "ros2/exampleservice_ros/exampleservice_ros/diagnostic_bridge_node.py" not in primary_paths
     assert "tests/run_ros_replay_regression.py" in _paths(result.verification_files + result.support_files)
     assert "tests/test_replay_timeout.py" in _paths(result.verification_files + result.support_files)
-    assert any(signal.startswith("behavior_source:") for signal in _signals(result, "ros2/robotriage_ros/robotriage_ros/replay_runner.py"))
+    assert any(signal.startswith("behavior_source:") for signal in _signals(result, "ros2/exampleservice_ros/exampleservice_ros/replay_runner.py"))
     assert any(
         signal.startswith("scenario_data_surface_downranked_for_behavior_prompt")
-        for signal in _signals(result, "ros2/robotriage_ros/robotriage_ros/scenario_loader.py")
+        for signal in _signals(result, "ros2/exampleservice_ros/exampleservice_ros/scenario_loader.py")
     )
     assert result.confidence in {"medium", "high"}
 
@@ -147,8 +147,8 @@ def test_compile_replay_timeout_keeps_regression_tests_read_only(repo: Path) -> 
     result = compile_prompt(repo, REPLAY_PROMPT, "lite", record=False)
 
     candidates = _manifest_paths(result["candidate_edit_files"])
-    assert "ros2/robotriage_ros/robotriage_ros/replay_runner.py" in candidates
-    assert "ros2/robotriage_ros/robotriage_ros/scenario_loader.py" not in candidates
+    assert "ros2/exampleservice_ros/exampleservice_ros/replay_runner.py" in candidates
+    assert "ros2/exampleservice_ros/exampleservice_ros/scenario_loader.py" not in candidates
     assert "tests/run_ros_replay_regression.py" not in candidates
     assert "tests/test_replay_timeout.py" not in candidates
     assert {"tests/run_ros_replay_regression.py", "tests/test_replay_timeout.py"} <= _all_context_paths(result)

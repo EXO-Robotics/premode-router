@@ -110,7 +110,7 @@ def test_compiler_uses_symbol_content_for_generic_filename(repo: Path) -> None:
 
 
 def test_compiler_allows_config_primary_when_prompt_asks_config(repo: Path) -> None:
-    _write(repo / "pyproject.toml", "[project.scripts]\nrobotriage = 'src.cli:main'\n")
+    _write(repo / "pyproject.toml", "[project.scripts]\nexampleservice = 'src.cli:main'\n")
     _write(repo / "src" / "cli.py", "def main(): pass\n")
     _prepare(repo)
 

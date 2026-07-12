@@ -1,4 +1,4 @@
-# Pre-mode Router v2.4.2 — OpenClaw / Goldpine Analysis Report
+# Pre-mode Router v2.4.2 — OpenClaw / ExampleGame Analysis Report
 
 ## Validation performed
 
@@ -54,7 +54,7 @@ A realistic manual OpenClaw packet containing AGENTS.md, README.md, WORKFLOW.md,
 2. It is not yet an OpenClaw-smart router.
 3. It needs an OpenClaw adapter or repo profile before it should govern serious OpenClaw Codex runs.
 4. It needs v2.5 repo map / impact map / packet modes to avoid selecting stale proof artifacts and historical evidence.
-5. For Goldpine, the Swift/iOS hardening is directly useful now: Xcode root detection, long Swift path extraction, Day Report routing, and `.premode` dirty-state cleanup are exactly the issues seen in the Qwen/Opus workflow.
+5. For ExampleGame, the Swift/iOS hardening is directly useful now: Xcode root detection, long Swift path extraction, Day Report routing, and `.premode` dirty-state cleanup are exactly the issues seen in the Qwen/Opus workflow.
 
 ## Recommended next implementation sequence
 
@@ -63,4 +63,3 @@ A realistic manual OpenClaw packet containing AGENTS.md, README.md, WORKFLOW.md,
 3. v2.5 Patch 2: impact map and compile integration.
 4. v2.5 Patch 3A–3C: budget receipt, packet modes, manifest grouping, token ROI, log dedupe, packet hashes, and exploration guidance.
 5. v2.6: patch review governor.
-

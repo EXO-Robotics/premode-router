@@ -9,7 +9,7 @@ from . import pcodex_bootstrap as pcodex
 from .pcodex_subagent import CompileRunner, transform_subagent_prompt
 
 
-MODEL_FACING_SECTIONS = ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"]
+MODEL_FACING_SECTIONS = ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"]
 
 TOOL_NAME = "pcodex_transform_subagent_prompt"
 
@@ -153,6 +153,13 @@ def pcodex_transform_subagent_prompt_tool(
         "tuning_profile": result.tuning_profile,
         "tuning": result.metadata.get("tuning"),
         "fallback": result.metadata.get("fallback"),
+        "routing_mode": (result.metadata.get("routing_decision") or {}).get("mode") if isinstance(result.metadata.get("routing_decision"), dict) else None,
+        "selected_paths": [
+            path
+            for bucket in ("primary_paths", "verification_paths", "support_paths")
+            for path in ((result.metadata.get("routing_decision") or {}).get(bucket) or [])
+            if isinstance(path, str)
+        ] if isinstance(result.metadata.get("routing_decision"), dict) else [],
     }
     if result.error:
         metadata["error_status"] = result.metadata.get("status")

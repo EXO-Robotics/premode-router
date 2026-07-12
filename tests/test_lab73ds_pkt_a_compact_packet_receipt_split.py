@@ -186,13 +186,12 @@ def test_compile_cli_exposes_compact_mode_and_saves_sidecar_receipt(repo: Path, 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["packet_detail_mode"] == "compact"
-    assert payload["model_facing_packet_mode"] == "compact_pcodex_v1"
-    assert payload["packet_audit_receipt"]["selection_lock_hash"]
+    assert payload["model_facing_packet_mode"] == "canonical_core_v1"
+    assert payload["packet_audit_receipt"] == {}
     saved = payload["saved_artifacts"]
     assert saved["last_packet_audit_receipt_json"].endswith("last_packet_audit_receipt.json")
     receipt = json.loads((repo / ".premode" / "out" / "last_packet_audit_receipt.json").read_text(encoding="utf-8"))
-    assert receipt["packet_detail_mode"] == "compact"
-    assert receipt["model_facing"] is False
+    assert receipt == {}
 
 
 def test_compile_and_benchmark_packet_mode_flags_imply_v5(repo: Path, monkeypatch, capsys) -> None:

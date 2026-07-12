@@ -62,8 +62,9 @@ Use this path inside a development checkout:
 ```bash
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
+
+The default `literal_symbol` strategy is bundled in `premode-router`; the separate plugin tree is retained only for third-party compatibility testing.
 
 Prefer repo-local entrypoints after editable install:
 

@@ -1,10 +1,96 @@
 {
   "schema_version": "pcodex.artifact_allowlist.v1",
   "wheel_allowed_prefixes": ["premode/", "premode_router-"],
+  "wheel_allowed_members": [
+    "premode/__init__.py",
+    "premode/__main__.py",
+    "premode/adapters.py",
+    "premode/audit.py",
+    "premode/backbone.py",
+    "premode/benchmark.py",
+    "premode/cache_manifest.py",
+    "premode/candidate_policy.py",
+    "premode/cli.py",
+    "premode/codex_exec.py",
+    "premode/command_discovery.py",
+    "premode/compiler.py",
+    "premode/config.py",
+    "premode/context_constraints.py",
+    "premode/core_packet.py",
+    "premode/default_plugin.py",
+    "premode/doctor.py",
+    "premode/evidence_snippets.py",
+    "premode/fixture.py",
+    "premode/git_state.py",
+    "premode/hook.py",
+    "premode/ignore.py",
+    "premode/indexer.py",
+    "premode/install_manifest.py",
+    "premode/intake.py",
+    "premode/inventory.py",
+    "premode/launch_safety.py",
+    "premode/live_ledger.py",
+    "premode/locator.py",
+    "premode/lockfile.py",
+    "premode/log_scanner.py",
+    "premode/mcp_server.py",
+    "premode/metrics.py",
+    "premode/packet_schema.py",
+    "premode/paths.py",
+    "premode/pcodex_bootstrap.py",
+    "premode/pcodex_mcp.py",
+    "premode/pcodex_mcp_server.py",
+    "premode/pcodex_state.py",
+    "premode/pcodex_subagent.py",
+    "premode/plugin.py",
+    "premode/plugins.py",
+    "premode/profiles.py",
+    "premode/redaction.py",
+    "premode/repo_map.py",
+    "premode/repo_summary.py",
+    "premode/review_patch.py",
+    "premode/role_core.py",
+    "premode/role_model.py",
+    "premode/router.py",
+    "premode/routing_contract.py",
+    "premode/routing_safety.py",
+    "premode/safe_reader.py",
+    "premode/stress.py",
+    "premode/timeutil.py",
+    "premode/topology.py",
+    "premode/tuning.py",
+    "premode/write_policy.py"
+  ],
+  "wheel_allowed_globs": [
+    "premode_router-*.dist-info/METADATA",
+    "premode_router-*.dist-info/WHEEL",
+    "premode_router-*.dist-info/entry_points.txt",
+    "premode_router-*.dist-info/top_level.txt",
+    "premode_router-*.dist-info/RECORD",
+    "premode_router-*.dist-info/licenses/*"
+  ],
+  "wheel_prohibited_globs": [
+    "premode/lab73*.py",
+    "premode/live_token_harness.py",
+    "premode/sharded_runner.py"
+  ],
+  "release_source_excluded_globs": [
+    "src/premode/lab73*.py",
+    "src/premode/live_token_harness.py",
+    "src/premode/sharded_runner.py"
+  ],
   "bundle_allowed_prefixes": ["artifacts/", "plugins/pcodex/", "receipts/"],
   "prohibited_parts": [
     ".git", ".venv", ".premode", ".pcodex", "__MACOSX", "__pycache__",
     "observer", "transcript", "audit.db", "worktree"
   ],
-  "prohibited_suffixes": [".pyc", ".sqlite", ".sqlite3"]
+  "prohibited_suffixes": [".pyc", ".sqlite", ".sqlite3"],
+  "content_prohibited_patterns": [
+    "/Users/", "/home/", "/private/tmp/", "file://", "github_pat_", "ghp_", "sk-", "AKIA", "ASIA", "BEGIN PRIVATE KEY", "password=", "token=", "secret=", "api_key", "Authorization:", "Bearer ", "Goldpine", "RoboTriage", "Rich-CLI", "Rich_CLI"
+  ],
+  "content_allowed_signatures_by_member": {
+    "premode/fixture.py": ["API_KEY=SECRET_SENTINEL_RAW_PROMPT_12345"],
+    "premode/redaction.py": ["github_pat_[A-Za-z0-9_]{20,}"],
+    "premode/locator.py": ["n@click.option"]
+  }
 }

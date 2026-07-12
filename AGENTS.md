@@ -71,7 +71,7 @@ This is an instruction-level routing contract and adapter-ready local behavior g
 
 ## Lab And Benchmark Work
 
-- Use isolated `git worktree` lanes for Goldpine or cross-repo A/B labs. Do not use copied trees when a worktree is required.
+- Use isolated `git worktree` lanes for ExampleGame or cross-repo A/B labs. Do not use copied trees when a worktree is required.
 - Both standard and enhanced lanes must start from the same baseline SHA.
 - Keep results/logs under the requested results root, not inside the source repo unless explicitly requested.
 - Preserve strict separation: standard lanes must not read enhanced packets, logs, or outputs.

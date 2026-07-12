@@ -33,7 +33,7 @@ Required behavior:
 
 1. Preserve the exact Codex-created subagent prompt.
 2. Compile context from that exact prompt through `premode compile --plugin literal_symbol` or the explicit literal-symbol fallback route.
-3. Compose a transformed prompt from the raw prompt and the compact V5 packet.
+3. Compose a transformed prompt from the raw prompt and the compact `canonical_core_v1` packet.
 4. Keep routing metadata, diagnostics, and failures out of the model-facing prompt.
 5. If pCodex is disabled or transformation fails, return the raw prompt unchanged and report fallback metadata out of band.
 

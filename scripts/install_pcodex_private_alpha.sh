@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ARTIFACT_ROOT="/private/tmp/premode_labs/lab_7_3be_clean_private_alpha_artifact"
+ARTIFACT_ROOT="/example/pcodex-private-alpha-artifact"
 INSTALL_ROOT="${HOME}/.pcodex-alpha"
 CODEX_MODE="isolated"
 UNINSTALL=0
@@ -220,6 +220,7 @@ elif [[ "$CODEX_MODE" != "isolated" && "$CODEX_MODE" != "skip" ]]; then
   fail "unknown CODEX_MODE: $CODEX_MODE"
 fi
 
+[[ ! -e "$INSTALL_ROOT" && ! -L "$INSTALL_ROOT" ]] || fail "refusing to install into pre-existing root: $INSTALL_ROOT"
 mkdir -p "$INSTALL_ROOT" "$BIN_DIR"
 printf 'pcodex-private-alpha-v1\n' > "$INSTALL_ROOT/.pcodex-private-alpha-owned"
 : > "$REPORT_OUT"

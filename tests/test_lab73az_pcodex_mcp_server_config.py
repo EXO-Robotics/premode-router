@@ -28,18 +28,11 @@ def _isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _packet(task: str) -> str:
     return (
-        "PREMODE_CONTEXT_PACKET_V5\n"
-        "schema: ranked-paths-plus-anchors\n"
-        "<TASK>\n"
+        "TASK\n"
         f"{task}\n"
-        "</TASK>\n"
-        "<PRIMARY_FILES>\n"
-        "1. src/example.py\n"
-        "</PRIMARY_FILES>\n"
-        "<RELATED_TESTS>\n"
-        "1. tests/test_example.py\n"
-        "</RELATED_TESTS>\n"
-        "<END_PREMODE_CONTEXT_PACKET_V5>\n"
+        "LIKELY FILES\n\nPRIMARY\n\n* src/example.py\n\n"
+        "VERIFY\n\n* tests/test_example.py\n\n"
+        "Start with these files. Expand only when required by the task.\n"
     )
 
 
@@ -51,6 +44,7 @@ def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
         "packet": _packet(prompt),
         "packet_sha256": "abc123",
         "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "routing_decision": {"schema_version": "routing-decision.v1", "mode": "narrow", "confidence": "high", "primary_paths": ["src/example.py"], "verification_paths": ["tests/test_example.py"], "support_paths": [], "ambiguity_indicators": [], "decision_reasons": ["fixture"], "candidate_provenance": [{"schema_version": "candidate-evidence.v1", "path": "src/example.py", "role": "primary", "rank": 0, "score": 10, "confidence": "high", "matched_signals": ["explicit_path:src/example.py"], "provenance": ["fixture"]}, {"schema_version": "candidate-evidence.v1", "path": "tests/test_example.py", "role": "verification", "rank": 1, "score": 8, "confidence": "high", "matched_signals": ["source_test_relation:src/example.py"], "provenance": ["fixture"]}]},
     }
 
 
@@ -154,6 +148,24 @@ def test_server_rejects_unsupported_tool_names_safely() -> None:
 
     assert response["error"]["code"] == -32000
     assert "unsupported tool" in response["error"]["message"]
+
+
+def test_server_never_returns_raw_internal_exception(monkeypatch: pytest.MonkeyPatch) -> None:
+    secret = "sensitive-runtime-detail"
+
+    def fail_tool(*_args, **_kwargs):
+        raise RuntimeError(secret)
+
+    monkeypatch.setattr(pcodex_mcp_server, "pcodex_transform_subagent_prompt_tool", fail_tool)
+    response = pcodex_mcp_server.handle_request(
+        {
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "pcodex_transform_subagent_prompt", "arguments": {"subagent_prompt": RAW_PROMPT}},
+        }
+    )
+
+    assert response["error"] == {"code": -32603, "message": "internal tool error"}
+    assert secret not in json.dumps(response)
 
 
 def test_server_rejects_invalid_json_safely() -> None:
@@ -289,5 +301,5 @@ def test_server_source_has_no_network_listener_or_user_paths() -> None:
 
     assert "socket" not in source
     assert "http.server" not in source
-    assert "/Users/" not in source
+    assert "/" + "Users/" not in source
     assert "/private/tmp" not in source

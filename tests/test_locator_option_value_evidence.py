@@ -16,7 +16,7 @@ RICH_PROMPT = (
     "Improve the CLI help text for choosing an output theme so users understand "
     "what values are allowed and what happens when they pass an invalid theme."
 )
-ROBOTRIAGE_CLI_PROMPT = (
+EXAMPLE_SERVICE_CLI_PROMPT = (
     "Make the command-line output easier to understand: clarify one help message, "
     "one error message, and one success message. Do not change tests or packaging."
 )
@@ -201,9 +201,9 @@ def test_default_fallback_evidence_is_not_behavior_guidance(repo: Path) -> None:
     _assert_no_behavior_conclusion(result)
 
 
-def test_rich_cli_option_value_compile_includes_docs_and_tests_as_evidence(repo: Path) -> None:
+def test_example_cli_option_value_compile_includes_docs_and_tests_as_evidence(repo: Path) -> None:
     _write(
-        repo / "src" / "rich_cli" / "__main__.py",
+        repo / "src" / "example_cli" / "__main__.py",
         """
         import click
         from rich.syntax import Syntax
@@ -218,7 +218,7 @@ def test_rich_cli_option_value_compile_includes_docs_and_tests_as_evidence(repo:
     _write(
         repo / "README.md",
         """
-        # rich-cli
+        # example-cli
 
         You can specify a syntax theme with `--theme`.
 
@@ -245,7 +245,7 @@ def test_rich_cli_option_value_compile_includes_docs_and_tests_as_evidence(repo:
 
     candidates = _manifest_paths(result["candidate_edit_files"])
     all_context = _all_context_paths(result)
-    assert "src/rich_cli/__main__.py" in candidates
+    assert "src/example_cli/__main__.py" in candidates
     assert "README.md" in all_context
     assert "tests/test_main.py" in all_context
     assert "README.md" not in candidates
@@ -357,11 +357,11 @@ def test_hermetic_rich_like_cli_compile_retrieves_theme_option_value_evidence(re
     assert any(signal.startswith("option_default:") and "ansi_dark" in signal for signal in emitted_signals)
     assert any(signal.startswith("option_value_evidence:") and "default" in signal for signal in emitted_signals)
     assert any("monokai" in signal for signal in emitted_signals)
-    assert "/private/tmp/premode_labs/external_repos/rich-cli" not in result["packet"]
+    assert "/example/external_repos/example-cli" not in result["packet"]
 
 
-def _external_rich_cli_repo() -> Path:
-    return Path(os.environ.get("PREMODE_RICH_CLI_REPO", "/private/tmp/premode_labs/external_repos/rich-cli"))
+def _external_example_cli_repo() -> Path:
+    return Path(os.environ.get("PREMODE_EXTERNAL_FIXTURE_REPO", "/example/external_repos/example-cli"))
 
 
 def _skip_unless_external_fixtures_enabled() -> None:
@@ -369,15 +369,15 @@ def _skip_unless_external_fixtures_enabled() -> None:
         pytest.skip("external fixture tests require PREMODE_ENABLE_EXTERNAL_FIXTURES=1")
 
 
-def _skip_unless_usable_rich_cli_clone(repo: Path) -> None:
+def _skip_unless_usable_example_cli_clone(repo: Path) -> None:
     required = [
         repo / ".git" / "config",
         repo / "pyproject.toml",
-        repo / "src" / "rich_cli" / "__main__.py",
+        repo / "src" / "example_cli" / "__main__.py",
     ]
     missing = [path.relative_to(repo).as_posix() for path in required if not path.exists()]
     if missing:
-        pytest.skip(f"local Rich-CLI clone is unavailable or incomplete: missing {', '.join(missing)}")
+        pytest.skip(f"local Example-CLI clone is unavailable or incomplete: missing {', '.join(missing)}")
     completed = subprocess.run(
         ["git", "rev-parse", "--is-inside-work-tree"],
         cwd=repo,
@@ -387,24 +387,24 @@ def _skip_unless_usable_rich_cli_clone(repo: Path) -> None:
         timeout=30,
     )
     if completed.returncode != 0 or completed.stdout.strip() != "true":
-        pytest.skip("local Rich-CLI fixture is not a usable git worktree")
+        pytest.skip("local Example-CLI fixture is not a usable git worktree")
 
 
 @pytest.mark.external_fixtures
-def test_rich_cli_compile_only_retrieves_theme_option_evidence_if_local_clone_exists() -> None:
+def test_example_cli_compile_only_retrieves_theme_option_evidence_if_local_clone_exists() -> None:
     _skip_unless_external_fixtures_enabled()
-    repo = _external_rich_cli_repo()
+    repo = _external_example_cli_repo()
     if not repo.exists():
-        pytest.skip(f"local Rich-CLI clone not available: {repo}")
-    _skip_unless_usable_rich_cli_clone(repo)
+        pytest.skip(f"local Example-CLI clone not available: {repo}")
+    _skip_unless_usable_example_cli_clone(repo)
 
     result = compile_prompt(repo, RICH_PROMPT, "lite", record=False)
 
     candidates = _manifest_paths(result["candidate_edit_files"])
-    assert "src/rich_cli/__main__.py" in candidates
+    assert "src/example_cli/__main__.py" in candidates
     locator = result["locator_evidence"]
     primary = locator["primary_files"]
-    main = next(file for file in primary if file["path"] == "src/rich_cli/__main__.py")
+    main = next(file for file in primary if file["path"] == "src/example_cli/__main__.py")
     signals = main["matched_signals"]
     assert "option_decl:--theme" in signals
     assert "option_use:theme" in signals
@@ -416,26 +416,26 @@ def test_rich_cli_compile_only_retrieves_theme_option_evidence_if_local_clone_ex
     assert "invalid_behavior_expected" not in result["packet"]
 
 
-def test_robotriage_cli_target_set_stays_stable_with_option_value_evidence(repo: Path) -> None:
+def test_exampleservice_cli_target_set_stays_stable_with_option_value_evidence(repo: Path) -> None:
     _write(repo / "tools" / "create_demo_outputs.py", "import argparse\np=argparse.ArgumentParser(description='Create demo outputs')\np.add_argument('--out', help='output folder')\nprint('success: demo outputs created')\n")
     _write(repo / "tools" / "run_diagnostic_batch.py", "import argparse\np=argparse.ArgumentParser(description='Run diagnostic batch')\np.add_argument('--profile', help='profile value')\nraise SystemExit('error: missing profile')\nprint('status: complete')\n")
-    _write(repo / "cpp" / "src" / "main.cpp", '#include <iostream>\nint main(){ std::cerr << "Usage: robotriage_diag --profile <actuator|power>"; std::cerr << " error: missing profile"; std::cout << "status ok success"; }\n')
-    _write(repo / "ros2" / "robotriage_ros" / "tools" / "export_scenarios_to_csv.py", "import argparse\np=argparse.ArgumentParser(description='Export scenario CSVs')\np.add_argument('--output-root', help='output folder')\nraise SystemExit('error: missing scenario')\nprint('success: exported scenarios')\n")
-    _write(repo / "ros2" / "robotriage_ros" / "robotriage_ros" / "diagnostic_bridge_node.py", "class DiagnosticBridgeNode: pass\n")
+    _write(repo / "cpp" / "src" / "main.cpp", '#include <iostream>\nint main(){ std::cerr << "Usage: exampleservice_diag --profile <actuator|power>"; std::cerr << " error: missing profile"; std::cout << "status ok success"; }\n')
+    _write(repo / "ros2" / "exampleservice_ros" / "tools" / "export_scenarios_to_csv.py", "import argparse\np=argparse.ArgumentParser(description='Export scenario CSVs')\np.add_argument('--output-root', help='output folder')\nraise SystemExit('error: missing scenario')\nprint('success: exported scenarios')\n")
+    _write(repo / "ros2" / "exampleservice_ros" / "exampleservice_ros" / "diagnostic_bridge_node.py", "class DiagnosticBridgeNode: pass\n")
     _write(repo / "tests" / "test_cli.py", "def test_cli(): pass\n")
-    _write(repo / "setup.py", "setup(name='robotriage')\n")
+    _write(repo / "setup.py", "setup(name='exampleservice')\n")
     _prepare(repo)
 
-    result = compile_prompt(repo, ROBOTRIAGE_CLI_PROMPT, "lite", record=False)
+    result = compile_prompt(repo, EXAMPLE_SERVICE_CLI_PROMPT, "lite", record=False)
 
     candidates = set(_manifest_paths(result["candidate_edit_files"]))
     assert {
         "tools/create_demo_outputs.py",
         "tools/run_diagnostic_batch.py",
         "cpp/src/main.cpp",
-        "ros2/robotriage_ros/tools/export_scenarios_to_csv.py",
+        "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py",
     } <= candidates
-    assert "ros2/robotriage_ros/robotriage_ros/diagnostic_bridge_node.py" not in candidates
+    assert "ros2/exampleservice_ros/exampleservice_ros/diagnostic_bridge_node.py" not in candidates
     assert "setup.py" not in candidates
     assert not any(path.startswith("tests/") for path in candidates)
     assert "tests/test_cli.py" in _all_context_paths(result)

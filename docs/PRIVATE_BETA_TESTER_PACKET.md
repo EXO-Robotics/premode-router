@@ -6,7 +6,7 @@ pCodex is a local context compiler wrapper around Pre-mode. It does not replace 
 
 ## Clone And Install
 
-Private repository SSH clone requires the tester's GitHub account and local SSH key to have access to `EXO-Robotics/premode-router`. If SSH fails with `Permission denied (publickey)`, record that result and use the approved HTTPS clone path. Do not print tokens, dump secrets, or modify SSH keys during dogfood.
+The repository is publicly visible and proprietary. Use the public HTTPS clone path below; no private-repository credential or SSH-key setup is required. Do not print tokens, dump secrets, or modify SSH keys during dogfood.
 
 ```bash
 git clone https://github.com/EXO-Robotics/premode-router.git
@@ -26,8 +26,9 @@ Use this only when the tester needs repo-local development commands or focused p
 python3.11 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol
 ```
+
+The default `literal_symbol` strategy is included in the core editable install. The separate plugin package is only a compatibility fixture.
 
 Editable installs may create `src/premode_router.egg-info/`. That is generated packaging metadata and should remain untracked.
 

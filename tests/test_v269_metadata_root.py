@@ -156,12 +156,12 @@ def test_v2610_direct_child_git_root_outranks_external_package_json(tmp_path: Pa
 
 
 def _make_prompt_affinity_parent(parent: Path) -> None:
-    goldpine = parent / "GoldpineValley-iOS"
-    goldpine.mkdir()
-    (goldpine / ".git").mkdir()
-    (goldpine / "GoldpineValley.xcodeproj").mkdir()
-    (goldpine / "Sources").mkdir()
-    (goldpine / "Sources" / "TutorialView.swift").write_text("struct TutorialView {}\n", encoding="utf-8")
+    examplegame = parent / "ExampleGame-iOS"
+    examplegame.mkdir()
+    (examplegame / ".git").mkdir()
+    (examplegame / "ExampleGame.xcodeproj").mkdir()
+    (examplegame / "Sources").mkdir()
+    (examplegame / "Sources" / "TutorialView.swift").write_text("struct TutorialView {}\n", encoding="utf-8")
 
     openclaw = parent / "openclaw_repo"
     openclaw.mkdir()
@@ -200,16 +200,16 @@ def test_v2611_prompt_affinity_selects_openclaw_direct_child(tmp_path: Path) -> 
     assert "vite build" not in commands_text
 
 
-def test_v2611_prompt_affinity_selects_goldpine_ios_direct_child(tmp_path: Path) -> None:
+def test_v2611_prompt_affinity_selects_examplegame_ios_direct_child(tmp_path: Path) -> None:
     _make_prompt_affinity_parent(tmp_path)
     idx = index_project(tmp_path, "lite")
 
-    detection = detect_projects(tmp_path, entries=idx["entries"], prompt="Fix a small Goldpine iOS tutorial bug")
+    detection = detect_projects(tmp_path, entries=idx["entries"], prompt="Fix a small ExampleGame iOS tutorial bug")
 
-    assert detection["task_root"] == "GoldpineValley-iOS"
+    assert detection["task_root"] == "ExampleGame-iOS"
     assert detection["task_root"] != "_external_references/articraft/upstream_repo/viewer/web"
     candidates = detection["active_root_candidates"]
-    assert candidates[0]["root"] == "GoldpineValley-iOS"
+    assert candidates[0]["root"] == "ExampleGame-iOS"
     assert candidates[0]["prompt_affinity_bonus"] >= 250
 
 
@@ -221,7 +221,7 @@ def test_v2611_ambiguous_direct_children_report_diagnostics(tmp_path: Path) -> N
 
     assert detection["task_root"] != "_external_references/articraft/upstream_repo/viewer/web"
     assert detection["root_selection_ambiguity"]["candidate_count"] >= 2
-    assert {c["root"] for c in detection["root_selection_ambiguity"]["candidates"]} >= {"GoldpineValley-iOS", "openclaw_repo"}
+    assert {c["root"] for c in detection["root_selection_ambiguity"]["candidates"]} >= {"ExampleGame-iOS", "openclaw_repo"}
     assert not any(c["root"].endswith("node_modules/express") for c in detection["active_root_candidates"])
 
 
@@ -297,10 +297,10 @@ def test_v2612_child_repo_boundary_compacts_dirty_parent_guidance(tmp_path: Path
     (openclaw / "Config").mkdir()
     (openclaw / "Config" / "DefaultGame.ini").write_text("[/Script/OpenClaw]\n", encoding="utf-8")
 
-    goldpine = parent / "GoldpineValley-iOS"
-    goldpine.mkdir()
-    (goldpine / ".git").mkdir()
-    (goldpine / "GoldpineValley.xcodeproj").mkdir()
+    examplegame = parent / "ExampleGame-iOS"
+    examplegame.mkdir()
+    (examplegame / ".git").mkdir()
+    (examplegame / "ExampleGame.xcodeproj").mkdir()
 
     external = parent / "_external_references" / "articraft" / "upstream_repo" / "viewer" / "web"
     external.mkdir(parents=True)

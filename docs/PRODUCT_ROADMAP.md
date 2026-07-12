@@ -31,7 +31,7 @@ Fixes:
 - `Day Report` / receipt intent routing
 - generated `.premode/` dirty-state filtering
 - Swift/iOS command override docs
-- Goldpine-style rules/memory templates
+- ExampleGame-style rules/memory templates
 
 
 ## v2.4.4 — General Intake Layer

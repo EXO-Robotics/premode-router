@@ -100,11 +100,11 @@ premode compile / pcodex
 ## v0.2.6.11 changes
 
 - Bumped package version to `0.2.6.11`.
-- Added prompt-affinity scoring for `active_root_candidates` using root names and Unreal/OpenClaw, Goldpine/iOS/Swift/Xcode, and Node/web markers.
+- Added prompt-affinity scoring for `active_root_candidates` using root names and Unreal/OpenClaw, ExampleGame/iOS/Swift/Xcode, and Node/web markers.
 - Added candidate diagnostics for markers, marker bonuses, prompt-affinity bonuses, ignored/reference penalties, and direct-child ambiguity.
 - Preserved v2.6.10 protection against `_external_references` and dependency package roots outranking visible child repos.
 - Added lite authority-surface compaction so dirty runbook/history/memory/superpowers/handoff docs do not consume full-text context for source/gameplay prompts.
-- Added focused tests for OpenClaw vs Goldpine prompt routing, ambiguous direct child roots, and OpenClaw-style dirty authority budget compaction.
+- Added focused tests for OpenClaw vs ExampleGame prompt routing, ambiguous direct child roots, and OpenClaw-style dirty authority budget compaction.
 
 ## v0.2.6.10 changes
 

@@ -27,8 +27,8 @@ Options:
   --uninstall                  Remove only the install root created by this installer.
   --help                       Show this help.
 
-This installer builds from the local source checkout. It does not use PyPI
-packages for premode-router or premode-plugin-literal-symbol, does not publish
+This installer builds the core package and bundled default strategy from the local source checkout. It does not use PyPI
+packages for pCodex, does not publish
 anything, does not run live Codex tasks, and does not mutate real Codex config
 unless --real-codex-registration is passed explicitly.
 USAGE
@@ -212,6 +212,10 @@ if [[ "$UNINSTALL" -eq 1 ]]; then
 fi
 
 select_python
+
+if [[ -e "$INSTALL_ROOT" ]]; then
+  fail "refusing to install into an existing path; choose a new empty install-root or uninstall the owned installation first: $INSTALL_ROOT"
+fi
 
 log "repo root: $REPO_ROOT"
 log "install root: $INSTALL_ROOT"

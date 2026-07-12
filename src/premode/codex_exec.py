@@ -48,7 +48,7 @@ class CodexOptions:
     private_paths_forbidden: bool = False
     tuning_profile: str | None = None
     child_env: dict[str, str] = field(default_factory=dict)
-    canonical_core_packet: bool = False
+    canonical_core_packet: bool = True
 
 
 @dataclass(frozen=True)

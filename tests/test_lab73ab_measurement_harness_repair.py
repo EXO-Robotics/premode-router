@@ -124,11 +124,11 @@ def test_stacktrace_and_import_error_are_references_not_reads() -> None:
 
 def test_memory_file_reads_are_separated_from_repo_file_reads() -> None:
     ledger = command_ledger_from_events([
-        _command_event("cat /Users/example/.codex/memories/MEMORY.md"),
+        _command_event("cat /example/codex/memories/MEMORY.md"),
         _command_event("cat src/foo.py"),
     ])
 
-    assert ledger["memory_file_reads"] == ["Users/example/.codex/memories/MEMORY.md"]
+    assert ledger["memory_file_reads"] == ["example/codex/memories/MEMORY.md"]
     assert ledger["explicit_repo_file_reads"] == ["src/foo.py"]
 
 

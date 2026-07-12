@@ -14,7 +14,7 @@ from premode.config import init_project
 from premode.indexer import index_project
 
 
-GOLDPINE_PROMPT = (
+EXAMPLE_GAME_PROMPT = (
     "Refine the SwiftUI tutorial and homestead guidance copy around the current "
     "tutorial overlay, Homestead screen, and current UI shell. Keep this to UI "
     "copy/state files. Avoid Docs, Planning_Bundles, ArtSource, animal folders, "
@@ -183,24 +183,24 @@ def _validate(case: StressCase, result: dict[str, Any]) -> list[str]:
     if (result.get("metrics") or {}).get("budget_exceeded_by"):
         notes.append("budget_exceeded")
 
-    if case.name == "robotriage_cli_wording":
-        _assert_contains(candidates, case.expected_files, notes, "robotriage_target")
-        _assert_not_candidates(candidates, {"setup.py", "pyproject.toml", "tests/test_robotriage_cli.py"}, notes, "negative_constraint")
+    if case.name == "exampleservice_cli_wording":
+        _assert_contains(candidates, case.expected_files, notes, "exampleservice_target")
+        _assert_not_candidates(candidates, {"setup.py", "pyproject.toml", "tests/test_exampleservice_cli.py"}, notes, "negative_constraint")
         # A grouped 3-message / 4-file CLI edit is a correct-but-multi-file locate:
         # calibrated confidence of high OR medium is acceptable (fail only if it
         # collapses to low). Reflects Lab 7.2H confidence calibration.
         if confidence == "low":
             notes.append(f"locator_confidence_low:{confidence}")
-    elif case.name == "goldpine_swiftui_ui_copy":
+    elif case.name == "examplegame_swiftui_ui_copy":
         required = {
-            "GoldpineValley/Views/MainMenuView.swift",
-            "GoldpineValley/Views/BottomBarView.swift",
-            "GoldpineValley/Views/HomesteadView.swift",
-            "GoldpineValley/Views/HomesteadLocationSceneView.swift",
-            "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
+            "ExampleGame/Views/MainMenuView.swift",
+            "ExampleGame/Views/BottomBarView.swift",
+            "ExampleGame/Views/HomesteadView.swift",
+            "ExampleGame/Views/HomesteadLocationSceneView.swift",
+            "ExampleGame/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
         }
-        _assert_contains(candidates, required, notes, "goldpine_swift")
-        _assert_contains(candidates | all_context, {"GoldpineValley/Views/TutorialOverlayView.swift"}, notes, "goldpine_tutorial_overlay")
+        _assert_contains(candidates, required, notes, "examplegame_swift")
+        _assert_contains(candidates | all_context, {"ExampleGame/Views/TutorialOverlayView.swift"}, notes, "examplegame_tutorial_overlay")
     elif case.name == "generic_ui_start_button":
         if not candidates or "src/app/page.tsx" not in candidates:
             notes.append("start_page_not_candidate")
@@ -247,14 +247,14 @@ def _validate(case: StressCase, result: dict[str, Any]) -> list[str]:
     return notes
 
 
-def setup_robotriage(repo: Path) -> None:
+def setup_exampleservice(repo: Path) -> None:
     _write(
         repo / "cpp" / "src" / "main.cpp",
         """
         #include <iostream>
         #include <stdexcept>
         void print_usage() {
-            std::cerr << "Usage: robotriage_diag --profile <actuator|power> --input <csv> --output <json>\\n";
+            std::cerr << "Usage: exampleservice_diag --profile <actuator|power> --input <csv> --output <json>\\n";
         }
         int main(int argc, char** argv) {
             try {
@@ -277,29 +277,29 @@ def setup_robotriage(repo: Path) -> None:
     )
     _write(repo / "tools" / "create_demo_outputs.py", "def create_demo_outputs(): return 'demo outputs success status message'\n")
     _write(
-        repo / "ros2" / "robotriage_ros" / "tools" / "export_scenarios_to_csv.py",
+        repo / "ros2" / "exampleservice_ros" / "tools" / "export_scenarios_to_csv.py",
         "import argparse\n"
         "def export_scenarios_to_csv(): return 'CSV scenario export help text summary written status message'\n"
         "if __name__ == '__main__': argparse.ArgumentParser(description='Export deterministic scenario CSVs').parse_args()\n",
     )
     _write(repo / "tools" / "build_html_report.py", "import argparse\n")
-    _write(repo / "tests" / "test_robotriage_cli.py", "def test_cli_regression(): pass\n")
-    _write(repo / "setup.py", "setup(name='robotriage')\n")
+    _write(repo / "tests" / "test_exampleservice_cli.py", "def test_cli_regression(): pass\n")
+    _write(repo / "setup.py", "setup(name='exampleservice')\n")
 
 
-def setup_goldpine(repo: Path) -> None:
-    (repo / "GoldpineValley.xcodeproj").mkdir()
-    _write(repo / "GoldpineValley" / "Views" / "MainMenuView.swift", "struct MainMenuView { var tutorialOverlayVisible = false }\n")
-    _write(repo / "GoldpineValley" / "Views" / "BottomBarView.swift", "struct BottomBarView { var body: String { \"bar\" } }\n")
-    _write(repo / "GoldpineValley" / "Views" / "HomesteadView.swift", "struct HomesteadView { var mapGuidance = \"Tap a place\" }\n")
-    _write(repo / "GoldpineValley" / "Views" / "TutorialOverlayView.swift", "struct TutorialOverlayView { var copy = \"Tap Homestead to continue\" }\n")
-    _write(repo / "GoldpineValley" / "Views" / "HomesteadLocationSceneView.swift", "struct HomesteadLocationSceneView { var backToMapHint = \"Map\" }\n")
-    _write(repo / "GoldpineValley" / "Views" / "PannableHomesteadMapView.swift", "struct PannableHomesteadMapView { var zoom = 1 }\n")
-    _write(repo / "GoldpineValley" / "Views" / "SharedViewStyles.swift", "struct SharedViewStyles {}\n")
-    _write(repo / "GoldpineValley" / "Views" / "FounderSelectView.swift", "struct FounderSelectView { var body: String { \"founder\" } }\n")
-    _write(repo / "GoldpineValley" / "Views" / "EventCardView.swift", "struct EventCardView { var body: String { \"event\" } }\n")
-    _write(repo / "GoldpineValley" / "ViewModels" / "GameSessionViewModel+HomesteadNavigation.swift", "final class GameSessionViewModel { var tutorialState = 0 }\n")
-    _write(repo / "GoldpineValley" / "Models" / "TutorialState.swift", "struct TutorialState { var step: Int }\n")
+def setup_examplegame(repo: Path) -> None:
+    (repo / "ExampleGame.xcodeproj").mkdir()
+    _write(repo / "ExampleGame" / "Views" / "MainMenuView.swift", "struct MainMenuView { var tutorialOverlayVisible = false }\n")
+    _write(repo / "ExampleGame" / "Views" / "BottomBarView.swift", "struct BottomBarView { var body: String { \"bar\" } }\n")
+    _write(repo / "ExampleGame" / "Views" / "HomesteadView.swift", "struct HomesteadView { var mapGuidance = \"Tap a place\" }\n")
+    _write(repo / "ExampleGame" / "Views" / "TutorialOverlayView.swift", "struct TutorialOverlayView { var copy = \"Tap Homestead to continue\" }\n")
+    _write(repo / "ExampleGame" / "Views" / "HomesteadLocationSceneView.swift", "struct HomesteadLocationSceneView { var backToMapHint = \"Map\" }\n")
+    _write(repo / "ExampleGame" / "Views" / "PannableHomesteadMapView.swift", "struct PannableHomesteadMapView { var zoom = 1 }\n")
+    _write(repo / "ExampleGame" / "Views" / "SharedViewStyles.swift", "struct SharedViewStyles {}\n")
+    _write(repo / "ExampleGame" / "Views" / "FounderSelectView.swift", "struct FounderSelectView { var body: String { \"founder\" } }\n")
+    _write(repo / "ExampleGame" / "Views" / "EventCardView.swift", "struct EventCardView { var body: String { \"event\" } }\n")
+    _write(repo / "ExampleGame" / "ViewModels" / "GameSessionViewModel+HomesteadNavigation.swift", "final class GameSessionViewModel { var tutorialState = 0 }\n")
+    _write(repo / "ExampleGame" / "Models" / "TutorialState.swift", "struct TutorialState { var step: Int }\n")
     _write(repo / "Docs" / "Planning_Bundles" / "Week_04" / "AGENTS.md", "# Planning\nHistorical planning only.\n")
     _write(repo / "Docs" / "app_reality_alignment.md", "# Reality\nDocs only.\n")
 
@@ -333,9 +333,9 @@ def setup_replay_test(repo: Path) -> None:
 
 
 def setup_config(repo: Path) -> None:
-    _write(repo / "pyproject.toml", "[project.scripts]\nrobotriage = 'src.cli:main'\n")
+    _write(repo / "pyproject.toml", "[project.scripts]\nexampleservice = 'src.cli:main'\n")
     _write(repo / "src" / "cli.py", "def main(): pass\n")
-    _write(repo / "README.md", "Run the robotriage command.\n")
+    _write(repo / "README.md", "Run the exampleservice command.\n")
 
 
 def setup_docs(repo: Path) -> None:
@@ -371,25 +371,25 @@ def setup_secret(repo: Path) -> None:
 def stress_cases() -> list[StressCase]:
     return [
         StressCase(
-            "robotriage_cli_wording",
+            "exampleservice_cli_wording",
             "Make three small CLI/user-message clarity improvements: one help text, one error message, one success/status message. Do not change packaging. Do not change tests. Run the regression command.",
-            setup_robotriage,
-            {"tools/run_diagnostic_batch.py", "tools/create_demo_outputs.py", "ros2/robotriage_ros/tools/export_scenarios_to_csv.py", "cpp/src/main.cpp"},
+            setup_exampleservice,
+            {"tools/run_diagnostic_batch.py", "tools/create_demo_outputs.py", "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py", "cpp/src/main.cpp"},
             set(),
             use_repo_map=True,
         ),
         StressCase(
-            "goldpine_swiftui_ui_copy",
-            GOLDPINE_PROMPT,
-            setup_goldpine,
+            "examplegame_swiftui_ui_copy",
+            EXAMPLE_GAME_PROMPT,
+            setup_examplegame,
             {
-                "GoldpineValley/Views/MainMenuView.swift",
-                "GoldpineValley/Views/BottomBarView.swift",
-                "GoldpineValley/Views/HomesteadView.swift",
-                "GoldpineValley/Views/HomesteadLocationSceneView.swift",
-                "GoldpineValley/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
+                "ExampleGame/Views/MainMenuView.swift",
+                "ExampleGame/Views/BottomBarView.swift",
+                "ExampleGame/Views/HomesteadView.swift",
+                "ExampleGame/Views/HomesteadLocationSceneView.swift",
+                "ExampleGame/ViewModels/GameSessionViewModel+HomesteadNavigation.swift",
             },
-            {"GoldpineValley/Views/TutorialOverlayView.swift"},
+            {"ExampleGame/Views/TutorialOverlayView.swift"},
             use_repo_map=True,
         ),
         StressCase("generic_ui_start_button", 'Move the "Start" button on the Home Screen.', setup_start, {"src/app/page.tsx"}, set()),
@@ -439,7 +439,7 @@ def render_markdown(results: list[StressResult]) -> str:
         "## 1. Executive summary",
         f"- Cases passed: {passed}/{len(results)}",
         f"- Cases failed: {failed}",
-        f"- Live RoboTriage comparison readiness: {'ready' if ready else 'not ready'}",
+        f"- Live ExampleService comparison readiness: {'ready' if ready else 'not ready'}",
         "- No live Codex run was performed.",
         "- No external repositories were downloaded.",
         "",
@@ -474,18 +474,18 @@ def render_markdown(results: list[StressResult]) -> str:
             f"- Notes: {result.notes or ['none']}",
             "",
         ])
-    robotriage = next(result for result in results if result.case == "robotriage_cli_wording")
-    goldpine = next(result for result in results if result.case == "goldpine_swiftui_ui_copy")
+    exampleservice = next(result for result in results if result.case == "exampleservice_cli_wording")
+    examplegame = next(result for result in results if result.case == "examplegame_swiftui_ui_copy")
     lines.extend([
-        "## 5. RoboTriage readiness assessment",
-        f"- Result: {robotriage.result}",
-        f"- Candidate files: {robotriage.compiler_candidate_edit_files}",
-        f"- Locator confidence: {robotriage.locator_confidence}",
+        "## 5. ExampleService readiness assessment",
+        f"- Result: {exampleservice.result}",
+        f"- Candidate files: {exampleservice.compiler_candidate_edit_files}",
+        f"- Locator confidence: {exampleservice.locator_confidence}",
         "",
-        "## 6. Goldpine stability assessment",
-        f"- Result: {goldpine.result}",
-        f"- Candidate files: {goldpine.compiler_candidate_edit_files}",
-        f"- Locator confidence: {goldpine.locator_confidence}",
+        "## 6. ExampleGame stability assessment",
+        f"- Result: {examplegame.result}",
+        f"- Candidate files: {examplegame.compiler_candidate_edit_files}",
+        f"- Locator confidence: {examplegame.locator_confidence}",
         "",
         "## 7. Token/budget summary",
         "| Case | Packet tokens | Hard budget | Budget exceeded by |",
@@ -510,7 +510,7 @@ def render_markdown(results: list[StressResult]) -> str:
         "- This pass is compile-only and cannot prove live model edit quality.",
         "",
         "## 10. Recommendation",
-        "Ready for controlled live RoboTriage comparison." if ready else "Not ready for controlled live RoboTriage comparison; resolve failing cases first.",
+        "Ready for controlled live ExampleService comparison." if ready else "Not ready for controlled live ExampleService comparison; resolve failing cases first.",
         "",
     ])
     return "\n".join(lines)

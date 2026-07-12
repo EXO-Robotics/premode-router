@@ -70,7 +70,5 @@ def test_execute_uses_compiled_packet_stdin(monkeypatch, repo):
     run_codex(repo, SENTINEL_PROMPT, "lite", CodexOptions(json=True))
     assert captured["args"][-1] == "-"
     assert SENTINEL_PROMPT not in captured["args"]
-    assert captured["input"] != SENTINEL_PROMPT
-    assert SENTINEL_PROMPT in captured["input"]
-    assert "The exact user prompt below is the canonical task instruction" in captured["input"]
-    assert "PREMODE_COMPILED_PACKET_V3" in captured["input"]
+    assert captured["input"] == SENTINEL_PROMPT
+    assert "PREMODE_COMPILED_PACKET_V3" not in captured["input"]

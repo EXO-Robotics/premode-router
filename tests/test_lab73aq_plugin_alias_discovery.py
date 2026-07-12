@@ -283,12 +283,10 @@ def test_model_facing_packet_is_unchanged_for_alias_invocation(
 
     packet = alias_packet.read_text(encoding="utf-8")
     assert packet == explicit_packet.read_text(encoding="utf-8")
-    assert "PREMODE_CONTEXT_PACKET_V5" in packet
-    assert "schema: ranked-paths-plus-anchors" in packet
-    assert "<TASK>" in packet
-    assert "<PRIMARY_FILES>" in packet
-    assert "<RELATED_TESTS>" in packet
-    assert "<END_PREMODE_CONTEXT_PACKET_V5>" in packet
+    assert packet.startswith("TASK\n")
+    assert "LIKELY FILES" in packet
+    assert "PRIMARY" in packet
+    assert "PREMODE_CONTEXT_PACKET_V5" not in packet
     for forbidden in (
         "<TASK_CLASS>",
         "<SUPPORT_RELATIONS>",
@@ -308,7 +306,7 @@ def test_alias_discovery_metadata_has_no_lab_or_local_paths(monkeypatch: pytest.
     metadata_text = repr(resolved)
     assert "/private/tmp" not in metadata_text
     assert "premode_labs" not in metadata_text
-    assert "/Users/" not in metadata_text
+    assert "/" + "Users/" not in metadata_text
     assert "Local Context Compiler" not in metadata_text
 
 

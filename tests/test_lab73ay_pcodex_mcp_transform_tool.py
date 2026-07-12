@@ -24,22 +24,25 @@ def _isolated_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
 
 def _packet(task: str) -> str:
     return (
-        "PREMODE_CONTEXT_PACKET_V5\n"
-        "schema: ranked-paths-plus-anchors\n"
-        "format_version: 1\n"
-        "<TASK>\n"
+        "TASK\n"
         f"{task}\n"
-        "</TASK>\n"
-        "<PRIMARY_FILES>\n"
-        "1. src/example.py\n"
-        "   anchors: symbol=load_example\n"
-        "</PRIMARY_FILES>\n"
-        "<RELATED_TESTS>\n"
-        "1. tests/test_example.py\n"
-        "   anchors: test_name=test_load_example\n"
-        "</RELATED_TESTS>\n"
-        "<END_PREMODE_CONTEXT_PACKET_V5>\n"
+        "LIKELY FILES\n\nPRIMARY\n\n* src/example.py\n\n"
+        "VERIFY\n\n* tests/test_example.py\n\n"
+        "Start with these files. Expand only when required by the task.\n"
     )
+
+
+def _decision(*, abstain: bool = False) -> dict:
+    primary = [] if abstain else ["src/example.py"]
+    return {
+        "schema_version": "routing-decision.v1", "mode": "abstain" if abstain else "narrow", "confidence": "low" if abstain else "high",
+        "primary_paths": primary, "verification_paths": [] if abstain else ["tests/test_example.py"], "support_paths": [],
+        "ambiguity_indicators": ["fixture_abstain"] if abstain else [], "decision_reasons": ["fixture"],
+        "candidate_provenance": [] if abstain else [
+            {"schema_version": "candidate-evidence.v1", "path": "src/example.py", "role": "primary", "rank": 0, "score": 10, "confidence": "high", "matched_signals": ["explicit_path:src/example.py"], "provenance": ["fixture"]},
+            {"schema_version": "candidate-evidence.v1", "path": "tests/test_example.py", "role": "verification", "rank": 1, "score": 8, "confidence": "high", "matched_signals": ["source_test_relation:src/example.py"], "provenance": ["fixture"]},
+        ],
+    }
 
 
 def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
@@ -49,7 +52,8 @@ def _alias_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
         "premode_command": ["premode", "compile", prompt, "--repo", str(project_root), "--plugin", "literal_symbol"],
         "packet": _packet(prompt),
         "packet_sha256": "abc123",
-        "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY"],
+        "routing_decision": _decision(),
     }
 
 
@@ -70,7 +74,18 @@ def _fallback_runner(project_root: Path, prompt: str, profile: str | None) -> di
         ],
         "packet": _packet(prompt),
         "packet_sha256": "fallback123",
-        "model_facing_sections": ["TASK", "PRIMARY_FILES", "RELATED_TESTS", "END_PREMODE_CONTEXT_PACKET_V5"],
+        "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY"],
+        "routing_decision": _decision(),
+    }
+
+
+def _abstain_runner(project_root: Path, prompt: str, profile: str | None) -> dict:
+    return {
+        "status": "compiled",
+        "route": "plugin_alias",
+        "packet": prompt,
+        "packet_sha256": "abstain123",
+        "routing_decision": _decision(abstain=True),
     }
 
 
@@ -120,6 +135,26 @@ def test_tool_function_returns_raw_prompt_when_disabled(repo: Path, monkeypatch:
     assert result.transformed_prompt == RAW_PROMPT
 
 
+def test_mcp_abstention_is_exact_raw_prompt_with_no_selected_paths(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolated_home(monkeypatch, tmp_path)
+    pcodex.set_enabled(repo, True)
+
+    result = pcodex_mcp.pcodex_transform_subagent_prompt_tool(
+        RAW_PROMPT,
+        project_root=repo,
+        dry_run=True,
+        compile_runner=_abstain_runner,
+    )
+
+    assert result.transformed_prompt == RAW_PROMPT
+    assert result.transform_applied is False
+    assert result.metadata["routing_mode"] == "abstain"
+    assert result.metadata["selected_paths"] == []
+    assert result.metadata["packet_path"] is None
+
+
 def test_tool_function_returns_raw_prompt_with_error_on_compile_failure(
     repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -156,9 +191,9 @@ def test_tool_result_reports_allowed_model_facing_sections_only(
 
     assert result.metadata["model_facing_sections"] == [
         "TASK",
-        "PRIMARY_FILES",
-        "RELATED_TESTS",
-        "END_PREMODE_CONTEXT_PACKET_V5",
+        "LIKELY FILES",
+        "PRIMARY",
+        "VERIFY",
     ]
 
 
@@ -175,7 +210,7 @@ def test_tool_result_does_not_expose_diagnostics_or_forbidden_sections(
         compile_runner=_alias_runner,
     )
 
-    for required in ("<TASK>", "<PRIMARY_FILES>", "<RELATED_TESTS>", "<END_PREMODE_CONTEXT_PACKET_V5>"):
+    for required in ("TASK\n", "LIKELY FILES", "PRIMARY", "VERIFY"):
         assert required in result.transformed_prompt
     for forbidden in (
         "TASK_CLASS",
@@ -350,7 +385,7 @@ def test_no_lab_or_user_paths_are_baked_into_product_code() -> None:
     source = Path(pcodex_mcp.__file__).read_text(encoding="utf-8")
 
     assert "/private/tmp" not in source
-    assert "/Users/" not in source
+    assert "/" + "Users/" not in source
     assert "premode_labs" not in source
 
 

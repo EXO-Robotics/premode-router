@@ -39,7 +39,7 @@ Path-like strings ending in known source/log extensions are preserved before hig
 Example preserved path:
 
 ```text
-GoldpineValley/Views/PlayerActivities/StarterMinigames/RepairAssistGameEngine.swift
+ExampleGame/Views/PlayerActivities/StarterMinigames/RepairAssistGameEngine.swift
 ```
 
 ### 3. Day Report intent routing

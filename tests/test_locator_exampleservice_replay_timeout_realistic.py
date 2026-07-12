@@ -1,4 +1,4 @@
-"""Lab 7.2K — realistic RoboTriage replay-timeout localization.
+"""Lab 7.2K — realistic ExampleService replay-timeout localization.
 
 Reproduces the real clean-baseline failure where a "fix the replay timeout
 behavior" prompt drifted to actuator/report/demo/html surfaces instead of the
@@ -17,11 +17,11 @@ def _write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
-def _make_robotriage_like_repo(repo: Path) -> None:
+def _make_exampleservice_like_repo(repo: Path) -> None:
     # --- Runtime/result behavior source (the correct edit surface) -------------
-    _write(repo / "ros2/robotriage_ros/robotriage_ros/diagnostic_bridge_node.py", """
+    _write(repo / "ros2/exampleservice_ros/exampleservice_ros/diagnostic_bridge_node.py", """
 # M3 diagnostic bridge runtime. Converts replay runtime messages into actuator
-# CSV, invokes the C++ diagnostic CLI, and publishes /robotriage/diagnostic_result.
+# CSV, invokes the C++ diagnostic CLI, and publishes /exampleservice/diagnostic_result.
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
@@ -31,7 +31,7 @@ class DiagnosticBridgeNode(Node):
         super().__init__("diagnostic_bridge_node")
         self.timeout_s = timeout_s
         self.sub = self.create_subscription(String, "/joint_state", self._on_msg, 10)
-        self.pub = self.create_publisher(String, "/robotriage/diagnostic_result", 10)
+        self.pub = self.create_publisher(String, "/exampleservice/diagnostic_result", 10)
     def _on_msg(self, msg):
         if self._elapsed_since_replay() > self.timeout_s:
             # actuator replay timeout: report the failure result clearly
@@ -41,7 +41,7 @@ class DiagnosticBridgeNode(Node):
             result = self._run_diagnostic(msg)
         self.pub.publish(String(data=result["message"]))
 """)
-    _write(repo / "ros2/robotriage_ros/robotriage_ros/trajectory_player_node.py", """
+    _write(repo / "ros2/exampleservice_ros/exampleservice_ros/trajectory_player_node.py", """
 # M2 trajectory player node. Publishes deterministic commanded joint position.
 import rclpy
 from rclpy.node import Node
@@ -65,7 +65,7 @@ DiagnosticResult classify_actuator(const Samples& s) {
     return result;
 }
 """)
-    _write(repo / "ros2/robotriage_ros/robotriage_ros/scenario_loader.py", """
+    _write(repo / "ros2/exampleservice_ros/exampleservice_ros/scenario_loader.py", """
 # Loads scenario definitions (data/fixtures) for replay.
 import yaml
 def load_scenario(name):
@@ -101,20 +101,20 @@ def main():
 """)
     _write(repo / "cpp/src/main.cpp", """
 #include <iostream>
-// RoboTriage diagnostic CLI entrypoint.
+// ExampleService diagnostic CLI entrypoint.
 int main(int argc, char** argv) {
-    if (argc < 2) { std::cerr << "Usage: robotriage_diag <csv>" << std::endl; return 1; }
+    if (argc < 2) { std::cerr << "Usage: exampleservice_diag <csv>" << std::endl; return 1; }
     std::cout << "diagnostic complete" << std::endl; return 0;
 }
 """)
-    _write(repo / "ros2/robotriage_ros/tools/export_scenarios_to_csv.py", """
+    _write(repo / "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py", """
 import argparse
 # Exports scenario CSVs. CLI help/usage.
 p = argparse.ArgumentParser(description="Export scenario CSVs")
 p.add_argument("--config", help="scenario yaml")
 print("exported")
 """)
-    _write(repo / "portfolio_evidence/robotriage_ros2/tools/render_evidence_pngs.py", """
+    _write(repo / "portfolio_evidence/exampleservice_ros2/tools/render_evidence_pngs.py", """
 # Renders evidence PNG images from diagnostic result JSON.
 def render(results):
     for r in results:
@@ -125,8 +125,8 @@ def render(results):
     _write(repo / "results/actuator_result.json", '{"status": "FAILURE", "message": "actuator fault"}\n')
     _write(repo / "docs/demo_walkthrough.md", "# Demo walkthrough\nReplay the scenario and read the actuator report.\n")
     # --- Verification / regression harness (verification/support, not primary) --
-    _write(repo / "ros2/robotriage_ros/tests/run_ros_replay_regression.py", "print('replay regression: 6/6 passed')\n")
-    _write(repo / "ros2/robotriage_ros/tests/run_diagnostic_bridge_runtime_check.py", "# runtime check: actuator timeout must be reported\nprint('runtime check passed')\n")
+    _write(repo / "ros2/exampleservice_ros/tests/run_ros_replay_regression.py", "print('replay regression: 6/6 passed')\n")
+    _write(repo / "ros2/exampleservice_ros/tests/run_diagnostic_bridge_runtime_check.py", "# runtime check: actuator timeout must be reported\nprint('runtime check passed')\n")
     _write(repo / "tests/run_regression_tests.py", "print('11/11 diagnostic cases passed')\n")
 
 
@@ -146,18 +146,18 @@ def _is_runtime_behavior_source(path: str) -> bool:
 # --- Test A: realistic replay-timeout localization -----------------------------
 
 def test_replay_timeout_selects_runtime_result_source_not_report_demo(repo: Path):
-    _make_robotriage_like_repo(repo)
+    _make_exampleservice_like_repo(repo)
     r = locate_files(repo, REPLAY_PROMPT)
     primary = [f.path for f in r.primary_files]
     verification = [f.path for f in r.verification_files]
 
     # A runtime/result behavior source is a primary candidate.
     assert any(_is_runtime_behavior_source(p) for p in primary), primary
-    assert "ros2/robotriage_ros/robotriage_ros/diagnostic_bridge_node.py" in primary or "cpp/src/actuator_profile.cpp" in primary
+    assert "ros2/exampleservice_ros/exampleservice_ros/diagnostic_bridge_node.py" in primary or "cpp/src/actuator_profile.cpp" in primary
     # Report / demo / html / data / docs artifacts are NOT primary edit candidates.
     for bad in ("reports/actuator_binding_report.html", "tools/build_html_report.py",
                 "dashboard/streamlit_app.py", "results/actuator_result.json",
-                "docs/demo_walkthrough.md", "portfolio_evidence/robotriage_ros2/tools/render_evidence_pngs.py"):
+                "docs/demo_walkthrough.md", "portfolio_evidence/exampleservice_ros2/tools/render_evidence_pngs.py"):
         assert bad not in primary, f"{bad} should not be primary"
     # Regression/runtime-check harnesses are verification/support, not primary.
     assert not any("/tests/" in p or p.startswith("tests/") for p in primary)
@@ -169,12 +169,12 @@ def test_replay_timeout_selects_runtime_result_source_not_report_demo(repo: Path
 # --- Test B: CLI target-set stability ------------------------------------------
 
 def test_cli_target_set_remains_stable(repo: Path):
-    _make_robotriage_like_repo(repo)
+    _make_exampleservice_like_repo(repo)
     r = locate_files(repo, CLI_PROMPT)
     # Candidate context = primary + support; the CLI target set must remain present.
     candidates = {f.path for f in r.primary_files} | {f.path for f in r.support_files}
     for expected in ("tools/create_demo_outputs.py", "tools/run_diagnostic_batch.py",
-                     "cpp/src/main.cpp", "ros2/robotriage_ros/tools/export_scenarios_to_csv.py"):
+                     "cpp/src/main.cpp", "ros2/exampleservice_ros/tools/export_scenarios_to_csv.py"):
         assert expected in candidates, f"CLI target {expected} missing: {candidates}"
     # The demo output generator is not demoted for a CLI message prompt.
     assert "tools/create_demo_outputs.py" in {f.path for f in r.primary_files}
@@ -183,7 +183,7 @@ def test_cli_target_set_remains_stable(repo: Path):
 # --- Test C: report/demo prompt still works ------------------------------------
 
 def test_report_output_prompt_keeps_report_files_candidate(repo: Path):
-    _make_robotriage_like_repo(repo)
+    _make_exampleservice_like_repo(repo)
     r = locate_files(repo, REPORT_PROMPT)
     all_paths = {f.path for f in r.primary_files} | {f.path for f in r.support_files}
     # Report/demo/output files are NOT globally suppressed when the prompt asks for report output.
@@ -193,7 +193,7 @@ def test_report_output_prompt_keeps_report_files_candidate(repo: Path):
 # --- Test D: verification clause stays stable ----------------------------------
 
 def test_replay_timeout_do_not_change_tests_keeps_tests_as_verification(repo: Path):
-    _make_robotriage_like_repo(repo)
+    _make_exampleservice_like_repo(repo)
     r = locate_files(repo, REPLAY_NO_TESTS_PROMPT)
     primary = [f.path for f in r.primary_files]
     # Source/runtime candidates only in primary; no test/regression harness as an edit candidate.

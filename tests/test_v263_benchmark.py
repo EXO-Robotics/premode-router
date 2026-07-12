@@ -217,7 +217,7 @@ def test_example_benchmark_suite_has_expected_local_paths_and_requested_categori
         "ci_workflow",
         "migration_refactor",
         "swiftui_like_fixture",
-        "robotriage_like_diagnostic_tooling",
+        "exampleservice_like_diagnostic_tooling",
         "typo_vague_prompt",
         "docs_heavy_repo_prompt",
     } <= categories

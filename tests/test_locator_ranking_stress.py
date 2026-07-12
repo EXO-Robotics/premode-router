@@ -136,9 +136,9 @@ def test_tests_can_be_primary_when_prompt_asks_for_test_expectation(repo: Path) 
 
 
 def test_config_can_be_primary_for_console_script_entry_point(repo: Path) -> None:
-    _write(repo / "pyproject.toml", "[project.scripts]\nrobotriage = 'src.cli:main'\n")
+    _write(repo / "pyproject.toml", "[project.scripts]\nexampleservice = 'src.cli:main'\n")
     _write(repo / "src" / "cli.py", "def main(): pass\n")
-    _write(repo / "README.md", "Run the robotriage command.\n")
+    _write(repo / "README.md", "Run the exampleservice command.\n")
 
     result = locate_files(repo, "Fix the console script entry point.")
 

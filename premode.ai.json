@@ -24,8 +24,7 @@
     ],
     "development_editable": [
       "python3.11 -m venv .venv",
-      ".venv/bin/python -m pip install -e .",
-      ".venv/bin/python -m pip install -e packages/premode-plugin-literal-symbol"
+      ".venv/bin/python -m pip install -e ."
     ]
   },
   "future_install": {

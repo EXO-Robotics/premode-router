@@ -21,8 +21,8 @@ RICH_PROMPT = (
 
 def _prepare_cli_repo(repo: Path) -> None:
     init_project(repo)
-    (repo / "src" / "rich_cli").mkdir(parents=True, exist_ok=True)
-    (repo / "src" / "rich_cli" / "__main__.py").write_text(
+    (repo / "src" / "example_cli").mkdir(parents=True, exist_ok=True)
+    (repo / "src" / "example_cli" / "__main__.py").write_text(
         """
 import argparse
 
@@ -42,9 +42,9 @@ def main(argv=None):
         encoding="utf-8",
     )
     (repo / "tests").mkdir(exist_ok=True)
-    (repo / "tests" / "test_rich_cli.py").write_text(
+    (repo / "tests" / "test_example_cli.py").write_text(
         """
-from rich_cli.__main__ import build_parser
+from example_cli.__main__ import build_parser
 
 def test_theme_choices():
     parser = build_parser()

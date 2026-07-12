@@ -50,7 +50,7 @@ The command-backed local MCP harness proved:
 Isolated installed Codex registration/list/get also worked:
 
 ```bash
-export CODEX_HOME=/private/tmp/premode_labs/<lab>/codex_home
+export CODEX_HOME=/example/pcodex-lab/codex_home
 codex mcp add pcodex -- pcodex mcp-server
 codex mcp list
 codex mcp get pcodex

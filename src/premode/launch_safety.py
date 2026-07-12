@@ -35,10 +35,10 @@ REQUIRED_EXTERNAL_PAYLOAD_FIELDS = (
     "launch_allowed",
 )
 
-PRIVATE_PROJECT_RE = re.compile(r"(?i)\b(GoldpineValley(?:-iOS)?|Rich-CLI|RoboTriage)\b")
-ABSOLUTE_PATH_RE = re.compile(r"(?m)(?:^|[\s'\"(])(?:/Users/|/private/|/tmp/|[A-Za-z]:[\\/])")
+PRIVATE_PROJECT_RE = re.compile(r"(?i)\b(PrivateProjectFixture|InternalRepoFixture)\b")
+ABSOLUTE_PATH_RE = re.compile(r"(?m)(?:^|[\s'\"(])(?:/" + r"Users/|/private/|/tmp/|[A-Za-z]:[\\/])")
 PRIVATE_FILE_PATH_RE = re.compile(
-    r"(?i)(?:/Users/[^/\s]+/(?:Documents|Desktop|Downloads)/|/private/tmp/|GoldpineValley-iOS|Rich-CLI|robotriage)"
+    r"(?i)(?:/" + r"Users/[^/\s]+/(?:Documents|Desktop|Downloads)/|/private/" + r"tmp/|PrivateProjectFixture|InternalRepoFixture)"
 )
 
 

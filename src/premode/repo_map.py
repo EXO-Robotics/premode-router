@@ -190,11 +190,11 @@ def _swiftui_tutorial_scope_score(path: str) -> int:
         return 0
     name = Path(lower).name
     score = 0
-    if lower in {
-        'goldpinevalley/views/bottombarview.swift',
-        'goldpinevalley/views/mainmenuview.swift',
-        'goldpinevalley/viewmodels/gamesessionviewmodel+homesteadnavigation.swift',
-    }:
+    if lower.endswith((
+        '/views/bottombarview.swift',
+        '/views/mainmenuview.swift',
+        '/viewmodels/gamesessionviewmodel+homesteadnavigation.swift',
+    )):
         score += 1000
     in_views = '/views/' in lower
     in_viewmodels = '/viewmodels/' in lower

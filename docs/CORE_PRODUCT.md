@@ -8,7 +8,6 @@ Its normal flow is:
 exact user prompt
 -> ordered likely repository paths
 -> optional primary, verification, and support labels
--> optional concise anchors
 -> one compact packet for Codex
 ```
 
@@ -21,10 +20,9 @@ The normal packet contains only:
 - the exact task once;
 - ordered likely paths;
 - useful optional roles;
-- at most one useful optional anchor per path;
 - one instruction to inspect those paths first and expand only when required.
 
-Empty role sections and absent anchors are omitted. A path-only packet is valid. Audit data, hashes, timings, inventories, diagnostics, tuning information, experimental identifiers, and raw file contents are not model-facing packet fields.
+Empty role sections are omitted. A path-only packet is valid. Anchors are internal diagnostics and are not model-facing in `canonical_core_v1`. Audit data, hashes, timings, inventories, diagnostics, tuning information, experimental identifiers, and raw file contents are not model-facing packet fields.
 
 ## Normal commands
 

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,7 +21,7 @@ from .live_ledger import parse_jsonl_usage
 from .pcodex_bootstrap import cleanup_local_state, first_run_receipt, run_dry_run, run_enabled, set_enabled
 
 
-DEFAULT_ARTIFACT_ROOT = Path("/private/tmp/premode_labs/lab_7_3cy_live_token_harness_recovery")
+DEFAULT_ARTIFACT_ROOT = Path(tempfile.gettempdir()) / "premode_labs" / "live_token_harness"
 LIVE_SPEND_ENV = "PREMODE_ENABLE_LIVE_CODEX_SPEND_TEST"
 LIVE_MATRIX_ENV = "PREMODE_ENABLE_LIVE_CODEX_MATRIX"
 CODEX_AUTH_MODE_ENV = "PREMODE_CODEX_AUTH_MODE"

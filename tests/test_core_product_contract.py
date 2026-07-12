@@ -252,8 +252,8 @@ def test_normal_low_confidence_compile_can_render_path_only(tmp_path: Path, monk
     compiled = pcodex.compile_pcodex_packet(repo, "Inspect authenticate.", write_policy=ADVISORY)
     packet = compiled["packet"]
     assert "LIKELY FILES" in packet
-    assert "\nPRIMARY\n" not in packet
-    assert "\nVERIFY\n" not in packet
+    assert "\nPRIMARY\n" in packet
+    assert "\nVERIFY\n" in packet
     assert " :: " not in packet
 
 

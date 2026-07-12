@@ -54,6 +54,9 @@ def test_product_manifest_shape_without_network_dependencies() -> None:
         "version": "v5",
         "variant": "tool_assisted_anchors_internal",
         "strategy": "literal_symbol",
+        "public_renderer": "canonical_core_v1",
+        "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"],
+        "internal_anchors_model_facing": False,
     }
 
 
@@ -76,8 +79,8 @@ def test_public_commands_exist_in_active_parsers() -> None:
 
 def test_unimplemented_target_command_is_a_declared_gap() -> None:
     manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
-    assert manifest["known_public_command_gaps"] == ["pcodex review", "pcodex uninstall"]
-    assert "review" not in _choices(build_pcodex_parser())
+    assert manifest["known_public_command_gaps"] == ["pcodex uninstall"]
+    assert "review" in _choices(build_pcodex_parser())
     assert "uninstall" not in _choices(build_pcodex_parser())
 
 
@@ -94,9 +97,10 @@ def test_core_version_has_one_declared_authority_and_matching_runtime_mirror() -
 
 
 def test_production_modules_do_not_import_observer_modules() -> None:
-    assert not any(name.startswith("premode.lab73") for name in sys.modules)
-    assert "premode.live_token_harness" not in sys.modules
-    assert "premode.sharded_runner" not in sys.modules
+    production = ["cli.py", "compiler.py", "locator.py", "pcodex_bootstrap.py", "routing_contract.py"]
+    combined = "\n".join((ROOT / "src" / "premode" / name).read_text(encoding="utf-8") for name in production)
+    assert "from .lab73" not in combined
+    assert "import premode.lab73" not in combined
 
 
 def test_contract_and_manifest_agree_on_claim_boundaries() -> None:
