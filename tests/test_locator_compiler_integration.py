@@ -141,7 +141,17 @@ def test_compiler_does_not_transport_secret_file_from_locator(repo: Path) -> Non
     result = compile_prompt(repo, "Update API token config loading.", "lite", record=False)
 
     assert ".env" not in _all_context_paths(result)
-    assert ".env" not in str(result["locator_evidence"])
+    assert ".env" not in {
+        item["path"]
+        for bucket in ("primary_files", "support_files", "verification_files")
+        for item in result["locator_evidence"][bucket]
+    }
+    rejected = [
+        item
+        for item in result["locator_evidence"]["candidate_provenance"]
+        if item["normalized_path"] == ".env"
+    ]
+    assert rejected and rejected[0]["final_disposition"] == "REJECT"
     assert "literal-secret-token" not in str(result["locator_evidence"])
     assert "src/config.py" in _all_context_paths(result)
 

@@ -6,10 +6,15 @@ import re
 import time
 from pathlib import Path
 
+from .candidate_policy import CandidateAdmissibility, CandidateClassification, evaluate_candidate
+from .candidate_materializer import MaterializationResult, RepositoryInventory, materialize_candidates, materialize_relation_candidate, materialize_signal_candidate
+from .candidate_evidence import CandidateEvidence, evidence_from_materialized
 from .context_constraints import is_sensitive_or_secret_path
 from .ignore import IgnoreMatcher
 from .role_core import classify_path_role
 from .safe_reader import is_probably_binary_path, is_secret_name
+from .task_intent import TaskIntentV1, compute_task_intent
+from .ranker_protocol import B0_ROUTING_BASE_V1, rank
 
 
 MAX_LOCATOR_BYTES = 64_000
@@ -198,7 +203,7 @@ TEST_VERIFICATION_PATTERNS = [
 ]
 VERIFICATION_TERM_RE = re.compile(r"\b(?:run|verify|ensure|pass|passes|passing|regression|tests?|coverage)\b", re.IGNORECASE)
 PATH_RE = re.compile(
-    r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w.-])"
+    r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w-])"
 )
 OPTION_FLAG_RE = re.compile(r"(?<![\w-])--[A-Za-z0-9][A-Za-z0-9_-]*")
 QUOTED_RE = re.compile(r'"([^"\n]{1,120})"|\'([^\'\n]{1,120})\'')
@@ -279,6 +284,8 @@ class LocateResult:
     typo_normalizations: dict[str, str] = field(default_factory=dict)
     relation_degraded_reasons: list[str] = field(default_factory=list)
     metadata: dict[str, object] = field(default_factory=dict)
+    candidate_evidence_objects: tuple[object, ...] = field(default_factory=tuple, repr=False)
+    ranked_candidates: object | None = field(default=None, repr=False)
 
 
 @dataclass
@@ -692,22 +699,83 @@ def _role_for_path(rel_path: str) -> str:
     return "source"
 
 
-def _iter_repo_files(repo_root: Path, inventory_paths: list[str] | None = None) -> list[Path]:
+def _candidate_policy_metadata(results: list[CandidateAdmissibility]) -> dict[str, object]:
+    dispositions: dict[str, int] = {}
+    classifications: dict[str, int] = {}
+    sources: dict[str, dict[str, int]] = {}
+    for result in results:
+        dispositions[result.final_disposition] = dispositions.get(result.final_disposition, 0) + 1
+        classification = result.classification.value
+        classifications[classification] = classifications.get(classification, 0) + 1
+        for source_name in result.provenance_chain:
+            source = sources.setdefault(source_name, {"evaluated": 0, "admitted": 0, "rejected": 0})
+            source["evaluated"] += 1
+            source["admitted" if result.admitted else "rejected"] += 1
+    return {
+        "schema_version": "candidate_admissibility.v1",
+        "evaluated_count": len(results),
+        "admitted_count": sum(1 for result in results if result.admitted),
+        "rejected_count": sum(1 for result in results if not result.admitted),
+        "disposition_counts": dict(sorted(dispositions.items())),
+        "classification_counts": dict(sorted(classifications.items())),
+        "source_counts": {key: sources[key] for key in sorted(sources)},
+        "records": [result.to_metadata() for result in results],
+    }
+
+
+def _iter_repo_files(
+    repo_root: Path,
+    inventory_paths: list[str] | None = None,
+    *,
+    prompt_evidence: PromptEvidence | None = None,
+    task_context: dict[str, object] | None = None,
+) -> tuple[list[Path], dict[str, object], dict[str, CandidateAdmissibility]]:
+    """Apply candidate authority once at the filesystem/inventory boundary."""
+
+    root = Path(repo_root).resolve(strict=False)
+    source = "inventory" if inventory_paths is not None else "fallback_walk"
+    raw_candidates: list[str | Path]
     if inventory_paths is not None:
-        return [repo_root / rel for rel in inventory_paths]
-    ignore = IgnoreMatcher.from_repo(repo_root)
-    files: list[Path] = []
-    for path in repo_root.rglob("*"):
-        if not path.is_file():
+        raw_candidates = list(inventory_paths)
+    else:
+        raw_candidates = [path for path in root.rglob("*") if path.is_file()]
+
+    if task_context is None:
+        evidence = prompt_evidence or extract_prompt_evidence("")
+        task_context = {
+            "explicit_paths": evidence.explicit_paths,
+            "generated_intent": "generated" in _simple_path_terms(evidence.raw_prompt),
+        }
+    state = {"ignore_matcher": IgnoreMatcher.from_repo(root)}
+    results: list[CandidateAdmissibility] = []
+    admitted: list[Path] = []
+    policy_by_path: dict[str, CandidateAdmissibility] = {}
+    seen: set[str] = set()
+
+    def apply(candidate: str | Path, provenance: str) -> None:
+        result = evaluate_candidate(root, candidate, provenance, task_context, state)
+        results.append(result)
+        if not result.admitted or not result.normalized_path or result.normalized_path in seen:
+            return
+        seen.add(result.normalized_path)
+        admitted.append(root / result.normalized_path)
+        policy_by_path[result.normalized_path] = result
+
+    for candidate in raw_candidates:
+        apply(candidate, source)
+
+    # An explicit prompt path is its own ingress. A stale inventory may omit it,
+    # but it still receives the same hard-denial policy before any filesystem read.
+    raw_explicit = task_context.get("explicit_paths") or ()
+    explicit_paths = (raw_explicit,) if isinstance(raw_explicit, str) else tuple(raw_explicit)
+    evaluated_paths = {result.normalized_path for result in results}
+    for candidate in explicit_paths:
+        preview = evaluate_candidate(root, str(candidate), "explicit_prompt_path", task_context, state)
+        if preview.normalized_path in evaluated_paths:
             continue
-        rel = path.relative_to(repo_root).as_posix()
-        parts = rel.split("/")
-        if any(part in {".git", ".premode", ".venv", "node_modules", "__pycache__"} for part in parts):
-            continue
-        if ignore.is_ignored(rel):
-            continue
-        files.append(path)
-    return files
+        apply(str(candidate), "explicit_prompt_path")
+        evaluated_paths.add(preview.normalized_path)
+    return admitted, _candidate_policy_metadata(results), policy_by_path
 
 
 def _read_bounded(path: Path) -> str:
@@ -788,6 +856,9 @@ def locate_media_files(
     *,
     max_files: int = 8,
     inventory_paths: list[str] | None = None,
+    task_intent: TaskIntentV1 | None = None,
+    repository_inventory: RepositoryInventory | None = None,
+    materialization_result: MaterializationResult | None = None,
 ) -> LocateResult:
     started = time.perf_counter()
     repo_root = Path(repo_root)
@@ -796,14 +867,24 @@ def locate_media_files(
     wanted_extensions = _media_prompt_extensions(prompt_terms)
     domain_terms = _media_domain_terms(prompt)
     wants_recency = _media_prompt_wants_recency(prompt)
+    intent = task_intent or compute_task_intent(prompt)
+    inventory = repository_inventory or RepositoryInventory.capture(repo_root, inventory_paths)
+    materialization = materialization_result or materialize_candidates(prompt, intent, inventory)
+    admitted_paths = [repo_root / item.normalized_path for item in materialization.admitted]
+    candidate_policy = _candidate_policy_metadata(list(materialization.policy_results))
     raw_paths = [
-        str(path).replace("\\", "/").strip("/")
-        for path in (inventory_paths if inventory_paths is not None else [path.relative_to(repo_root).as_posix() for path in _iter_repo_files(repo_root)])
-        if str(path).strip()
+        path.relative_to(repo_root.resolve(strict=False)).as_posix()
+        for path in admitted_paths
     ]
 
-    candidate_count = 0
-    pruned_count = 0
+    policy_pruned_media = sum(
+        1
+        for record in candidate_policy["records"]
+        if Path(str(record["normalized_path"])).suffix.lower() in MEDIA_ASSET_EXTENSIONS
+        and record["final_disposition"] == "REJECT"
+    )
+    candidate_count = policy_pruned_media
+    pruned_count = policy_pruned_media
     stat_calls = 0
     scored: list[dict[str, object]] = []
     for rel in raw_paths:
@@ -872,11 +953,27 @@ def locate_media_files(
             str(item.get("path") or ""),
         )
     )
-    selected_items = sortable[:max(1, int(max_files or 8))]
+    materialized_by_path = {item.normalized_path: item for item in materialization.admitted}
+    media_evidence = tuple(
+        evidence_from_materialized(
+            materialized_by_path[str(item["path"])],
+            task_evidence=tuple(str(signal) for signal in item.get("signals") or ()),
+            path_evidence=(f"media_path:{item['path']}",),
+            explicit_path_evidence=("explicit_media_path",) if item.get("explicit") else (),
+            score_components={"compatibility_adjustment": int(item.get("score") or 0) * 1000 + (len(sortable) - index)},
+            role_hints=("asset",),
+        )
+        for index, item in enumerate(sortable)
+    )
+    ranked_candidates = rank(media_evidence, B0_ROUTING_BASE_V1)
+    item_by_path = {str(item["path"]): item for item in sortable}
+    selected_ranked = ranked_candidates.candidates[:max(1, int(max_files or 8))]
+    selected_items = [item_by_path[item.normalized_path] for item in selected_ranked]
+    ranked_score_by_path = {item.normalized_path: item.final_score for item in selected_ranked}
     selected = [
         LocatedFile(
             path=str(item["path"]),
-            score=int(item.get("score") or 0),
+            score=int(ranked_score_by_path[str(item["path"])]),
             role="asset",
             confidence="high" if int(item.get("score") or 0) >= 450 else "medium",
             matched_signals=[str(signal) for signal in item.get("signals") or []],
@@ -905,6 +1002,14 @@ def locate_media_files(
         "asset_search_elapsed_ms": int((time.perf_counter() - started) * 1000),
         "asset_stat_calls": stat_calls,
         "content_reads": 0,
+        "candidate_policy": candidate_policy,
+        "candidate_provenance": candidate_policy["records"],
+        "task_intent": intent.to_dict(),
+        "candidate_evidence": [item.to_dict() for item in media_evidence],
+        "materialization_receipts": [
+            {"candidate_id": item.candidate_id, "normalized_path": item.normalized_path, "provenance_chain": list(item.provenance_chain), "policy_receipt": dict(item.policy_result.final_policy_receipt)}
+            for item in materialization.candidates
+        ],
     }
     return LocateResult(
         primary_files=selected,
@@ -916,6 +1021,8 @@ def locate_media_files(
         ambiguity_reasons=ambiguity,
         dependency_relations=[],
         metadata=metadata,
+        candidate_evidence_objects=tuple(media_evidence),
+        ranked_candidates=ranked_candidates,
     )
 
 
@@ -974,16 +1081,30 @@ def _extract_option_flags(text: str) -> set[str]:
     return set(OPTION_FLAG_RE.findall(text))
 
 
-def _file_evidence(repo_root: Path, path: Path) -> _FileEvidence | None:
+def _file_evidence(
+    repo_root: Path,
+    path: Path,
+    policy: CandidateAdmissibility | None = None,
+) -> _FileEvidence | None:
+    try:
+        if not path.is_file():
+            return None
+    except OSError:
+        return None
     rel = path.relative_to(repo_root).as_posix()
     role = _role_for_path(rel)
     if role == "secret":
         return None
-    if role in {"vendor", "build", "asset"}:
+    generated_exception = policy is not None and policy.classification == CandidateClassification.GENERATED_EXCEPTION
+    if role in {"vendor", "build", "asset"} and not generated_exception:
         return None
     text = _read_bounded(path)
-    if not text and path.stat().st_size > 0:
-        return None
+    if not text:
+        try:
+            if path.stat().st_size > 0:
+                return None
+        except OSError:
+            return None
     symbols = _extract_symbols(text)
     strings = _dedupe([a or b for a, b in STRING_RE.findall(text)])[:80]
     comments = _dedupe(COMMENT_LINE_RE.findall(text))[:80]
@@ -2487,13 +2608,30 @@ def _selected_dependency_relations(relations: list[FileRelation], selected_paths
     return compact[:24]
 
 
-def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_paths: list[str] | None = None) -> LocateResult:
-    repo_root = Path(repo_root)
-    evidence = extract_prompt_evidence(prompt)
+def locate_files(
+    repo_root: Path,
+    prompt: str,
+    *,
+    max_files: int = 8,
+    inventory_paths: list[str] | None = None,
+    task_intent: TaskIntentV1 | None = None,
+    repository_inventory: RepositoryInventory | None = None,
+    materialization_result: MaterializationResult | None = None,
+) -> LocateResult:
+    repo_root = Path(repo_root).resolve(strict=False)
+    intent = task_intent or compute_task_intent(prompt)
+    evidence = intent.ranking_evidence
+    if not isinstance(evidence, PromptEvidence):
+        raise TypeError("TaskIntentV1 must own PromptEvidence for normal routing")
 
     file_evidences: list[_FileEvidence] = []
-    for path in _iter_repo_files(repo_root, inventory_paths):
-        file = _file_evidence(repo_root, path)
+    inventory = repository_inventory or RepositoryInventory.capture(repo_root, inventory_paths)
+    materialization = materialization_result or materialize_candidates(prompt, intent, inventory)
+    candidate_policy = _candidate_policy_metadata(list(materialization.policy_results))
+    materialized_by_path = {item.normalized_path: item for item in materialization.admitted}
+    for candidate in materialization.admitted:
+        path = repo_root / candidate.normalized_path
+        file = _file_evidence(repo_root, path, candidate.policy_result)
         if file is None:
             continue
         file_evidences.append(file)
@@ -2512,11 +2650,78 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_
         degraded_reasons=relation_degraded_reasons,
     )
     anchor_paths = _direct_anchor_paths(direct_scores)
+    base_direct_scores = {path: value[0] for path, value in direct_scores.items()}
     proximity_only_paths = _apply_proximity_boosts(direct_scores, dependency_relations, anchor_paths)
+
+    for path, (_score, signals, _covered) in direct_scores.items():
+        candidate = materialized_by_path[path]
+        if any(signal.startswith("symbol:") for signal in signals):
+            candidate = materialize_signal_candidate(candidate, source="symbol_match", raw_evidence_reference="task_evidence:symbol", intent=intent, inventory=inventory)
+        if any(signal.startswith(("quoted_literal:", "option_flag:", "content:")) for signal in signals):
+            candidate = materialize_signal_candidate(candidate, source="literal_match", raw_evidence_reference="task_evidence:literal", intent=intent, inventory=inventory)
+        if candidate.generated_intent and candidate.policy_result.final_admissibility == "GENERATED_EXCEPTION_QUALIFIED":
+            candidate = materialize_signal_candidate(candidate, source="generated_intent_exception", raw_evidence_reference="task_intent:generated_content", intent=intent, inventory=inventory)
+        materialized_by_path[path] = candidate
+
+    # Every relation is a real pre-ranker materialization event and receives a
+    # fresh policy evaluation before it can contribute evidence.
+    relation_kind = {
+        "imports": "import_relation",
+        "imported_by": "import_relation",
+        "adjacent_test": "source_test_relation",
+        "adjacent_source": "source_test_relation",
+    }
+    for relation in dependency_relations:
+        candidate = materialized_by_path.get(relation.target)
+        if candidate is None:
+            continue
+        source = relation_kind.get(relation.relation, "support_relation")
+        materialized_by_path[relation.target] = materialize_relation_candidate(
+            candidate,
+            relation_source=source,
+            relation_parent=relation.source,
+            raw_evidence_reference=f"relation:{relation.relation}:{relation.source}",
+            task=prompt,
+            intent=intent,
+            inventory=inventory,
+        )
+
+    candidate_evidence_records: list[CandidateEvidence] = []
+    for file in file_evidences:
+        score, signals, _covered = direct_scores[file.path]
+        materialized = materialized_by_path[file.path]
+        direct_before_relations = int(base_direct_scores.get(file.path, score))
+        relation_component = 0
+        if any(signal.startswith(("relation:", "proximity_to_primary:")) for signal in signals):
+            # The incumbent total is retained exactly; relation decomposition is
+            # explicit instead of hidden inside a final locator score.
+            relation_component = max(0, score - max(0, direct_before_relations))
+        components = {"compatibility_adjustment": int(score)}
+        if relation_component:
+            components["support_relation"] = relation_component
+            components["compatibility_adjustment"] -= relation_component
+        candidate_evidence_records.append(evidence_from_materialized(
+            materialized,
+            task_evidence=signals,
+            lexical_evidence=(signal for signal in signals if signal.startswith(("content:", "filename_term:", "domain:"))),
+            explicit_path_evidence=(signal for signal in signals if signal.startswith("explicit_path:")),
+            symbol_evidence=(signal for signal in signals if signal.startswith("symbol:")),
+            literal_evidence=(signal for signal in signals if signal.startswith(("quoted_literal:", "option_flag:"))),
+            path_evidence=(signal for signal in signals if signal.startswith(("path:", "basename:"))),
+            relation_evidence=(signal for signal in signals if signal.startswith(("relation:", "proximity_to_primary:"))),
+            support_evidence=(source for source in materialized.provenance_sources if source == "support_relation"),
+            generated_intent_evidence=("task_intent.generated_content_intent",) if intent.generated_content_intent else (),
+            ambiguity_evidence=intent.ambiguity_flags,
+            score_components=components,
+            role_hints=(file.role,),
+        ))
+    ranked_candidates = rank(tuple(candidate_evidence_records), B0_ROUTING_BASE_V1)
+    ranked_by_path = {item.normalized_path: item for item in ranked_candidates.candidates}
 
     scored: list[tuple[LocatedFile, set[str]]] = []
     for file in file_evidences:
-        score, signals, covered = direct_scores[file.path]
+        _legacy_score, signals, covered = direct_scores[file.path]
+        score = ranked_by_path[file.path].final_score
         if score <= 0 or not signals:
             continue
         located = LocatedFile(
@@ -2544,6 +2749,10 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_
     support: list[LocatedFile] = []
     cli_message_prompt = _cli_prompt_requested(evidence) and _message_prompt_requested(evidence)
     for file in files:
+        policy = materialized_by_path[file.path].policy_result
+        if policy.support_only:
+            support.append(file)
+            continue
         primary_evidence = (
             _has_transportable_content_evidence(file)
             or _has_bounded_synonym_identity_evidence(file)
@@ -2646,5 +2855,20 @@ def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_
         metadata={
             "context_selection_mode": "normal_locator",
             "relation_degraded_reasons": _dedupe(relation_degraded_reasons),
+            "candidate_policy": candidate_policy,
+            "candidate_provenance": candidate_policy["records"],
+            "task_intent": intent.to_dict(),
+            "candidate_evidence": [item.to_dict() for item in candidate_evidence_records],
+            "materialization_receipts": [
+                {
+                    "candidate_id": item.candidate_id,
+                    "normalized_path": item.normalized_path,
+                    "provenance_chain": list(item.provenance_chain),
+                    "policy_receipt": dict(item.policy_result.final_policy_receipt),
+                }
+                for item in materialized_by_path.values()
+            ],
         },
+        candidate_evidence_objects=tuple(candidate_evidence_records),
+        ranked_candidates=ranked_candidates,
     )

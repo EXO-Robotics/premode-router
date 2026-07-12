@@ -48,7 +48,6 @@ def test_asset_media_prompt_triggers_metadata_only_fast_path(repo: Path, monkeyp
 
     monkeypatch.setattr(locator, "_read_bounded", fail)
     monkeypatch.setattr(locator, "_file_evidence", fail)
-    monkeypatch.setattr(locator, "_tokens_from_text", fail)
 
     result = compile_prompt(
         repo,
@@ -99,7 +98,6 @@ def test_asset_fast_path_does_not_read_file_contents(repo: Path, monkeypatch: py
 
     monkeypatch.setattr(locator, "_read_bounded", fail)
     monkeypatch.setattr(locator, "_file_evidence", fail)
-    monkeypatch.setattr(locator, "_tokens_from_text", fail)
 
     result = locate_media_files(repo, "Locate the palm png asset. Do not modify files.", inventory_paths=["assets/palm.png"])
 

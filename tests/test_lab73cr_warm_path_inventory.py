@@ -211,9 +211,8 @@ def test_compile_json_metrics_and_status_doctor_inventory_summary(tmp_path: Path
 
     assert cli.main(["compile", RAW_PROMPT, "--repo", str(repo), "--plugin", "literal_symbol", "--profile", "lite", "--json", "--no-record"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["metrics"]["inventory_cache_hit"] is True
-    assert payload["inventory"]["state"] == "fresh"
-    assert "paths" not in payload["inventory"]
+    assert payload["packet_version"] == "canonical_packet.v1"
+    assert payload["routing_authority_receipt"]["authority_id"] == "normal_routing_authority.v1"
 
 
 def test_inventory_cache_is_content_free(tmp_path: Path) -> None:

@@ -244,7 +244,7 @@ def test_no_record_compile_and_v5_literal_symbol_packet_remain_stable(tmp_path: 
 
     assert cli.main(["compile", "Fix src/app.py", "--repo", str(repo), "--plugin", "literal_symbol", "--json", "--no-record"]) == 0
     alias_payload = json.loads(capsys.readouterr().out)
-    assert alias_payload["packet_version"] == "v5"
+    assert alias_payload["packet_version"] == "canonical_packet.v1"
     assert not (repo / ".premode" / "audit").exists()
     assert not (repo / ".premode" / "metrics").exists()
 

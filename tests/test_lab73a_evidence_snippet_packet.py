@@ -56,7 +56,7 @@ def test_theme_choices():
     index_project(repo, "lite")
 
 
-def test_locate_json_includes_factual_snippets(monkeypatch, capsys, repo: Path) -> None:
+def test_normal_locate_json_exposes_authority_receipt_without_content_snippets(monkeypatch, capsys, repo: Path) -> None:
     _prepare_cli_repo(repo)
     monkeypatch.chdir(repo)
 
@@ -66,12 +66,9 @@ def test_locate_json_includes_factual_snippets(monkeypatch, capsys, repo: Path) 
     payload = json.loads(capsys.readouterr().out)
     assert payload["prompt"] == RICH_PROMPT
     assert payload["primary_files"]
-    assert payload["primary_files"][0]["matched_signals"]
-    snippets = payload["primary_files"][0]["snippets"]
-    assert snippets
-    assert snippets[0]["start_line"] <= snippets[0]["end_line"]
-    assert "--theme" in snippets[0]["text"] or "theme" in snippets[0]["text"].lower()
-    assert not has_interpretive_snippet_text(snippets)
+    assert payload["packet_source"] == "canonical_packet_v1"
+    assert payload["routing_authority_receipt"]["authority_id"] == "normal_routing_authority.v1"
+    assert "snippets" not in payload["primary_files"][0]
 
 
 def test_snippet_extraction_line_ranges_and_budget(repo: Path) -> None:

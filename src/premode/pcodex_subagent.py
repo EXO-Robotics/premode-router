@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-import tempfile
 from typing import Any
 
 from . import pcodex_bootstrap as pcodex
@@ -28,14 +27,9 @@ class SubagentTransformResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
-def _write_packet(packet: str) -> str:
-    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix="pcodex_subagent_packet_", suffix=".md", delete=False)
-    with handle:
-        handle.write(packet)
-    return handle.name
-
-
 def compose_transformed_prompt(subagent_prompt: str, packet: str) -> str:
+    if packet == subagent_prompt:
+        return subagent_prompt
     if packet.startswith("TASK\n"):
         return packet.rstrip() + "\n"
     return f"{subagent_prompt.rstrip()}\n\n---\n\n{packet.strip()}\n"
@@ -141,26 +135,32 @@ def transform_subagent_prompt(
         effective_mode=effective_mode,
         fallback_reason=fallback_reason,
     )
-    packet_path = None if dry_run else _write_packet(packet)
+    # The transformed prompt is returned in memory. Persisting a second copy in
+    # the shared system temporary directory created stale cross-run state and a
+    # discovery surface for later repository walks.
+    packet_path = None
     route = str(compiled.get("route") or "")
     transformed = compose_transformed_prompt(subagent_prompt, packet)
+    abstained = packet == subagent_prompt
     return SubagentTransformResult(
         prompt=transformed,
         enabled=True,
         mode=mode,
         effective_mode=effective_mode,
-        transform_applied=True,
+        transform_applied=not abstained,
         tuning_profile=tuning_profile,
         packet_path=packet_path,
         used_fallback=route == "explicit_fallback",
         route=route or None,
         metadata={
             **base_metadata,
-            "status": "transformed",
-            "transform_applied": True,
+            "status": "abstained_raw_prompt" if abstained else "transformed",
+            "transform_applied": not abstained,
             "premode_command": compiled.get("premode_command"),
             "packet_sha256": compiled.get("packet_sha256"),
             "model_facing_sections": compiled.get("model_facing_sections"),
+            "packet_source": compiled.get("packet_source"),
+            "routing_authority_receipt": compiled.get("routing_authority_receipt"),
             "telemetry": telemetry.get("telemetry"),
         },
     )

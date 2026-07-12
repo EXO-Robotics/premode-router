@@ -265,8 +265,8 @@ def test_v5_literal_symbol_packet_and_compile_surfaces_remain_stable(tmp_path: P
 
     assert cli.main(["compile", "Fix src/app.py", "--repo", str(repo), "--plugin", "literal_symbol", "--json", "--no-record"]) == 0
     alias_payload = json.loads(capsys.readouterr().out)
-    assert alias_payload["packet_version"] == "v5"
-    assert alias_payload["packet_variant"] == "tool_assisted_anchors_internal"
+    assert alias_payload["packet_version"] == "canonical_packet.v1"
+    assert alias_payload["packet_variant"] == "paths_only"
 
     assert cli.main([
         "compile",

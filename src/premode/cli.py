@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 from pathlib import Path
 import sys
@@ -18,6 +19,7 @@ from .review_patch import review_patch, format_review_report
 from .launch_safety import RootGuardError, resolve_cli_repo
 from .plugins import PluginAliasError, apply_packet_plugin
 from .tuning import TuningProfileError
+from .routing_base import compile_routing_base
 
 
 def _print_json(obj) -> None:
@@ -25,6 +27,10 @@ def _print_json(obj) -> None:
 
 
 PACKET_MODE_CHOICES = ["auto", "paths-only", "evidence-snippets", "compact", "selected-paths-only", "selected_paths_only"]
+
+
+def _source_only_module_available(name: str) -> bool:
+    return importlib.util.find_spec(f"premode.{name}") is not None
 
 def run_codex(*args, **kwargs):
     """Compatibility forwarding import without eager developer-module loading."""
@@ -34,7 +40,7 @@ def run_codex(*args, **kwargs):
 
 
 def run_benchmark(*args, **kwargs):
-    """Compatibility forwarding import without eager benchmark-module loading."""
+    """Source-checkout compatibility; benchmark.py is excluded from production wheels."""
     from .benchmark import run_benchmark as implementation
 
     return implementation(*args, **kwargs)
@@ -245,27 +251,28 @@ def build_parser() -> argparse.ArgumentParser:
     review.add_argument("--out", default=None, help="Write machine-readable review report JSON to this path.")
     review.add_argument("--since-compile", action="store_true", help="Compare against the git HEAD captured when the saved packet was compiled and ignore unchanged preexisting dirty/untracked files.")
 
-    bench = sub.add_parser("benchmark")
-    bench.add_argument("--repo", default=None, help="Repository to benchmark. Defaults to the current repo root.")
-    bench.add_argument("--fail-on-root-escalation", action="store_true")
-    bench.add_argument("--prompts", default=None, help="JSON prompt suite. Accepts a list of strings or {prompts:[...]} with expected_files/expected_tests.")
-    bench.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
-    bench.add_argument("--no-repo-map", action="store_true", help="Disable repo-map impact hints during benchmark compiles.")
-    bench.add_argument("--no-cache-optimized", action="store_true", help="Disable cache-aware Packet V3 benchmark compiles.")
-    bench.add_argument("--plugin", default=None, help="Resolve packet options from an installed Pre-mode plugin alias.")
-    bench.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None)
-    bench.add_argument("--packet-variant", choices=v5_variants, default=None)
-    bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
-    bench.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only")
-    bench.add_argument("--cache-mode", choices=["strategy_isolated", "shared_cache"], default="strategy_isolated", help="Label benchmark cache discipline. Defaults to strategy-isolated rows.")
-    bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
-    bench.add_argument("--compile-modes", action="store_true", help="Include compile-only raw/v3 paths/v3 snippets/v2 mode comparisons.")
-    bench.add_argument("--save-packets", action="store_true", help="Save last_packet artifacts while benchmarking. Off by default unless --include-review is used.")
-    bench.add_argument("--include-review", action="store_true", help="Run review-patch after each compile to include pass/warning/blocked counts.")
-    bench.add_argument("--against", default="main", help="Base ref for optional review-patch benchmark step.")
-    bench.add_argument("--since-compile", action="store_true", help="Use review-patch --since-compile for optional review step.")
-    bench.add_argument("--json", action="store_true")
-    bench.add_argument("--out", default=None, help="Write benchmark JSON report to this path.")
+    if _source_only_module_available("benchmark"):
+        bench = sub.add_parser("benchmark")
+        bench.add_argument("--repo", default=None)
+        bench.add_argument("--fail-on-root-escalation", action="store_true")
+        bench.add_argument("--prompts", default=None)
+        bench.add_argument("--profile", choices=["auto", "lite", "standard", "pro"], default="lite")
+        bench.add_argument("--no-repo-map", action="store_true")
+        bench.add_argument("--no-cache-optimized", action="store_true")
+        bench.add_argument("--plugin", default=None)
+        bench.add_argument("--packet-version", choices=["v2", "v3", "v4", "v5"], default=None)
+        bench.add_argument("--packet-variant", choices=v5_variants, default=None)
+        bench.add_argument("--packet-strategy", choices=anchor_strategies, default=None)
+        bench.add_argument("--packet-mode", choices=PACKET_MODE_CHOICES, default="paths-only")
+        bench.add_argument("--cache-mode", choices=["strategy_isolated", "shared_cache"], default="strategy_isolated")
+        bench.add_argument("--snippet-budget-tokens", type=int, default=DEFAULT_SNIPPET_BUDGET_TOKENS)
+        bench.add_argument("--compile-modes", action="store_true")
+        bench.add_argument("--save-packets", action="store_true")
+        bench.add_argument("--include-review", action="store_true")
+        bench.add_argument("--against", default="main")
+        bench.add_argument("--since-compile", action="store_true")
+        bench.add_argument("--json", action="store_true")
+        bench.add_argument("--out", default=None)
 
     doc = sub.add_parser("doctor", help="Check local repository and runtime readiness.")
     doc.add_argument("--recommend-profile", action="store_true")
@@ -288,24 +295,27 @@ def build_parser() -> argparse.ArgumentParser:
     stats.add_argument("--last", action="store_true")
     stats.add_argument("--json", action="store_true", help="Accepted for compatibility; stats output is JSON by default.")
 
-    lab = sub.add_parser("lab")
-    lab_sub = lab.add_subparsers(dest="lab_command", required=True)
-    compare = lab_sub.add_parser("compare")
-    compare.add_argument("prompt")
-    compare.add_argument("--provider", default="mock")
-    compare.add_argument("--model", default=None)
-    live_token = lab_sub.add_parser("live-token-harness", help="Run the standard-vs-enhanced live token harness.")
-    live_token.add_argument("--mode", choices=["dry_run_mock", "live_minimal", "live_matrix"], default="dry_run_mock")
-    live_token.add_argument("--artifact-root", default="/private/tmp/premode_labs/lab_7_3cy_live_token_harness_recovery")
-    live_token.add_argument("--prompt", default=None)
-    live_token.add_argument("--prompt-id", default="disposable_smoke")
-    live_token.add_argument("--model", default=None)
-    live_token.add_argument("--effort", default=None)
-    live_token.add_argument("--fixture-repo", default=None)
-    live_token.add_argument("--task-matrix", default=None)
-    live_token.add_argument("--fixture-root", default=None)
-    live_token.add_argument("--matrix-seed", type=int, default=None)
-    live_token.add_argument("--json", action="store_true")
+    # Source-checkout-only lab surface. Its implementation is intentionally not
+    # present in the production wheel positive allowlist.
+    if _source_only_module_available("live_token_harness"):
+        lab = sub.add_parser("lab")
+        lab_sub = lab.add_subparsers(dest="lab_command", required=True)
+        compare = lab_sub.add_parser("compare")
+        compare.add_argument("prompt")
+        compare.add_argument("--provider", default="mock")
+        compare.add_argument("--model", default=None)
+        live_token = lab_sub.add_parser("live-token-harness")
+        live_token.add_argument("--mode", choices=["dry_run_mock", "live_minimal", "live_matrix"], default="dry_run_mock")
+        live_token.add_argument("--artifact-root", default="/private/tmp/premode_labs/lab_7_3cy_live_token_harness_recovery")
+        live_token.add_argument("--prompt", default=None)
+        live_token.add_argument("--prompt-id", default="disposable_smoke")
+        live_token.add_argument("--model", default=None)
+        live_token.add_argument("--effort", default=None)
+        live_token.add_argument("--fixture-repo", default=None)
+        live_token.add_argument("--task-matrix", default=None)
+        live_token.add_argument("--fixture-root", default=None)
+        live_token.add_argument("--matrix-seed", type=int, default=None)
+        live_token.add_argument("--json", action="store_true")
 
     hook = sub.add_parser("hook")
     hook_sub = hook.add_subparsers(dest="hook_command", required=True)
@@ -384,33 +394,30 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(index_project(repo, args.profile))
         return 0
     if args.command == "inspect":
-        _print_json(inspect_prompt(repo, args.prompt, args.profile))
+        routed = compile_routing_base(repo, args.prompt)
+        _print_json({
+            "routing_authority_receipt": routed["routing_authority_receipt"],
+            "packet_source": routed["packet_source"],
+            "routing_mode": routed["routing_mode"],
+            "selected_paths": routed["selected_paths"],
+            "task_intent": routed["task_intent"],
+        })
         return 0
     if args.command == "locate":
         locate_repo = _guarded_repo(Path.cwd(), args.repo, fail_on_root_escalation=args.fail_on_root_escalation) if args.repo else repo
-        located = locate_files(locate_repo, args.prompt, max_files=max(1, int(args.max_files or 8)))
-        primary_files = [_located_file_json(file) for file in located.primary_files]
-        support_files = [_located_file_json(file) for file in located.support_files]
-        verification_files = [_located_file_json(file) for file in located.verification_files]
-        if not args.no_snippets:
-            primary_with_snippets, _tokens = attach_snippets_to_files(
-                locate_repo,
-                located.primary_files,
-                prompt=args.prompt,
-                snippet_budget_tokens=args.snippet_budget_tokens,
-                max_files=args.max_files,
-            )
-            snippets_by_path = {item["path"]: item.get("snippets") or [] for item in primary_with_snippets}
-            for item in primary_files:
-                item["snippets"] = snippets_by_path.get(item["path"], [])
+        routed = compile_routing_base(locate_repo, args.prompt, max_files=max(1, int(args.max_files or 8)))
+        projection = routed["routing_decision"]["packet_projection"]
+        primary_files = [{"path": path, "role": "primary"} for path in projection["primary_paths"]]
+        support_files = [{"path": path, "role": "support"} for path in projection["support_paths"]]
+        verification_files = [{"path": path, "role": "verification"} for path in projection["verification_paths"]]
         result = {
             "prompt": args.prompt,
             "primary_files": primary_files,
             "support_files": support_files,
             "verification_files": verification_files,
-            "confidence": located.confidence,
-            "ambiguity_reasons": list(located.ambiguity_reasons),
-            "search_terms_if_expanding": list(located.uncovered_prompt_terms),
+            "routing_mode": routed["routing_mode"],
+            "routing_authority_receipt": routed["routing_authority_receipt"],
+            "packet_source": routed["packet_source"],
         }
         if args.json:
             _print_json(result)
@@ -431,8 +438,26 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError as exc:
             print(f"premode: error: {exc}", file=sys.stderr)
             return 2
+        compatibility_requested = bool(
+            args.tuning or args.packet_version or args.packet_variant or args.packet_strategy
+            or packet_mode != "paths_only" or args.evidence_snippets or args.cache_optimized
+            or args.context_only or args.include_packet_debug_metadata
+        )
+        if args.plugin == "literal_symbol" and not args.tuning:
+            compatibility_requested = False
         try:
-            result = compile_prompt(
+            if not compatibility_requested:
+                result = compile_routing_base(compile_repo, args.prompt)
+                if out:
+                    output = out if out.is_absolute() else compile_repo / out
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_text(str(result["packet"]), encoding="utf-8")
+                if json_out:
+                    output = json_out if json_out.is_absolute() else compile_repo / json_out
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    output.write_text(json.dumps({key: value for key, value in result.items() if key != "packet"}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+            else:
+                result = compile_prompt(
                 compile_repo,
                 args.prompt,
                 args.profile,
@@ -449,8 +474,8 @@ def main(argv: list[str] | None = None) -> int:
                 save=args.save,
                 record_artifacts=not args.no_record,
                 include_packet_debug_metadata=args.include_packet_debug_metadata,
-                tuning_profile=Path(args.tuning) if args.tuning else None,
-            )
+                    tuning_profile=Path(args.tuning) if args.tuning else None,
+                )
         except TuningProfileError as exc:
             print(f"premode: error: {exc}", file=sys.stderr)
             return 2
@@ -561,31 +586,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"premode: error: {exc}", file=sys.stderr)
             return 2
         result = run_benchmark(
-            bench_repo,
-            prompts_path=Path(args.prompts) if args.prompts else None,
-            profile=args.profile,
-            use_repo_map=not args.no_repo_map,
-            cache_optimized=not args.no_cache_optimized,
-            packet_version=packet_version,
-            packet_variant=args.packet_variant,
-            packet_strategy=args.packet_strategy,
-            packet_detail_mode=packet_mode,
-            snippet_budget_tokens=args.snippet_budget_tokens,
-            compile_modes=args.compile_modes,
-            save_packets=args.save_packets,
-            include_review=args.include_review,
-            review_against=args.against,
-            review_since_compile=args.since_compile,
-            out_path=Path(args.out) if args.out else None,
+            bench_repo, prompts_path=Path(args.prompts) if args.prompts else None,
+            profile=args.profile, use_repo_map=not args.no_repo_map,
+            cache_optimized=not args.no_cache_optimized, packet_version=packet_version,
+            packet_variant=args.packet_variant, packet_strategy=args.packet_strategy,
+            packet_detail_mode=packet_mode, snippet_budget_tokens=args.snippet_budget_tokens,
+            compile_modes=args.compile_modes, save_packets=args.save_packets,
+            include_review=args.include_review, review_against=args.against,
+            review_since_compile=args.since_compile, out_path=Path(args.out) if args.out else None,
             cache_mode=args.cache_mode,
         )
         if plugin_resolution:
             result["plugin_alias_resolution"] = plugin_resolution
-            if args.out:
-                out_abs = Path(args.out)
-                if not out_abs.is_absolute():
-                    out_abs = bench_repo / out_abs
-                out_abs.write_text(json.dumps(result, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
         if args.json:
             _print_json(result)
         else:
@@ -629,29 +641,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lab":
         if args.lab_command == "compare":
             deterministic = compile_prompt(repo, args.prompt, None)
-            report = {
-                "status": "experimental",
-                "provider": args.provider,
-                "model": args.model,
+            _print_json({
+                "status": "experimental", "provider": args.provider, "model": args.model,
                 "local_assist_enabled": False,
                 "deterministic_packet_sha256": deterministic["compiled_packet_sha256"],
                 "deterministic_primary_intent": deterministic["primary_intent"],
                 "assist_result": "mock comparison only; local model providers are not part of default setup",
                 "recommendation": "deterministic",
-            }
-            _print_json(report)
+            })
             return 0
         if args.lab_command == "live-token-harness":
             from .live_token_harness import DEFAULT_PROMPT, render_harness_report, render_matrix_report, run_live_token_harness
 
             result = run_live_token_harness(
-                source_repo=repo,
-                artifact_root=Path(args.artifact_root),
-                mode=args.mode,
-                prompt=args.prompt or DEFAULT_PROMPT,
-                prompt_id=args.prompt_id,
-                model=args.model,
-                effort=args.effort,
+                source_repo=repo, artifact_root=Path(args.artifact_root), mode=args.mode,
+                prompt=args.prompt or DEFAULT_PROMPT, prompt_id=args.prompt_id,
+                model=args.model, effort=args.effort,
                 fixture_repo=Path(args.fixture_repo) if args.fixture_repo else None,
                 task_matrix=Path(args.task_matrix) if args.task_matrix else None,
                 fixture_root=Path(args.fixture_root) if args.fixture_root else None,

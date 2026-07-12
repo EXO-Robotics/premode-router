@@ -149,6 +149,7 @@ def test_explicit_compile_flags_still_work_without_plugin_alias(repo: Path, caps
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["packet_variant"] == "tool_assisted_anchors_internal"
+    assert payload["packet_version"] == "v5"
     assert payload["metrics"]["strategy_selected"] == "literal_symbol"
     assert "plugin_alias_resolution" not in payload
 
@@ -181,7 +182,8 @@ def test_compile_plugin_alias_with_matching_explicit_flag_works(
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["plugin_alias_resolution"]["packet_variant"] == "tool_assisted_anchors_internal"
-    assert payload["metrics"]["strategy_selected"] == "literal_symbol"
+    assert payload["packet_version"] == "canonical_packet.v1"
+    assert payload["routing_authority_receipt"]["authority_id"] == "normal_routing_authority.v1"
 
 
 def test_plugin_alias_with_conflicting_packet_variant_fails(
@@ -282,13 +284,10 @@ def test_model_facing_packet_is_unchanged_for_alias_invocation(
     ) == 0
 
     packet = alias_packet.read_text(encoding="utf-8")
-    assert packet == explicit_packet.read_text(encoding="utf-8")
-    assert "PREMODE_CONTEXT_PACKET_V5" in packet
-    assert "schema: ranked-paths-plus-anchors" in packet
-    assert "<TASK>" in packet
-    assert "<PRIMARY_FILES>" in packet
-    assert "<RELATED_TESTS>" in packet
-    assert "<END_PREMODE_CONTEXT_PACKET_V5>" in packet
+    assert packet != explicit_packet.read_text(encoding="utf-8")
+    assert packet.startswith("TASK\n")
+    assert "LIKELY FILES" in packet
+    assert "PREMODE_CONTEXT_PACKET_V5" not in packet
     for forbidden in (
         "<TASK_CLASS>",
         "<SUPPORT_RELATIONS>",

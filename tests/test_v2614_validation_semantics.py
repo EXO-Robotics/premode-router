@@ -38,7 +38,7 @@ def test_compile_out_json_out_prints_compact_receipt(monkeypatch, capsys, tmp_pa
     assert payload["status"] == "compiled"
     assert payload["out"] == ".premode/out/packet.md"
     assert payload["json_out"] == ".premode/out/meta.json"
-    assert payload["packet_version"].startswith("PREMODE_COMPILED_PACKET")
+    assert payload["packet_version"] == "canonical_packet.v1"
     assert "## 1. Task" not in stdout
     assert "--- BEGIN FILE" not in stdout
     assert (repo / ".premode" / "out" / "packet.md").exists()
@@ -66,7 +66,7 @@ def test_compile_show_raw_preserves_packet_stdout(monkeypatch, capsys, tmp_path:
 
     assert rc == 0
     stdout = capsys.readouterr().out
-    assert "PREMODE_COMPILED_PACKET" in stdout
+    assert "TASK\nFix src/app.py\nLIKELY FILES" in stdout
     assert "[raw prompt requested with --show-raw]" in stdout
 
 

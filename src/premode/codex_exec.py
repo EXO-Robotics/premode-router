@@ -11,6 +11,7 @@ import threading
 from typing import Any
 
 from .compiler import compile_prompt
+from .routing_base import compile_routing_base
 from .config import premode_dir
 from .audit import sha256_text, write_audit
 from .launch_safety import write_external_payload_manifest
@@ -48,7 +49,7 @@ class CodexOptions:
     private_paths_forbidden: bool = False
     tuning_profile: str | None = None
     child_env: dict[str, str] = field(default_factory=dict)
-    canonical_core_packet: bool = False
+    canonical_core_packet: bool = True
 
 
 @dataclass(frozen=True)
@@ -243,24 +244,28 @@ def run_codex(
 ) -> dict[str, Any]:
     options = options or CodexOptions()
     effective_profile = resource_profile or "lite"
-    compiled = compile_prompt(
-        repo_root,
-        raw_prompt,
-        effective_profile,
-        use_repo_map=options.use_repo_map,
-        cache_optimized=options.cache_optimized,
-        packet_version=options.packet_version,
-        packet_variant=options.packet_variant,
-        packet_strategy=options.packet_strategy,
-        save=options.save,
-        context_only=options.context_only,
-        record_artifacts=options.record,
-        tuning_profile=options.tuning_profile,
-        canonical_core_packet=options.canonical_core_packet,
-    )
+    if options.canonical_core_packet:
+        compiled = compile_routing_base(repo_root, raw_prompt, save=options.save)
+    else:
+        compiled = compile_prompt(
+            repo_root,
+            raw_prompt,
+            effective_profile,
+            use_repo_map=options.use_repo_map,
+            cache_optimized=options.cache_optimized,
+            packet_version=options.packet_version,
+            packet_variant=options.packet_variant,
+            packet_strategy=options.packet_strategy,
+            save=options.save,
+            context_only=options.context_only,
+            record_artifacts=options.record,
+            tuning_profile=options.tuning_profile,
+            canonical_core_packet=False,
+        )
     packet = compiled["packet"]
-    if packet == raw_prompt:
-        raise AssertionError("Compiled packet must not equal raw prompt.")
+    routing_mode = str(compiled.get("routing_mode") or "")
+    if packet == raw_prompt and routing_mode != "ABSTAIN":
+        raise AssertionError("Only an ABSTAIN route may preserve the raw prompt exactly.")
     external_payload = None
     if options.record:
         external_payload = write_external_payload_manifest(
@@ -306,6 +311,8 @@ def run_codex(
             "saved_artifacts": compiled.get("saved_artifacts"),
             "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
             "external_launch_allowed": (external_payload["manifest"]["launch_allowed"] if external_payload else None),
+            "packet_source": compiled.get("packet_source"),
+            "routing_authority_receipt": compiled.get("routing_authority_receipt"),
         }
         if options.show_raw:
             output["raw_prompt"] = raw_prompt
@@ -327,6 +334,8 @@ def run_codex(
             "external_payload_manifest": external_payload["manifest_path"],
             "external_launch_allowed": False,
             "external_launch_block_reasons": external_payload["manifest"].get("block_reasons") or [],
+            "packet_source": compiled.get("packet_source"),
+            "routing_authority_receipt": compiled.get("routing_authority_receipt"),
         }
         if options.record:
             write_audit(repo_root, "codex_execute_blocked", sha256_text(raw_prompt), {**command_record, **blocked})
@@ -402,6 +411,8 @@ def run_codex(
         "codex_warnings": invocation.warnings,
         "external_payload_manifest": external_payload["manifest_path"] if external_payload else None,
         "external_launch_allowed": (external_payload["manifest"]["launch_allowed"] if external_payload else None),
+        "packet_source": compiled.get("packet_source"),
+        "routing_authority_receipt": compiled.get("routing_authority_receipt"),
     }
 
 

@@ -7,7 +7,7 @@ from typing import Iterable, Literal
 
 CoreRole = Literal["primary", "verification", "support"]
 
-DEFAULT_CORE_INSTRUCTION = "Start with these files. Expand only when required by the task."
+DEFAULT_CORE_INSTRUCTION = "Start with these files. Expand only when required."
 DEFAULT_FALLBACK_INSTRUCTION = "No likely files met the confidence threshold. Expand only as required by the task."
 
 

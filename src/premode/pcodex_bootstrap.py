@@ -17,7 +17,7 @@ from typing import Any
 
 from . import __version__
 from .codex_exec import CodexOptions, build_codex_invocation, run_codex
-from .compiler import compile_prompt
+from .routing_base import compile_routing_base
 from .cache_manifest import read_cache_manifest, write_cache_manifest
 from .install_manifest import read_install_manifest
 from .inventory import load_inventory, refresh_inventory_if_needed, summarize_inventory
@@ -60,6 +60,7 @@ LOCAL_STATE_CLEANUP_TARGETS = [
     ".premode/tuning/",
     ".premode/inventory/files.json",
     ".premode/inventory/",
+    ".premode/index/",
     ".premode/topology/repo_topology.json",
     ".premode/topology/",
     ".premode/audit/",
@@ -1045,18 +1046,7 @@ def compile_pcodex_packet(
             route = "explicit_fixed_authority"
             command = _premode_explicit_command(prompt, repo_root, profile, tuning_profile)
             fallback_reason = "plugin_alias_metadata_ignored_for_fixed_production_authority"
-    compiled = compile_prompt(
-        repo_root,
-        prompt,
-        profile,
-        use_repo_map=True,
-        cache_optimized=True,
-        save=False,
-        record_artifacts=False,
-        tuning_profile=tuning_profile,
-        canonical_core_packet=True,
-        **kwargs,
-    )
+    compiled = compile_routing_base(repo_root, prompt)
     result = {
         "status": "compile_degraded" if compiled.get("compile_degraded") else "compiled",
         "route": route,
@@ -1069,6 +1059,15 @@ def compile_pcodex_packet(
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
         "canonical_core_packet": bool(compiled.get("canonical_core_packet")),
+        "routing_mode": compiled.get("routing_mode"),
+        "routing_decision": compiled.get("routing_decision"),
+        "routing_authority_receipt": compiled.get("routing_authority_receipt"),
+        "packet_source": compiled.get("packet_source"),
+        "task_intent": compiled.get("task_intent"),
+        "candidate_policy": compiled.get("candidate_policy"),
+        "candidate_provenance": compiled.get("candidate_provenance"),
+        "ranker_configuration_hash": compiled.get("ranker_configuration_hash"),
+        "model_facing_selected_paths": compiled.get("model_facing_selected_paths") or [],
         "selected_paths": _selected_paths_from_compile_result(compiled),
         "model_facing_sections": [
             section
@@ -1107,6 +1106,18 @@ def compose_final_prompt(raw_task: str, packet: str | None) -> str:
 
 
 def _selected_paths_from_compile_result(compiled: dict[str, Any]) -> list[str]:
+    projected = compiled.get("model_facing_selected_paths")
+    if isinstance(projected, list):
+        selected: list[str] = []
+        seen: set[str] = set()
+        for value in projected:
+            text = str(value or "").strip()
+            key = text.casefold()
+            if text and key not in seen:
+                selected.append(text)
+                seen.add(key)
+        return selected
+
     selected: list[str] = []
     seen: set[str] = set()
 
@@ -1390,7 +1401,9 @@ def setup(
         "literal_symbol_plugin_available": bool(doctor_result.get("plugin_alias_available")),
         "codex_available": bool(doctor_result.get("codex_executable_available")),
     }
-    blocking = [name for name in ("premode_available", "literal_symbol_plugin_available") if not checks[name]]
+    # The built-in B0 ranker is the normal product authority. The plugin alias is
+    # a preferred compatibility route, not an installation prerequisite.
+    blocking = [name for name in ("premode_available",) if not checks[name]]
     if blocking:
         mode_result = set_enabled(repo_root, True)
         return {
@@ -2239,13 +2252,6 @@ def format_pcodex_ui(payload: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _write_temp_packet(packet: str) -> str:
-    handle = tempfile.NamedTemporaryFile("w", encoding="utf-8", prefix="pcodex_packet_", suffix=".md", delete=False)
-    with handle:
-        handle.write(packet)
-    return handle.name
-
-
 def run_dry_run(
     repo_root: Path,
     prompt: str,
@@ -2300,6 +2306,8 @@ def run_dry_run(
             "telemetry": telemetry.get("telemetry"),
             "lockfile": {key: value for key, value in lockfile.items() if key != "payload"},
             "safe_passthrough_reason": mode_state.get("safe_passthrough_reason"),
+            "packet_source": "standard_passthrough",
+            "routing_authority_receipt": None,
         }
     if effective_mode != "off":
         runner = compile_runner or compile_pcodex_packet
@@ -2322,6 +2330,8 @@ def run_dry_run(
                 "effective_mode": "off",
                 "effective_state": EFFECTIVE_SAFE_PASSTHROUGH,
                 "safe_passthrough_reason": f"compile_failed:{type(exc).__name__}",
+                "packet_source": "standard_passthrough",
+                "routing_authority_receipt": None,
             }
             telemetry = record_runtime_telemetry(
                 repo_root,
@@ -2356,7 +2366,6 @@ def run_dry_run(
                 else None,
             )
         telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
-        packet_path = _write_temp_packet(compiled["packet"])
         final_prompt = compose_final_prompt(prompt, compiled["packet"])
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
         return {
@@ -2364,7 +2373,9 @@ def run_dry_run(
             "status": "dry_run_degraded" if compiled.get("compile_degraded") else base["status"],
             "premode_command": compiled["premode_command"],
             "codex_command": invocation.args,
-            "packet_path": packet_path,
+            # Dry-run is intentionally side-effect free at the packet boundary.
+            # Debug retention remains available through explicit compile --save.
+            "packet_path": None,
             "final_prompt_preview": redact_text(final_prompt),
             "packet_sha256": compiled["packet_sha256"],
             "route": compiled["route"],
@@ -2379,6 +2390,8 @@ def run_dry_run(
             "asset_media_fast_path": compiled.get("asset_media_fast_path"),
             "compile_degraded": bool(compiled.get("compile_degraded")),
             "compile_degraded_reason": compiled.get("compile_degraded_reason"),
+            "packet_source": compiled.get("packet_source"),
+            "routing_authority_receipt": compiled.get("routing_authority_receipt"),
         }
     telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode)
     invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
@@ -2390,6 +2403,8 @@ def run_dry_run(
         "final_prompt_preview": redact_text(prompt),
         "telemetry": telemetry.get("telemetry"),
         "lockfile": {key: value for key, value in update_lockfile_from_resolver(repo_root, mode_state).items() if key != "payload"},
+        "packet_source": "standard_passthrough",
+        "routing_authority_receipt": None,
     }
 
 
@@ -2433,6 +2448,8 @@ def run_disabled(repo_root: Path, prompt: str, mode_state: dict[str, Any] | None
         "enabled": False,
         "mode": str(mode_state.get("mode") or "off"),
         "transform_applied": False,
+        "packet_source": "standard_passthrough",
+        "routing_authority_receipt": None,
         "child_env": child_env,
     }
 

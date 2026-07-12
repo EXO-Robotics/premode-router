@@ -286,8 +286,8 @@ def test_pcodex_saves_packet_for_review(repo):
     dry = run_codex(repo, "Fix src/app.py", None, CodexOptions(dry_run=True))
     assert dry["saved_artifacts"]
     packet_json = json.loads((repo / ".premode" / "out" / "last_packet.json").read_text(encoding="utf-8"))
-    assert "review_contract" in packet_json
-    assert packet_json["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
+    assert packet_json["routing_authority_receipt"]["authority_id"] == "normal_routing_authority.v1"
+    assert packet_json["packet_version"] == "canonical_packet.v1"
 
 
 def test_packet_v3_contains_review_contract(repo):

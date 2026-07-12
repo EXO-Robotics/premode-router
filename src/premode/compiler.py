@@ -13,6 +13,7 @@ from typing import Any, Iterable
 from .adapters import detect_projects, load_commands, read_rules_and_memory, adapter_score_bonus, openclaw_policy_from_detection
 from .audit import sha256_text, write_audit
 from .backbone import build_tool_assisted_anchors_internal, build_tool_assisted_backbone
+from .candidate_policy import CandidateAdmissibility, evaluate_candidate
 from .config import load_config, premode_dir
 from .git_state import scan_git_state
 from .ignore import IgnoreMatcher
@@ -45,7 +46,8 @@ from .repo_map import (
 )
 from .role_core import classify_path_role, infer_prompt_intent
 from .intake import intake_policy_from_detection, intake_score_delta
-from .locator import LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
+from .locator import FileRelation, LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
+from .routing_decision import decide_routing, render_model_request, routing_decision_metadata, validate_packet_projection
 from .router import (
     acceptance_checks_for_intents,
     classify_task,
@@ -478,6 +480,108 @@ def _filter_secret_entries(entries: list[dict[str, Any]]) -> tuple[list[dict[str
     }
 
 
+def _candidate_policy_task_context(raw_prompt: str) -> dict[str, object]:
+    return {
+        "explicit_paths": sorted(_extract_path_like_mentions_unindexed(raw_prompt)),
+        "generated_intent": bool(re.search(r"(?i)\b(generate|generated|codegen|build output|vendor)\b", raw_prompt or "")),
+    }
+
+
+def _policy_filter_entries(
+    repo_root: Path,
+    entries: list[dict[str, Any]],
+    raw_prompt: str,
+    *,
+    provenance_source: str,
+) -> tuple[list[dict[str, Any]], list[CandidateAdmissibility]]:
+    context = _candidate_policy_task_context(raw_prompt)
+    state = {"ignore_matcher": IgnoreMatcher.from_repo(repo_root)}
+    allowed: list[dict[str, Any]] = []
+    results: list[CandidateAdmissibility] = []
+    for entry in entries:
+        path = str(entry.get("path") or "").strip()
+        if not path:
+            continue
+        result = evaluate_candidate(repo_root, path, provenance_source, context, state)
+        results.append(result)
+        if result.admitted:
+            allowed.append(entry)
+    return allowed, results
+
+
+def _policy_filter_manifest_paths(
+    repo_root: Path,
+    manifest: dict[str, Any],
+    raw_prompt: str,
+    ingress_records: list[CandidateAdmissibility],
+) -> None:
+    """Re-assert the policy after every relation and legacy expansion seam."""
+
+    context = _candidate_policy_task_context(raw_prompt)
+    state = {"ignore_matcher": IgnoreMatcher.from_repo(repo_root)}
+    records = [record.to_metadata() for record in ingress_records]
+    bucket_sources = {
+        "candidate_edit_files": "repository_map",
+        "likely_edit_files": "legacy_adapter",
+        "likely_files": "legacy_adapter",
+        "support_files": "support_relation",
+        "read_only_support_files": "support_relation",
+        "verification_files": "source_test_relation",
+        "verification_edit_files": "source_test_relation",
+        "related_tests": "source_test_relation",
+        "suggested_tests": "source_test_relation",
+    }
+    disposition_counts: dict[str, int] = {}
+    source_counts: dict[str, dict[str, int]] = {}
+    denied_paths: list[str] = []
+    for key, default_source in bucket_sources.items():
+        values = manifest.get(key)
+        if not isinstance(values, list):
+            continue
+        filtered: list[Any] = []
+        seen: set[str] = set()
+        for item in values:
+            path = str(item.get("path") if isinstance(item, dict) else item or "").strip()
+            if not path:
+                continue
+            source_value = item.get("source") if isinstance(item, dict) else None
+            source = str(source_value or default_source).strip() or default_source
+            chain = [source] if source == default_source else [source, default_source]
+            item_context = dict(context)
+            item_context["support_only"] = default_source == "support_relation"
+            result = evaluate_candidate(repo_root, path, chain, item_context, state)
+            records.append(result.to_metadata())
+            disposition_counts[result.final_disposition] = disposition_counts.get(result.final_disposition, 0) + 1
+            counts = source_counts.setdefault(default_source, {"evaluated": 0, "admitted": 0, "rejected": 0})
+            counts["evaluated"] += 1
+            counts["admitted" if result.admitted else "rejected"] += 1
+            if not result.admitted:
+                denied_paths.append(result.normalized_path)
+                continue
+            dedupe_key = result.normalized_path.casefold()
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            if isinstance(item, dict):
+                normalized = dict(item)
+                normalized["path"] = result.normalized_path
+                filtered.append(normalized)
+            else:
+                filtered.append(result.normalized_path)
+        manifest[key] = filtered
+
+    locator_records = ((manifest.get("locator_evidence") or {}).get("candidate_provenance") or [])
+    records.extend(item for item in locator_records if isinstance(item, dict))
+    manifest["candidate_provenance"] = records
+    manifest["candidate_policy_receipt"] = {
+        "schema_version": "candidate_admissibility.v1",
+        "record_count": len(records),
+        "final_disposition_counts": dict(sorted(disposition_counts.items())),
+        "final_source_counts": {key: source_counts[key] for key in sorted(source_counts)},
+        "denied_model_path_candidates": sorted(set(path for path in denied_paths if path)),
+    }
+
+
 def _compact_locator_signals(signals: list[str], *, limit: int = 8) -> list[str]:
     priority_markers = (
         "role:source_downranked_for_docs_prompt",
@@ -559,6 +663,12 @@ def _compact_locator_evidence(result: LocateResult | None, *, error: str | None 
             "relation_degraded_reasons",
         }
         payload["locator_metadata"] = {key: metadata.get(key) for key in sorted(safe_keys) if key in metadata}
+        # Candidate authority and provenance are observer-only. They are kept in
+        # the compile receipt but never consumed by a model-facing renderer.
+        if isinstance(metadata.get("candidate_policy"), dict):
+            payload["candidate_policy"] = metadata["candidate_policy"]
+        if isinstance(metadata.get("candidate_provenance"), (list, tuple)):
+            payload["candidate_provenance"] = list(metadata["candidate_provenance"])
     return payload
 
 
@@ -3737,6 +3847,12 @@ def select_context(
     kws = prompt_keywords(sanitized)
     raw_entries = list(idx.get("entries", []))
     entries, secret_path_summary = _filter_secret_entries(raw_entries)
+    entries, candidate_ingress_records = _policy_filter_entries(
+        repo_root,
+        entries,
+        raw_prompt,
+        provenance_source="inventory" if inventory_paths is not None else "fallback_walk",
+    )
     project_detection = detect_projects(repo_root, entries=entries, cwd=Path.cwd(), prompt=sanitized, inventory_paths=inventory_detection_paths)
     selected_child_root = _selected_child_root(repo_root, project_detection)
     eligible_readable_bytes = sum(int(e.get("bytes", 0) or 0) for e in entries)
@@ -4269,6 +4385,53 @@ def select_context(
         locator_evidence=locator_evidence,
         semantic_buckets=semantic_buckets,
     )
+    ledger_paths = {
+        str(item.get("path") or "").casefold()
+        for item in (file_decision_ledger.get("records") or [])
+        if isinstance(item, dict)
+    }
+    for policy_result in candidate_ingress_records:
+        if policy_result.admitted or not policy_result.normalized_path:
+            continue
+        if policy_result.normalized_path.casefold() in ledger_paths:
+            continue
+        file_decision_ledger["records"].append({
+            "path": policy_result.normalized_path,
+            "eligible": False,
+            "skipped": True,
+            "skip_reason": policy_result.classification.value,
+            "raw_score": 0,
+            "score_deltas": {},
+            "matched_prompt_terms": [],
+            "typo_normalized_terms": {},
+            "role_classification": "policy_denied",
+            "matched_symbols": [],
+            "matched_paths": [],
+            "repo_map_hints": [],
+            "locator_hints": {},
+            "dirty_contribution": 0,
+            "dirty_only": False,
+            "dirty_with_prompt_evidence": False,
+            "dirty_with_symbol_evidence": False,
+            "dirty_with_import_proximity": False,
+            "dirty_demoted_to_context": False,
+            "final_bucket": "excluded",
+            "why_promoted": None,
+            "why_rejected": f"candidate_policy:{policy_result.classification.value}",
+            "candidate_projection_reason": None,
+            "support_projection_reason": None,
+            "demotion_reason": None,
+            "precision_warning_source": None,
+            "model_facing": False,
+            "saved_only": False,
+            "candidate": False,
+            "support": False,
+            "verification": False,
+            "context": False,
+            "candidate_policy": policy_result.to_metadata(),
+        })
+        ledger_paths.add(policy_result.normalized_path.casefold())
+    file_decision_ledger["candidate_count"] = len(file_decision_ledger["records"])
     file_decision_ledger["created_at"] = timestamp_iso()
 
     metrics = {
@@ -4391,6 +4554,7 @@ def select_context(
         "pre_agent_worktree_state": _pre_agent_worktree_state(repo_root),
     }
     _apply_support_candidate_promotions(manifest, raw_prompt)
+    _policy_filter_manifest_paths(repo_root, manifest, raw_prompt, candidate_ingress_records)
     if record_artifacts:
         out = premode_dir(repo_root) / "out" / "last_context_manifest.json"
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -5666,44 +5830,58 @@ def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, st
     backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
     primary = [str(path) for path in (backbone.get("primary_files_after") or backbone.get("primary_files") or []) if path]
     related = [str(path) for path in (backbone.get("related_tests_after") or backbone.get("related_tests") or []) if path]
-    anchors_by_path = backbone.get("anchors_by_path") if isinstance(backbone.get("anchors_by_path"), dict) else {}
     exact_task = str(manifest.get("canonical_user_prompt") or "")
-    task_terms = {term.casefold() for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", exact_task)}
     locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
-    include_optional_structure = str(locator.get("confidence") or "low") in {"high", "medium"}
+    file_by_path = {
+        item.path: item
+        for item in _located_files_from_locator_payload(
+            [*(locator.get("primary_files") or []), *(locator.get("verification_files") or []), *(locator.get("support_files") or [])]
+        )
+    }
 
-    def item(path: str, role: str) -> CorePath:
-        if not include_optional_structure:
-            return CorePath(path=path)
-        anchors = anchors_by_path.get(path) if isinstance(anchors_by_path.get(path), list) else []
-        rendered_anchor = None
-        for anchor in anchors:
-            if not isinstance(anchor, dict):
-                continue
-            anchor_type = str(anchor.get("anchor_type") or anchor.get("type") or "").strip()
-            anchor_text = _v5_anchor_value(anchor.get("anchor_text") or anchor.get("value"))
-            source = str(anchor.get("source") or "").strip()
-            quality = float(anchor.get("quality") or 0.0)
-            if not anchor_type or len(anchor_text) < 2 or quality < 0.6:
-                continue
-            if not bool(anchor.get("model_facing_allowed", True)):
-                continue
-            if source not in {"locator_signal", "symbol_scan", "test_scan", "config_scan", "heading_scan"}:
-                continue
-            if anchor_type not in {"symbol", "test_name", "config_section", "package_name", "heading", "import_name", "cli_flag"}:
-                continue
-            if anchor_type == "cli_flag" and anchor_text.startswith("-") and not anchor_text.startswith("--"):
-                continue
-            if anchor_type in {"symbol", "import_name", "cli_flag"} and anchor_text.casefold().lstrip("-") not in task_terms:
-                continue
-            rendered_anchor = f"{anchor_type}={anchor_text}"
-            break
-        return CorePath(path=path, role=role, anchor=rendered_anchor)
+    def located(path: str, role: str) -> LocatedFile:
+        item = file_by_path.get(path)
+        if item is not None:
+            return item
+        return LocatedFile(path=path, score=0, role=role, confidence="low", matched_signals=[])
 
-    items = [item(path, "primary") for path in primary]
-    items.extend(item(path, "verification") for path in related)
-    packet = render_core_packet(exact_task, items)
-    prefix = "TASK\n"
+    raw_support = _paths_from_packet_items(
+        manifest.get("support_files") or manifest.get("read_only_support_files"),
+        limit=8,
+    )
+    relations = [
+        FileRelation(
+            source=str(item.get("source") or ""),
+            target=str(item.get("target") or ""),
+            relation=str(item.get("relation") or ""),
+            strength=int(item.get("strength") or 0),
+        )
+        for item in (locator.get("dependency_relations") or [])
+        if isinstance(item, dict) and item.get("source") and item.get("target")
+    ]
+    routing_input = LocateResult(
+        primary_files=[located(path, "source") for path in primary],
+        verification_files=[located(path, "test") for path in related],
+        support_files=[located(path, "config") for path in raw_support],
+        confidence=str(locator.get("confidence") or "low"),
+        covered_prompt_terms=[str(value) for value in (locator.get("covered_prompt_terms") or [])],
+        uncovered_prompt_terms=[str(value) for value in (locator.get("uncovered_prompt_terms") or [])],
+        ambiguity_reasons=[str(value) for value in (locator.get("ambiguity_reasons") or [])],
+        dependency_relations=relations,
+        relation_degraded_reasons=[str(value) for value in (locator.get("relation_degraded_reasons") or [])],
+        metadata={"candidate_provenance": locator.get("candidate_provenance") or []},
+    )
+    # Explicit legacy compatibility adapter. Normal Routing Base callers use
+    # strict closure; old compiler manifests predate per-selected receipts.
+    decision = decide_routing(routing_input, exact_task, strict_policy_closure=False)
+    packet = render_model_request(decision)
+    if not validate_packet_projection(decision, packet):
+        raise RuntimeError("routing packet projection mismatch")
+    decision_metadata = routing_decision_metadata(decision)
+    manifest["routing_decision"] = decision_metadata
+    manifest["routing_mode"] = decision_metadata["mode"]
+    manifest["model_facing_selected_paths"] = list(decision.packet_projection.paths)
+    prefix = "" if decision_metadata["mode"] == "ABSTAIN" else "TASK\n"
     return packet, prefix, packet[len(prefix):]
 
 
@@ -7206,6 +7384,11 @@ def compile_prompt(
         "packet_mode": manifest.get("packet_mode"),
         "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
         "canonical_core_packet": bool(manifest.get("canonical_core_packet")),
+        "routing_mode": manifest.get("routing_mode"),
+        "routing_decision": manifest.get("routing_decision"),
+        "model_facing_selected_paths": manifest.get("model_facing_selected_paths") or [],
+        "candidate_policy_receipt": manifest.get("candidate_policy_receipt"),
+        "candidate_provenance": manifest.get("candidate_provenance") or [],
         "packet_receipt_mode": manifest.get("packet_receipt_mode"),
         "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
         "packet_detail_mode": manifest.get("packet_detail_mode"),

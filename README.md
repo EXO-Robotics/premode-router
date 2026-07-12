@@ -19,7 +19,7 @@ These files define the current install, setup, validation, benchmark, tuning, an
 
 ## Current Private-Beta
 
-Base package version: `v0.2.6.24`.
+Approved baseline package version: `v0.2.6.24`. Release-foundation prerelease target: `v0.3.0b1`.
 
 The primary workflow is deliberately narrow:
 

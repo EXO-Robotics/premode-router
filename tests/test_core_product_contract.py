@@ -47,7 +47,7 @@ def test_path_only_packet_is_exact_compact_and_deterministic() -> None:
     assert "VERIFY" not in first
     assert "SUPPORT" not in first
     assert first.count("* src/auth.py") == 1
-    assert first.endswith("Start with these files. Expand only when required by the task.\n")
+    assert first.endswith("Start with these files. Expand only when required.\n")
 
 
 def test_task_line_occurs_once_when_task_text_matches_a_selected_path() -> None:
@@ -240,7 +240,7 @@ def test_role_core_matches_legacy_compatibility_projection() -> None:
             assert path_role_rank(path, current) == legacy_path_role_rank(path, legacy)
 
 
-def test_normal_low_confidence_compile_can_render_path_only(tmp_path: Path, monkeypatch) -> None:
+def test_normal_low_confidence_compile_uses_conservative_routing_without_leaking_confidence(tmp_path: Path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     original = compiler.locate_files
 
@@ -251,13 +251,12 @@ def test_normal_low_confidence_compile_can_render_path_only(tmp_path: Path, monk
     monkeypatch.setattr(compiler, "locate_files", low_confidence)
     compiled = pcodex.compile_pcodex_packet(repo, "Inspect authenticate.", write_policy=ADVISORY)
     packet = compiled["packet"]
-    assert "LIKELY FILES" in packet
-    assert "\nPRIMARY\n" not in packet
-    assert "\nVERIFY\n" not in packet
+    assert compiled["routing_mode"] in {"BROAD", "ABSTAIN"}
+    assert "confidence" not in packet.casefold()
     assert " :: " not in packet
 
 
-def test_integrated_degraded_pcodex_uses_canonical_fallback(tmp_path: Path, monkeypatch) -> None:
+def test_integrated_repository_wide_pcodex_uses_exact_abstention(tmp_path: Path, monkeypatch) -> None:
     repo = _repo(tmp_path)
     for index in range(80):
         _write(repo / "bulk" / f"file_{index:04d}.txt", f"item {index}\n")
@@ -270,7 +269,9 @@ def test_integrated_degraded_pcodex_uses_canonical_fallback(tmp_path: Path, monk
     assert compiled["compile_degraded_reason"] == "large_repo_budget_exceeded"
     assert compiled["packet"].splitlines().count(task) == 1
     assert "LIKELY FILES" not in compiled["packet"]
-    assert "No likely files met the confidence threshold." in compiled["packet"]
+    assert compiled["routing_mode"] == "ABSTAIN"
+    assert compiled["packet"] == task
+    assert compiled["selected_paths"] == []
     assert "large_repo_budget_exceeded" not in compiled["packet"]
 
 

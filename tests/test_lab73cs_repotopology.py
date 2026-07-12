@@ -293,9 +293,8 @@ def test_status_doctor_compile_and_benchmark_expose_topology_out_of_band(tmp_pat
 
     assert cli.main(["compile", "Fix src/index.ts", "--repo", str(repo), "--plugin", "literal_symbol", "--json", "--no-record"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["topology"]["state"] == "fresh"
-    assert payload["project_node_selection"]["primary_node"] == "root"
-    assert payload["metrics"]["topology_repo_shape"] == "single_package"
+    assert payload["packet_version"] == "canonical_packet.v1"
+    assert payload["routing_authority_receipt"]["authority_id"] == "normal_routing_authority.v1"
 
     benchmark = run_benchmark(repo, use_repo_map=False, packet_version="v5", packet_variant="tool_assisted_anchors_internal", packet_strategy="literal_symbol")
     assert benchmark["cases"]
@@ -323,8 +322,8 @@ def test_v5_literal_symbol_packet_and_alias_surfaces_remain_stable(tmp_path: Pat
 
     assert cli.main(["compile", "Fix src/app.py", "--repo", str(repo), "--plugin", "literal_symbol", "--json", "--no-record"]) == 0
     alias_payload = json.loads(capsys.readouterr().out)
-    assert alias_payload["packet_version"] == "v5"
-    assert alias_payload["packet_variant"] == "tool_assisted_anchors_internal"
+    assert alias_payload["packet_version"] == "canonical_packet.v1"
+    assert alias_payload["packet_variant"] == "paths_only"
     assert cli.main([
         "compile",
         "Fix src/app.py",

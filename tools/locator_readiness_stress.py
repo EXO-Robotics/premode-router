@@ -240,9 +240,17 @@ def _validate(case: StressCase, result: dict[str, Any]) -> list[str]:
         if len(candidates & weak) > 2:
             notes.append("weak_files_flooded_candidates")
     elif case.name == "secret_transport_hygiene":
-        serialized = json.dumps(result.get("locator_evidence") or {}, sort_keys=True)
+        locator_receipt = dict(result.get("locator_evidence") or {})
+        provenance = list(locator_receipt.pop("candidate_provenance", []) or [])
+        policy = locator_receipt.pop("candidate_policy", None)
+        serialized = json.dumps(locator_receipt, sort_keys=True)
         if ".env" in all_context or ".env" in serialized or "literal-secret-token" in serialized:
             notes.append("secret_transported")
+        env_records = [item for item in provenance if isinstance(item, dict) and item.get("normalized_path") == ".env"]
+        if not env_records or env_records[0].get("final_disposition") != "REJECT":
+            notes.append("secret_policy_receipt_missing")
+        if policy is not None and not isinstance(policy, dict):
+            notes.append("candidate_policy_receipt_malformed")
         _assert_contains(candidates | all_context, {"src/config.py"}, notes, "config_source")
     return notes
 
