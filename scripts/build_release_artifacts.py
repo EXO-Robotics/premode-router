@@ -166,8 +166,12 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
                     path.unlink()
         dist = temp / "dist"
         env = {**os.environ, "SOURCE_DATE_EPOCH": epoch, "PYTHONHASHSEED": "0"}
-        formats = ["--wheel"] + (["--sdist"] if with_sdist else [])
-        run(python, "-m", "build", "--no-isolation", *formats, "--outdir", str(dist), cwd=source, env=env)
+        run(
+            python, "-m", "pip", "wheel", ".", "--no-deps", "--no-build-isolation",
+            "--wheel-dir", str(dist), cwd=source, env=env,
+        )
+        if with_sdist:
+            run(python, "setup.py", "sdist", "--dist-dir", str(dist), cwd=source, env=env)
         for sdist in dist.glob("*.tar.gz"):
             normalize_gzip(sdist)
         artifacts = output / "artifacts"
