@@ -16,9 +16,4 @@ Do not upload private repo contents, live Codex logs, JSONL logs, credentials, A
 
 ## Supported versions
 
-This project is under active private development. Only the currently validated checkpoint branch is treated as supported for internal evaluation.
-
-Current validated checkpoint:
-
-- Branch: `checkpoint/lab-7-3t`
-- Commit: `6b39f093831ce019c276c6b8498ed6109a018eb8`
+This project is under active private development. The supported product line is the reviewed head of remote `Private-Beta`. See `docs/PRODUCT_CONTRACT.md` and `docs/RELEASE_AUTHORITY.md`. Historical checkpoint SHAs and lab branches are evidence snapshots, not current support authority.

@@ -1,0 +1,70 @@
+{
+  "$schema": "./schemas/premode.product.schema.json",
+  "schema_version": "premode.product.v1",
+  "product_name": "pCodex",
+  "status": "source-visible proprietary Private-Beta",
+  "version_source": "pyproject.toml:[project].version",
+  "production_package": "premode-router",
+  "production_branch_policy": {
+    "authority": "origin/Private-Beta",
+    "feature_branches_require_review": true,
+    "tags_are_not_automatic": true
+  },
+  "public_commands": [
+    "pcodex setup",
+    "pcodex status",
+    "pcodex run"
+  ],
+  "advanced_commands": [
+    "pcodex doctor",
+    "pcodex integrate codex",
+    "premode review-patch",
+    "pcodex first-run",
+    "pcodex cleanup",
+    "pcodex on",
+    "pcodex off",
+    "pcodex tuned",
+    "pcodex tune",
+    "pcodex ui",
+    "pcodex compile",
+    "pcodex mcp-server",
+    "pcodex plugin init",
+    "premode compile",
+    "premode benchmark",
+    "premode stress"
+  ],
+  "research_surfaces": [
+    "premode lab",
+    "premode hook",
+    "OpenClaw templates, fixtures, and execution-integration research",
+    "observer and live-token harnesses"
+  ],
+  "production_ranking_authority": {
+    "plugin": "literal_symbol",
+    "package": "premode-plugin-literal-symbol",
+    "fallback": "ranked_paths_plus_anchors"
+  },
+  "canonical_packet_authority": {
+    "version": "v5",
+    "variant": "tool_assisted_anchors_internal",
+    "strategy": "literal_symbol"
+  },
+  "generated_state_ownership": [
+    {"path": ".premode/out/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/audit/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/metrics/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/pcodex_state.json", "owner": "pcodex", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/lcc.lock.json", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/inventory/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/topology/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/tuning/", "owner": "pcodex_tuning", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".pcodex/", "owner": "legacy_pcodex", "cleanup": "manual_after_inspection"},
+    {"path": "PCODEX_SETUP_REPORT.md", "owner": "user_bootstrap_workflow", "cleanup": "manual"}
+  ],
+  "integration_status": {
+    "codex_cli": "supported_terminal_workflow",
+    "codex_repo_assets": "repo_local_opt_in",
+    "mcp": "advanced_opt_in_not_automatic",
+    "openclaw": "advanced_repo_profile_not_execution_runtime"
+  }
+}

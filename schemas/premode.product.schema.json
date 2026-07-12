@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "premode.product.schema.json",
+  "title": "pCodex product manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "schema_version", "product_name", "status", "version_source", "production_package", "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces", "production_ranking_authority", "canonical_packet_authority", "generated_state_ownership", "integration_status"],
+  "properties": {
+    "$schema": {"const": "./schemas/premode.product.schema.json"},
+    "schema_version": {"const": "premode.product.v1"},
+    "product_name": {"const": "pCodex"},
+    "status": {"type": "string", "minLength": 1},
+    "version_source": {"const": "pyproject.toml:[project].version"},
+    "production_package": {"const": "premode-router"},
+    "production_branch_policy": {"type": "object", "required": ["authority", "feature_branches_require_review", "tags_are_not_automatic"], "additionalProperties": false, "properties": {"authority": {"const": "origin/Private-Beta"}, "feature_branches_require_review": {"const": true}, "tags_are_not_automatic": {"const": true}}},
+    "public_commands": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "advanced_commands": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "research_surfaces": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "production_ranking_authority": {"type": "object", "required": ["plugin", "package", "fallback"], "additionalProperties": false, "properties": {"plugin": {"const": "literal_symbol"}, "package": {"const": "premode-plugin-literal-symbol"}, "fallback": {"const": "ranked_paths_plus_anchors"}}},
+    "canonical_packet_authority": {"type": "object", "required": ["version", "variant", "strategy"], "additionalProperties": false, "properties": {"version": {"const": "v5"}, "variant": {"const": "tool_assisted_anchors_internal"}, "strategy": {"const": "literal_symbol"}}},
+    "generated_state_ownership": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "owner", "cleanup"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "owner": {"type": "string", "minLength": 1}, "cleanup": {"type": "string", "minLength": 1}}}},
+    "integration_status": {"type": "object", "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"], "additionalProperties": false, "properties": {"codex_cli": {"const": "supported_terminal_workflow"}, "codex_repo_assets": {"const": "repo_local_opt_in"}, "mcp": {"const": "advanced_opt_in_not_automatic"}, "openclaw": {"const": "advanced_repo_profile_not_execution_runtime"}}}
+  }
+}

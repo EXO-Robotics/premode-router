@@ -1,0 +1,51 @@
+name: Release foundation
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONHASHSEED: "0"
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install test dependency and source
+        run: python -m pip install 'pytest>=8,<10' && python -m pip install --no-deps --no-build-isolation .
+      - name: Compile production package
+        run: python -m compileall -q -f src/premode packages/premode-plugin-literal-symbol/src
+      - name: Run network-free product contract, safety, and schema checks
+        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_product_contract.py tests/test_package_layout.py packages/premode-plugin-literal-symbol/tests/test_literal_symbol_plugin.py tests/test_privacy_and_codex.py
+      - name: Verify public help
+        run: |
+          premode --help >/dev/null
+          pcodex --help >/dev/null
+          pcodex setup --help >/dev/null
+          pcodex status --help >/dev/null
+          pcodex run --help >/dev/null
+          pcodex integrate codex --help >/dev/null
+          pcodex doctor --help >/dev/null
+          premode review-patch --help >/dev/null
+      - name: Build and smoke-test wheels without network access
+        run: |
+          mkdir -p "$RUNNER_TEMP/premode-wheel"
+          python -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/premode-wheel" .
+          python -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/premode-wheel" packages/premode-plugin-literal-symbol
+          python -m venv "$RUNNER_TEMP/premode-smoke"
+          "$RUNNER_TEMP/premode-smoke/bin/pip" install --no-index --no-deps "$RUNNER_TEMP"/premode-wheel/*.whl
+          "$RUNNER_TEMP/premode-smoke/bin/python" -c "import premode; from importlib.metadata import entry_points; assert any(ep.name == 'literal_symbol' for ep in entry_points(group='premode.plugins'))"
+          "$RUNNER_TEMP/premode-smoke/bin/premode" --help >/dev/null
+          "$RUNNER_TEMP/premode-smoke/bin/pcodex" --help >/dev/null
