@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import re
 from typing import Any, Literal
 from pathlib import Path
 
@@ -52,6 +53,17 @@ def _unique(values: list[str]) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _is_verification_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").casefold()
+    name = normalized.rsplit("/", 1)[-1]
+    return (
+        normalized.startswith(("tests/", "test/", "spec/", "specs/"))
+        or "/tests/" in normalized or "/test/" in normalized
+        or name.startswith(("test_", "spec_"))
+        or re.search(r"(?:^|[._-])(?:test|tests|spec|specs)(?:[._-]|$)", name) is not None
+    )
+
+
 def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> RoutingDecisionV1:
     locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
     backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
@@ -69,6 +81,9 @@ def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> Routing
         return _unique(accepted)
     primary = admitted(list(backbone.get("primary_files_after") or backbone.get("primary_files") or []), "canonical_primary")
     verification = admitted(list(backbone.get("related_tests_after") or backbone.get("related_tests") or []), "canonical_verification")
+    primary_verification = [path for path in primary if _is_verification_path(path)]
+    primary = tuple(path for path in primary if not _is_verification_path(path))
+    verification = _unique([*verification, *primary_verification])
     verification_keys = {path.casefold() for path in verification}
     primary = tuple(path for path in primary if path.casefold() not in verification_keys)
     primary_keys = {path.casefold() for path in primary}
@@ -87,7 +102,8 @@ def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> Routing
     confidence: ConfidenceBand = raw_confidence if raw_confidence in {"low", "medium", "high"} else "low"  # type: ignore[assignment]
     evidence: list[CandidateEvidenceV1] = []
     rank = 0
-    for role, items in (("primary", locator.get("primary_files") or []), ("verification", locator.get("verification_files") or []), ("support", locator_support)):
+    evidence_seen: set[tuple[str, str]] = set()
+    for locator_role, items in (("primary", locator.get("primary_files") or []), ("verification", locator.get("verification_files") or []), ("support", locator_support)):
         for item in items:
             if not isinstance(item, dict) or not item.get("path"):
                 continue
@@ -99,19 +115,29 @@ def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> Routing
                 intent=CandidateIntent(
                     explicit=is_explicit,
                     generated_required=is_explicit and (generated_intent or is_generated_candidate_path(raw_path)),
-                    support_only=role == "support",
+                    support_only=False,
                 ),
-                provenance=(f"locator_{role}",),
+                provenance=(f"locator_{locator_role}",),
             )
             if not policy.admitted or not policy.normalized_path:
                 continue
+            normalized_key = policy.normalized_path.casefold()
+            role: CandidateRole | None = (
+                "primary" if normalized_key in primary_keys
+                else "verification" if normalized_key in verification_keys
+                else "support" if normalized_key in {path.casefold() for path in qualified_support}
+                else None
+            )
+            if role is None or (role, normalized_key) in evidence_seen:
+                continue
+            evidence_seen.add((role, normalized_key))
             signals = tuple(str(signal) for signal in item.get("matched_signals") or [])
             evidence.append(CandidateEvidenceV1(
                 schema_version="candidate-evidence.v1",
                 path=policy.normalized_path, role=role, rank=rank,
                 score=int(item.get("score") or 0), confidence=confidence,
                 matched_signals=signals,
-                provenance=tuple(dict.fromkeys([*policy.provenance, *[signal.split(":", 1)[0] for signal in signals]])),
+                provenance=tuple(dict.fromkeys([*policy.provenance, f"locator_{locator_role}", *[signal.split(":", 1)[0] for signal in signals]])),
             ))
             rank += 1
     selected_by_role = {

@@ -152,3 +152,26 @@ def test_explicit_generated_intent_reaches_production_admission(tmp_path: Path) 
     # remain impossible to restore through the same exception.
     assert "dist/generated.js" in str(result.get("locator_evidence") or result)
     assert ".pcodex" not in result["packet"]
+
+
+def test_explicit_source_and_test_keep_source_primary_and_test_verification(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+
+    result = compile_prompt(
+        repo,
+        "Change calculate_total in src/app.py and update tests/test_app.py",
+        record_artifacts=False,
+        canonical_core_packet=True,
+        packet_version="v5",
+        packet_variant="tool_assisted_anchors_internal",
+        packet_strategy="literal_symbol",
+    )
+
+    decision = result["routing_decision"]
+    assert decision["mode"] != "abstain"
+    assert decision["primary_paths"] == ("src/app.py",)
+    assert decision["verification_paths"] == ("tests/test_app.py",)
+    assert {(item["role"], item["path"]) for item in decision["candidate_provenance"]} >= {
+        ("primary", "src/app.py"),
+        ("verification", "tests/test_app.py"),
+    }
