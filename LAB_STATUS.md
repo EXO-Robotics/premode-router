@@ -1,4 +1,6 @@
-# Lab Status
+# Lab Status (Historical Snapshot)
+
+This file records the Lab 7.3T/7.3U state at the time it was written. It is not current product, branch, version, or release authority. Current authority is `origin/Private-Beta` as defined in `docs/PRODUCT_CONTRACT.md` and `docs/RELEASE_AUTHORITY.md`.
 
 ## Current validated checkpoint
 
