@@ -4,7 +4,7 @@
   "title": "pCodex product manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "product_name", "status", "version_source", "production_package", "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces", "production_ranking_authority", "canonical_packet_authority", "generated_state_ownership", "integration_status"],
+  "required": ["$schema", "schema_version", "product_name", "status", "version_source", "production_package", "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces", "production_ranking_authority", "canonical_packet_authority", "generated_state_ownership", "integration_status", "known_public_command_gaps"],
   "properties": {
     "$schema": {"const": "./schemas/premode.product.schema.json"},
     "schema_version": {"const": "premode.product.v1"},
@@ -19,6 +19,7 @@
     "production_ranking_authority": {"type": "object", "required": ["plugin", "package", "fallback"], "additionalProperties": false, "properties": {"plugin": {"const": "literal_symbol"}, "package": {"const": "premode-plugin-literal-symbol"}, "fallback": {"const": "ranked_paths_plus_anchors"}}},
     "canonical_packet_authority": {"type": "object", "required": ["version", "variant", "strategy"], "additionalProperties": false, "properties": {"version": {"const": "v5"}, "variant": {"const": "tool_assisted_anchors_internal"}, "strategy": {"const": "literal_symbol"}}},
     "generated_state_ownership": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "owner", "cleanup"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "owner": {"type": "string", "minLength": 1}, "cleanup": {"type": "string", "minLength": 1}}}},
-    "integration_status": {"type": "object", "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"], "additionalProperties": false, "properties": {"codex_cli": {"const": "supported_terminal_workflow"}, "codex_repo_assets": {"const": "repo_local_opt_in"}, "mcp": {"const": "advanced_opt_in_not_automatic"}, "openclaw": {"const": "advanced_repo_profile_not_execution_runtime"}}}
+    "integration_status": {"type": "object", "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"], "additionalProperties": false, "properties": {"codex_cli": {"const": "supported_terminal_workflow"}, "codex_repo_assets": {"const": "repo_local_opt_in"}, "mcp": {"const": "advanced_opt_in_not_automatic"}, "openclaw": {"const": "advanced_repo_profile_not_execution_runtime"}}},
+    "known_public_command_gaps": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
   }
 }

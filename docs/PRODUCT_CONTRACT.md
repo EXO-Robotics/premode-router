@@ -24,9 +24,12 @@ pcodex setup --skip-tune --no-mcp
 pcodex status
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
+pcodex doctor
+pcodex integrate codex --dry-run
+premode review-patch --since-compile
 ```
 
-Supported public pCodex commands are exactly `setup`, `status`, and `run`. `doctor`, `integrate codex`, and `premode review-patch` are supported advanced/support steps. The implemented `pcodex cleanup --local-state` command owns bounded local cleanup; there is no public `pcodex uninstall` command. `first-run`, `on`, `off`, `tuned`, `tune`, `ui`, and `compile` are advanced compatibility or operator surfaces. MCP, plugin scaffolding, benchmarks, stress tools, labs, hooks, selector identifiers, and tuning internals are not normal public help promises.
+Supported public pCodex commands are `setup`, `status`, `run`, `doctor`, and `integrate codex`; `premode review-patch` is the currently supported review command. The intended headline commands `pcodex review` and `pcodex uninstall` are not implemented and are therefore recorded gaps, not supported commands. The implemented `pcodex cleanup --local-state` command owns bounded local cleanup but is not a complete uninstaller. `first-run`, `on`, `off`, `tuned`, `tune`, `ui`, and `compile` are advanced compatibility or operator surfaces. MCP, plugin scaffolding, benchmarks, stress tools, labs, hooks, selector identifiers, and tuning internals are not normal public help promises.
 
 ## Read and write boundaries
 
@@ -42,6 +45,7 @@ Owned generated state is repo-local unless an explicitly approved installation o
 | `.premode/lcc.lock.json` | Pre-mode | deterministic compile authority | same |
 | `.premode/inventory/`, `.premode/topology/` | Pre-mode | local indexes | same |
 | `.premode/tuning/` | pCodex tuning | repo-specific advanced state | same; review before versioning |
+| `.premode/pcodex_codex_home/` | pCodex | isolated Codex configuration used by bounded setup/integration flows | `pcodex cleanup --local-state --yes` |
 | `.pcodex/` | legacy pCodex material | compatibility path, not in the active cleanup allowlist | manual, after inspection |
 | `PCODEX_SETUP_REPORT.md` | user/bootstrap workflow | optional pasted-bootstrap report; not emitted by the active CLI | manual |
 | `.agents/skills/pcodex*`, `.agents/plugins/`, `plugins/pcodex/` | Codex integration command/repo | repo-local integration assets | remove only with explicit user approval |

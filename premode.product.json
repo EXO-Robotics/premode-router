@@ -13,12 +13,12 @@
   "public_commands": [
     "pcodex setup",
     "pcodex status",
-    "pcodex run"
-  ],
-  "advanced_commands": [
+    "pcodex run",
     "pcodex doctor",
     "pcodex integrate codex",
-    "premode review-patch",
+    "premode review-patch"
+  ],
+  "advanced_commands": [
     "pcodex first-run",
     "pcodex cleanup",
     "pcodex on",
@@ -58,6 +58,7 @@
     {"path": ".premode/inventory/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
     {"path": ".premode/topology/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
     {"path": ".premode/tuning/", "owner": "pcodex_tuning", "cleanup": "pcodex cleanup --local-state --yes"},
+    {"path": ".premode/pcodex_codex_home/", "owner": "pcodex", "cleanup": "pcodex cleanup --local-state --yes"},
     {"path": ".pcodex/", "owner": "legacy_pcodex", "cleanup": "manual_after_inspection"},
     {"path": "PCODEX_SETUP_REPORT.md", "owner": "user_bootstrap_workflow", "cleanup": "manual"}
   ],
@@ -66,5 +67,9 @@
     "codex_repo_assets": "repo_local_opt_in",
     "mcp": "advanced_opt_in_not_automatic",
     "openclaw": "advanced_repo_profile_not_execution_runtime"
-  }
+  },
+  "known_public_command_gaps": [
+    "pcodex review",
+    "pcodex uninstall"
+  ]
 }
