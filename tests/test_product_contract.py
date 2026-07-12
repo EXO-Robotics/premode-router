@@ -6,7 +6,7 @@ import tomllib
 
 import premode
 from premode.cli import build_parser
-from premode.pcodex_bootstrap import _parser as build_pcodex_parser
+from premode.pcodex_bootstrap import LOCAL_STATE_CLEANUP_TARGETS, _parser as build_pcodex_parser
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -67,7 +67,25 @@ def test_public_commands_exist_in_active_parsers() -> None:
             assert name in premode_commands
         else:
             assert name in pcodex_commands
-        assert not rest, "headline public commands must be top-level commands"
+        if rest:
+            parser = build_pcodex_parser() if program == "pcodex" else build_parser()
+            action = next(action for action in parser._actions if isinstance(action, argparse._SubParsersAction))
+            nested = action.choices[name]
+            assert rest[0] in _choices(nested)
+
+
+def test_unimplemented_target_command_is_a_declared_gap() -> None:
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    assert manifest["known_public_command_gaps"] == ["pcodex review", "pcodex uninstall"]
+    assert "review" not in _choices(build_pcodex_parser())
+    assert "uninstall" not in _choices(build_pcodex_parser())
+
+
+def test_manifest_covers_every_active_cleanup_target() -> None:
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    owned_paths = [entry["path"] for entry in manifest["generated_state_ownership"]]
+    for target in LOCAL_STATE_CLEANUP_TARGETS:
+        assert any(target == path or target.startswith(path) for path in owned_paths), target
 
 
 def test_core_version_has_one_declared_authority_and_matching_runtime_mirror() -> None:

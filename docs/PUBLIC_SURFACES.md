@@ -5,7 +5,7 @@ This inventory classifies active implementation at the Private-Beta release boun
 | Classification | Active surfaces |
 | --- | --- |
 | `core` | `premode` package; compile, detect, index, inspect, locate, map, review-patch; router/compiler/locator/index/packet and safety modules |
-| `codex_product` | Public: `pcodex setup`, `status`, `run`; supported advanced/support: `doctor`, `integrate codex`, Codex executor and repo-local Codex UX assets |
+| `codex_product` | Public: `pcodex setup`, `status`, `run`, `doctor`, `integrate codex`, plus current review surface `premode review-patch`; Codex executor and repo-local Codex UX assets. Intended headline `pcodex review` and `pcodex uninstall` are not implemented. |
 | `openclaw_product` | Implemented `openclaw_control_plane` repository profile and adapter policy only; no OpenClaw execution runtime or standalone integration |
 | `advanced` | pCodex first-run, cleanup, on/off/tuned/tune/ui/compile, local MCP server, plugin init; Pre-mode benchmark/stress/stats; tuning and review tooling |
 | `research` | `premode lab`, hook interception, live-token and observer harnesses, `lab73*` modules/tests, OpenClaw discovery/templates/fixtures, experimental selector variants |
