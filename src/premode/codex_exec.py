@@ -259,7 +259,8 @@ def run_codex(
         canonical_core_packet=options.canonical_core_packet,
     )
     packet = compiled["packet"]
-    if packet == raw_prompt:
+    routing_decision = compiled.get("routing_decision") if isinstance(compiled.get("routing_decision"), dict) else {}
+    if packet == raw_prompt and routing_decision.get("mode") != "abstain":
         raise AssertionError("Compiled packet must not equal raw prompt.")
     external_payload = None
     if options.record:

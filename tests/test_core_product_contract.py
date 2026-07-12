@@ -270,7 +270,9 @@ def test_integrated_degraded_pcodex_uses_canonical_fallback(tmp_path: Path, monk
     assert compiled["compile_degraded_reason"] == "large_repo_budget_exceeded"
     assert compiled["packet"].splitlines().count(task) == 1
     assert "LIKELY FILES" not in compiled["packet"]
-    assert "No likely files met the confidence threshold." in compiled["packet"]
+    assert compiled["packet"] == task
+    assert compiled["routing_decision"]["mode"] == "abstain"
+    assert "No likely files met the confidence threshold." not in compiled["packet"]
     assert "large_repo_budget_exceeded" not in compiled["packet"]
 
 
