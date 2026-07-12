@@ -86,6 +86,21 @@ safe_remove_install_root() {
   if [[ -d "$INSTALL_ROOT" ]]; then
     [[ ! -L "$INSTALL_ROOT" ]] || fail "refusing to remove symlink install root: $INSTALL_ROOT"
     [[ -f "$INSTALL_ROOT/install_manifest.json" ]] || fail "refusing to remove unowned install root without install_manifest.json: $INSTALL_ROOT"
+    [[ -x "$INSTALL_ROOT/bin/python" ]] || fail "refusing to remove install root without its managed Python: $INSTALL_ROOT"
+    "$INSTALL_ROOT/bin/python" - "$INSTALL_ROOT" <<'PYVALIDATE' || fail "install manifest ownership validation failed"
+import json
+import sys
+from pathlib import Path
+
+from premode.install_manifest import validate_install_manifest
+
+root = Path(sys.argv[1]).expanduser().resolve()
+payload = validate_install_manifest(json.loads((root / "install_manifest.json").read_text(encoding="utf-8")))
+if Path(str(payload["install_root"])).expanduser().resolve() != root:
+    raise SystemExit("manifest install_root does not match requested uninstall root")
+if payload.get("package_name") != "premode-router" or payload.get("installer_version") != "pcodex-source-installer.v1":
+    raise SystemExit("manifest ownership fields do not match source installer")
+PYVALIDATE
     rm -rf "$INSTALL_ROOT"
     log "removed install root: $INSTALL_ROOT"
   else

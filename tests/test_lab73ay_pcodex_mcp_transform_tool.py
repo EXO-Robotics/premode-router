@@ -137,7 +137,7 @@ def test_tool_function_returns_raw_prompt_with_error_on_compile_failure(
     )
 
     assert result.transformed_prompt == RAW_PROMPT
-    assert result.error == "RuntimeError: compile unavailable"
+    assert result.error == "compile_failed"
     assert result.metadata["error_status"] == "compile_failed_raw_prompt"
 
 

@@ -102,7 +102,7 @@ def test_plugin_discovery_loads_mocked_entry_point(monkeypatch: pytest.MonkeyPat
 
     assert resolved.as_dict() == {
         "plugin_name": "literal_symbol",
-        "plugin_package": "premode-plugin-literal-symbol",
+        "plugin_package": "premode-router",
         "packet_version": "v5",
         "packet_variant": "tool_assisted_anchors_internal",
         "packet_strategy": "literal_symbol",

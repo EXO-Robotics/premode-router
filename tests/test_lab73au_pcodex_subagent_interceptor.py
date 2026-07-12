@@ -177,7 +177,7 @@ def test_compile_failure_returns_raw_prompt_with_error_metadata(repo: Path, monk
     result = transform_subagent_prompt(RAW_SUBAGENT_PROMPT, repo, compile_runner=failing_runner, dry_run=True)
 
     assert result.prompt == RAW_SUBAGENT_PROMPT
-    assert result.error == "RuntimeError: compile unavailable"
+    assert result.error == "compile_failed"
     assert result.metadata["status"] == "compile_failed_raw_prompt"
 
 

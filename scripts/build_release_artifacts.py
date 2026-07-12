@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import gzip
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -82,10 +83,19 @@ def write_tester_bundle(source: Path, output: Path, artifacts: Path) -> Path:
     return bundle
 
 
-def build(commit: str, output: Path, *, python: str) -> None:
+def normalize_gzip(path: Path) -> None:
+    raw = gzip.decompress(path.read_bytes())
+    with path.open("wb") as target:
+        with gzip.GzipFile(filename="", mode="wb", fileobj=target, mtime=0) as archive:
+            archive.write(raw)
+
+
+def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -> None:
     commit_sha = run("git", "rev-parse", f"{commit}^{{commit}}")
     epoch = run("git", "show", "-s", "--format=%ct", commit_sha)
     policy = json.loads(ALLOWLIST.read_text(encoding="utf-8"))
+    if output.exists() and any(output.iterdir()):
+        raise RuntimeError(f"output directory must be empty: {output}")
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="pcodex-release-") as raw_temp:
         temp = Path(raw_temp)
@@ -98,7 +108,10 @@ def build(commit: str, output: Path, *, python: str) -> None:
             tar.extractall(source, filter="data")
         dist = temp / "dist"
         env = {**os.environ, "SOURCE_DATE_EPOCH": epoch, "PYTHONHASHSEED": "0"}
-        run(python, "-m", "build", "--no-isolation", "--wheel", "--sdist", "--outdir", str(dist), cwd=source, env=env)
+        formats = ["--wheel"] + (["--sdist"] if with_sdist else [])
+        run(python, "-m", "build", "--no-isolation", *formats, "--outdir", str(dist), cwd=source, env=env)
+        for sdist in dist.glob("*.tar.gz"):
+            normalize_gzip(sdist)
         artifacts = output / "artifacts"
         shutil.copytree(dist, artifacts, dirs_exist_ok=True)
 
@@ -116,7 +129,10 @@ def build(commit: str, output: Path, *, python: str) -> None:
         if allowlist_failures:
             raise RuntimeError("artifact allowlist failed: " + ", ".join(allowlist_failures[:10]))
 
-        wheel = next(artifacts.glob("*.whl"))
+        wheels = list(artifacts.glob("*.whl"))
+        if len(wheels) != 1:
+            raise RuntimeError(f"expected exactly one wheel, found {len(wheels)}")
+        wheel = wheels[0]
         smoke_root = temp / "smoke"
         run(python, "-m", "venv", str(smoke_root))
         smoke_python = smoke_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -137,8 +153,9 @@ def main() -> int:
     parser.add_argument("--commit", default="HEAD")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--python", default=sys.executable)
+    parser.add_argument("--with-sdist", action="store_true", help="Also build the optional source distribution.")
     args = parser.parse_args()
-    build(args.commit, args.output.resolve(), python=args.python)
+    build(args.commit, args.output.resolve(), python=args.python, with_sdist=args.with_sdist)
     return 0
 
 

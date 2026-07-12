@@ -130,8 +130,8 @@ def transform_subagent_prompt(
             effective_mode=effective_mode,
             transform_applied=False,
             tuning_profile=tuning_profile,
-            error=f"{type(exc).__name__}: {exc}",
-            metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
+            error="compile_failed",
+            metadata={**base_metadata, "status": "compile_failed_raw_prompt", "error_type": type(exc).__name__},
         )
 
     packet = str(compiled.get("packet") or "")
