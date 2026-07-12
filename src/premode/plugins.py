@@ -92,13 +92,23 @@ def resolve_packet_plugin(
     matches = [ep for ep in _entry_points() if getattr(ep, "name", None) == alias]
     if len(matches) > 1:
         raise PluginAliasError(f"Duplicate Pre-mode plugin alias '{alias}' found; refusing to choose one.")
+    builtin = BUILTIN_PLUGIN_LOADERS.get(alias)
     if not matches:
-        builtin = BUILTIN_PLUGIN_LOADERS.get(alias)
         if builtin is None:
             raise PluginAliasError(f"Unknown Pre-mode plugin alias '{alias}'." + _available_suffix())
         plugin = builtin()
     else:
         plugin = _load_metadata(matches[0])
+        if builtin is not None:
+            bundled = builtin()
+            fields = ("packet_version", "packet_variant", "packet_strategy")
+            conflicts = [field for field in fields if plugin.get(field) != bundled.get(field)]
+            if conflicts:
+                raise PluginAliasError(
+                    f"Installed legacy plugin alias '{alias}' conflicts with the bundled stable default: "
+                    + ", ".join(conflicts)
+                )
+            plugin = bundled
     if not (plugin.get("strategy_id") or plugin.get("name")):
         raise PluginAliasError(f"Pre-mode plugin alias '{alias}' is missing required metadata field 'strategy_id' or 'name'.")
 

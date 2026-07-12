@@ -6,6 +6,16 @@ from premode.cli import main
 from premode import plugins
 
 
+class _EntryPoint:
+    name = "literal_symbol"
+
+    def __init__(self, metadata):
+        self.metadata = metadata
+
+    def load(self):
+        return lambda: self.metadata
+
+
 def test_core_install_includes_stable_default_without_entry_point(monkeypatch):
     monkeypatch.setattr(plugins, "_entry_points", lambda group=plugins.ENTRY_POINT_GROUP: [])
 
@@ -16,6 +26,33 @@ def test_core_install_includes_stable_default_without_entry_point(monkeypatch):
     assert resolved.packet_version == "v5"
     assert resolved.packet_variant == "tool_assisted_anchors_internal"
     assert resolved.packet_strategy == "literal_symbol"
+
+
+def test_compatible_legacy_default_cannot_override_bundled_authority(monkeypatch):
+    legacy = _EntryPoint({
+        "name": "legacy-package",
+        "strategy_id": "literal_symbol",
+        "packet_version": "v5",
+        "packet_variant": "tool_assisted_anchors_internal",
+        "packet_strategy": "literal_symbol",
+    })
+    monkeypatch.setattr(plugins, "_entry_points", lambda group=plugins.ENTRY_POINT_GROUP: [legacy])
+
+    assert plugins.resolve_packet_plugin("literal_symbol").plugin_package == "premode-router"
+
+
+def test_conflicting_legacy_default_fails_closed(monkeypatch):
+    legacy = _EntryPoint({
+        "name": "legacy-package",
+        "strategy_id": "literal_symbol",
+        "packet_version": "v4",
+        "packet_variant": "other",
+        "packet_strategy": "other",
+    })
+    monkeypatch.setattr(plugins, "_entry_points", lambda group=plugins.ENTRY_POINT_GROUP: [legacy])
+
+    with pytest.raises(plugins.PluginAliasError, match="conflicts with the bundled stable default"):
+        plugins.resolve_packet_plugin("literal_symbol")
 
 
 def test_package_imports_from_dunder_init():
