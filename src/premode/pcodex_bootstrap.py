@@ -1069,7 +1069,16 @@ def compile_pcodex_packet(
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
         "canonical_core_packet": bool(compiled.get("canonical_core_packet")),
-        "selected_paths": _selected_paths_from_compile_result(compiled),
+        "routing_decision": compiled.get("routing_decision"),
+        "selected_paths": (
+            list(dict.fromkeys(
+                str(path)
+                for bucket in ("primary_paths", "verification_paths", "support_paths")
+                for path in ((compiled.get("routing_decision") or {}).get(bucket) or [])
+            ))
+            if isinstance(compiled.get("routing_decision"), dict)
+            else _selected_paths_from_compile_result(compiled)
+        ),
         "model_facing_sections": [
             section
             for section in ("TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT")

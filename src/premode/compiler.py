@@ -18,6 +18,7 @@ from .git_state import scan_git_state
 from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
 from .inventory import InventoryMetrics, refresh_inventory_if_needed
+from .candidate_policy import admitted_paths
 from .log_scanner import scan_logs
 from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps
@@ -29,6 +30,7 @@ from .context_constraints import (
     is_restricted_edit_bucket_path,
 )
 from .core_packet import CorePath, core_packet_leakage, render_core_packet
+from .routing_contract import decision_from_manifest
 from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, extract_evidence_snippets
 from .repo_summary import summarize_file
 from .repo_map import (
@@ -46,6 +48,7 @@ from .repo_map import (
 from .role_core import classify_path_role, infer_prompt_intent
 from .intake import intake_policy_from_detection, intake_score_delta
 from .locator import LocatedFile, LocateResult, is_media_lookup_prompt, is_scaffold_meta_term, locate_files, locate_media_files
+from .candidate_policy import CandidateIntent, classify_candidate, is_generated_candidate_path
 from .router import (
     acceptance_checks_for_intents,
     classify_task,
@@ -2954,15 +2957,32 @@ def ensure_index(
     *,
     record: bool = True,
     inventory: dict[str, Any] | None = None,
+    generated_exceptions: set[str] | None = None,
 ) -> dict[str, Any]:
     inventory_paths = inventory.get("paths") if isinstance(inventory, dict) and isinstance(inventory.get("paths"), list) else None
     inventory_source = str(inventory.get("inventory_source") or "") if isinstance(inventory, dict) else None
     if not record:
-        return index_project(repo_root, profile_name, write=False, inventory_paths=inventory_paths, inventory_source=inventory_source)
+        return index_project(repo_root, profile_name, write=False, inventory_paths=inventory_paths, inventory_source=inventory_source, generated_exceptions=generated_exceptions)
     idx = load_index(repo_root)
-    if idx is None:
-        idx = index_project(repo_root, profile_name, inventory_paths=inventory_paths, inventory_source=inventory_source)
-    return idx
+    if idx is not None:
+        cached_entries = [entry for entry in idx.get("entries") or [] if isinstance(entry, dict)]
+        cached_paths_safe = all(
+            classify_candidate(
+                repo_root,
+                str(entry.get("path") or ""),
+                intent=CandidateIntent(
+                    explicit=str(entry.get("path") or "") in (generated_exceptions or set()),
+                    generated_required=str(entry.get("path") or "") in (generated_exceptions or set()),
+                ),
+                provenance=("cached_index",),
+            ).admitted
+            for entry in cached_entries
+        )
+        current_inventory_hash = hashlib.sha256("\n".join(sorted(str(path) for path in inventory_paths or [])).encode("utf-8")).hexdigest() if inventory_paths is not None else None
+        inventory_shape_matches = inventory_paths is not None and idx.get("inventory_path_hash") == current_inventory_hash and idx.get("candidate_policy_version") == "candidate-policy.v1"
+        if cached_paths_safe and inventory_shape_matches:
+            return idx
+    return index_project(repo_root, profile_name, inventory_paths=inventory_paths, inventory_source=inventory_source, generated_exceptions=generated_exceptions)
 
 
 def _first_meaningful_error(log_state: dict[str, Any]) -> dict[str, Any] | None:
@@ -3727,12 +3747,38 @@ def select_context(
     topology = topology_result.topology if topology_result.freshness == "fresh" else None
     topology_metrics = topology_result.metrics
     inventory_paths = inventory.get("paths") if isinstance(inventory, dict) and isinstance(inventory.get("paths"), list) else None
+    inventory_available = inventory_paths is not None
+    candidate_policy_decisions: list[Any] = []
+    if inventory_paths is not None:
+        inventory_paths, candidate_policy_decisions = admitted_paths(repo_root, [str(path) for path in inventory_paths], provenance="cached_inventory")
+        inventory = dict(inventory)
+        inventory["paths"] = inventory_paths
+    explicit_policy_paths = re.findall(
+        r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w.-])",
+        raw_prompt,
+    )
+    generated_intent = bool(re.search(r"(?i)\b(generated|vendor|dist|build output|generated code)\b", raw_prompt))
+    generated_exceptions: set[str] = set()
+    for explicit_path in explicit_policy_paths:
+        decision = classify_candidate(
+            repo_root,
+            explicit_path,
+            intent=CandidateIntent(explicit=True, generated_required=generated_intent or is_generated_candidate_path(explicit_path)),
+            provenance=("explicit_prompt_path", "generated_intent_exception" if generated_intent else "explicit_prompt_path"),
+        )
+        candidate_policy_decisions.append(decision)
+        if decision.admitted and decision.normalized_path:
+            if decision.classification.value == "GENERATED_EXCEPTION":
+                generated_exceptions.add(decision.normalized_path)
+            if inventory_available:
+                inventory_paths = sorted(dict.fromkeys([*(inventory_paths or []), decision.normalized_path]))
+                inventory["paths"] = inventory_paths
     inventory_detection_paths = None
     if isinstance(inventory, dict):
         path_items = inventory.get("paths") if isinstance(inventory.get("paths"), list) else []
         marker_items = inventory.get("marker_paths") if isinstance(inventory.get("marker_paths"), list) else []
         inventory_detection_paths = [str(path) for path in [*path_items, *marker_items] if path]
-    idx = ensure_index(repo_root, caps.name, record=record_artifacts, inventory=inventory)
+    idx = ensure_index(repo_root, caps.name, record=record_artifacts, inventory=inventory, generated_exceptions=generated_exceptions)
     sanitized = sanitize_prompt(raw_prompt)
     kws = prompt_keywords(sanitized)
     raw_entries = list(idx.get("entries", []))
@@ -4183,6 +4229,11 @@ def select_context(
     excluded_summary = _summarize_exclusions(excluded[:500])
     redaction_summary = merge_redaction_counts(redaction_counts)
     redaction_summary.update(secret_path_summary)
+    if isinstance(inventory, dict):
+        redaction_summary["secret_like_paths_suppressed"] = max(
+            int(redaction_summary.get("secret_like_paths_suppressed") or 0),
+            int(inventory.get("skipped_secret_count") or 0),
+        )
     tool_plan = tool_plan_for_intents(classification, project_detection)
     acceptance_checks = acceptance_checks_for_intents(classification, project_detection)
     scope_guardrails = scope_guardrails_for_intents(classification, project_detection)
@@ -4338,6 +4389,23 @@ def select_context(
         "trust_boundary_warnings": trust_boundary_warnings,
         "prompt_forbidden_paths": sorted(prompt_forbidden_paths),
         "locator_evidence": locator_evidence,
+        "candidate_policy": {
+            "schema_version": "candidate-policy.v1",
+            "authority_active": True,
+            "cached_inventory_revalidated": inventory_paths is not None,
+            "decision_count": len(candidate_policy_decisions),
+            "denied": [
+                {
+                    "path": decision.raw_path,
+                    "normalized_path": decision.normalized_path,
+                    "classification": decision.classification.value,
+                    "reason": decision.reason,
+                    "provenance": list(decision.provenance),
+                }
+                for decision in candidate_policy_decisions
+                if not decision.admitted
+            ][:100],
+        },
         "evidence_summary": evidence_summary,
         "root_cause_hypotheses": root_cause_hypotheses,
         "patch_boundary": patch_boundary,
@@ -5664,10 +5732,14 @@ def _v5_internal_anchor_suffix_lines(manifest: dict[str, Any]) -> list[str]:
 
 def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, str]:
     backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
-    primary = [str(path) for path in (backbone.get("primary_files_after") or backbone.get("primary_files") or []) if path]
-    related = [str(path) for path in (backbone.get("related_tests_after") or backbone.get("related_tests") or []) if path]
+    routing = manifest.get("routing_decision") if isinstance(manifest.get("routing_decision"), dict) else {}
+    primary = [str(path) for path in routing.get("primary_paths") or [] if path]
+    related = [str(path) for path in routing.get("verification_paths") or [] if path]
+    support = [str(path) for path in routing.get("support_paths") or [] if path]
     anchors_by_path = backbone.get("anchors_by_path") if isinstance(backbone.get("anchors_by_path"), dict) else {}
     exact_task = str(manifest.get("canonical_user_prompt") or "")
+    if routing.get("mode") == "abstain":
+        return exact_task, "", exact_task
     task_terms = {term.casefold() for term in re.findall(r"[A-Za-z_][A-Za-z0-9_]{2,}", exact_task)}
     locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
     include_optional_structure = str(locator.get("confidence") or "low") in {"high", "medium"}
@@ -5702,6 +5774,7 @@ def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, st
 
     items = [item(path, "primary") for path in primary]
     items.extend(item(path, "verification") for path in related)
+    items.extend(item(path, "support") for path in support)
     packet = render_core_packet(exact_task, items)
     prefix = "TASK\n"
     return packet, prefix, packet[len(prefix):]
@@ -6744,6 +6817,8 @@ def build_compiled_packet(
         else:
             manifest["metrics"]["model_facing_evidence_tokens"] = 0
 
+    if canonical_core_packet:
+        manifest["routing_decision"] = decision_from_manifest(repo_root, manifest).to_dict()
     packet, prefix, suffix = _render_packet_parts_from_manifest(manifest, selected)
     if marker == PACKET_V5_MARKER:
         manifest["model_facing_leakage_check"] = (
@@ -7206,6 +7281,7 @@ def compile_prompt(
         "packet_mode": manifest.get("packet_mode"),
         "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
         "canonical_core_packet": bool(manifest.get("canonical_core_packet")),
+        "routing_decision": manifest.get("routing_decision"),
         "packet_receipt_mode": manifest.get("packet_receipt_mode"),
         "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
         "packet_detail_mode": manifest.get("packet_detail_mode"),

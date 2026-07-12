@@ -14,6 +14,7 @@ from .config import premode_dir
 from .ignore import IgnoreMatcher
 from .paths import normalize_for_manifest
 from .safe_reader import is_secret_name
+from .candidate_policy import CandidateClass, classify_candidate
 from .timeutil import timestamp_iso
 from .write_policy import WritePolicy, resolve_write_policy
 
@@ -257,7 +258,21 @@ def _filter_paths(repo_root: Path, paths: Iterable[str], ignore: IgnoreMatcher) 
         "skipped_unsafe_count": 0,
     }
     for raw in paths:
-        norm = normalize_for_manifest(raw, repo_root)
+        decision = classify_candidate(repo_root, raw, ignore=ignore, provenance=("inventory",))
+        if not decision.admitted or not decision.normalized_path:
+            classification = decision.classification
+            if classification == CandidateClass.DENY_RUNTIME:
+                counts["skipped_runtime_count"] += 1
+            elif classification in {CandidateClass.ALLOW_IF_EXPLICIT}:
+                counts["skipped_generated_count"] += 1
+            elif classification == CandidateClass.DENY_IGNORED:
+                counts["ignored_by_premode_count"] += 1
+            elif classification == CandidateClass.DENY_SECRET:
+                counts["skipped_secret_count"] += 1
+            else:
+                counts["skipped_unsafe_count"] += 1
+            continue
+        norm = normalize_for_manifest(decision.normalized_path, repo_root)
         if not norm.ok or not norm.rel_path:
             counts["skipped_unsafe_count"] += 1
             continue

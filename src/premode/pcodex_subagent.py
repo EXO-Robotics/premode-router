@@ -124,6 +124,18 @@ def transform_subagent_prompt(
         )
 
     packet = str(compiled.get("packet") or "")
+    routing_decision = compiled.get("routing_decision") if isinstance(compiled.get("routing_decision"), dict) else {}
+    if routing_decision.get("mode") == "abstain":
+        return SubagentTransformResult(
+            prompt=subagent_prompt,
+            enabled=True,
+            mode=mode,
+            effective_mode=effective_mode,
+            transform_applied=False,
+            tuning_profile=tuning_profile,
+            route="abstain",
+            metadata={**base_metadata, "status": "abstained_raw_prompt", "routing_decision": routing_decision},
+        )
     if not packet:
         return SubagentTransformResult(
             prompt=subagent_prompt,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 from typing import Any
@@ -11,6 +12,7 @@ from .profiles import resolve_profile, ResourceCaps
 from .paths import normalize_for_manifest
 from .safe_reader import BINARY_EXTENSIONS
 from .timeutil import timestamp_iso
+from .candidate_policy import CandidateIntent, classify_candidate
 
 SKIP_DIR_NAMES = {
     ".git", ".premode", ".codex", ".agents", "DerivedData", "build", "node_modules", ".venv",
@@ -42,6 +44,7 @@ def index_project(
     write: bool = True,
     inventory_paths: list[str] | None = None,
     inventory_source: str | None = None,
+    generated_exceptions: set[str] | None = None,
 ) -> dict[str, Any]:
     cfg = load_config(repo_root)
     caps = resolve_profile(profile_name, cfg)
@@ -72,10 +75,13 @@ def index_project(
         if len(entries) >= caps.max_index_files:
             skipped.append({"path": "<remaining>", "reason": "max_index_files reached"})
             break
-        norm = normalize_for_manifest(path, repo_root)
-        if not norm.ok or not norm.rel_path:
-            skipped.append({"path": str(path), "reason": norm.reason or "unsafe path"})
+        raw_rel = str(path.relative_to(repo_root).as_posix()) if path.is_absolute() else str(path)
+        explicit_generated = raw_rel in (generated_exceptions or set())
+        decision = classify_candidate(repo_root, path, intent=CandidateIntent(explicit=explicit_generated, generated_required=explicit_generated), ignore=ignore, provenance=((inventory_source or "fallback_walk"),))
+        if not decision.admitted or not decision.normalized_path:
+            skipped.append({"path": str(path), "reason": decision.classification.value})
             continue
+        norm = normalize_for_manifest(decision.normalized_path, repo_root)
         if ignore.is_ignored(norm.rel_path):
             skipped.append({"path": norm.rel_path, "reason": "ignored"})
             continue
@@ -112,6 +118,8 @@ def index_project(
         "entry_count": len(entries),
         "inventory_source": inventory_source,
         "inventory_path_count": len(inventory_paths) if inventory_paths is not None else None,
+        "inventory_path_hash": hashlib.sha256("\n".join(sorted(str(path) for path in inventory_paths or [])).encode("utf-8")).hexdigest() if inventory_paths is not None else None,
+        "candidate_policy_version": "candidate-policy.v1",
     }
     if write:
         out = premode_dir(repo_root) / "index" / "index.json"

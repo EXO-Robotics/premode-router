@@ -10,6 +10,7 @@ from .context_constraints import is_sensitive_or_secret_path
 from .ignore import IgnoreMatcher
 from .role_core import classify_path_role
 from .safe_reader import is_probably_binary_path, is_secret_name
+from .candidate_policy import CandidateIntent, classify_candidate
 
 
 MAX_LOCATOR_BYTES = 64_000
@@ -692,21 +693,23 @@ def _role_for_path(rel_path: str) -> str:
     return "source"
 
 
-def _iter_repo_files(repo_root: Path, inventory_paths: list[str] | None = None) -> list[Path]:
-    if inventory_paths is not None:
-        return [repo_root / rel for rel in inventory_paths]
+def _iter_repo_files(repo_root: Path, inventory_paths: list[str] | None = None, *, generated_exceptions: set[str] | None = None) -> list[Path]:
     ignore = IgnoreMatcher.from_repo(repo_root)
+    if inventory_paths is not None:
+        files: list[Path] = []
+        for rel in inventory_paths:
+            explicit_generated = rel in (generated_exceptions or set())
+            decision = classify_candidate(repo_root, rel, intent=CandidateIntent(explicit=explicit_generated, generated_required=explicit_generated), ignore=ignore, provenance=("inventory",))
+            if decision.admitted and decision.normalized_path:
+                files.append(repo_root / decision.normalized_path)
+        return files
     files: list[Path] = []
     for path in repo_root.rglob("*"):
-        if not path.is_file():
-            continue
         rel = path.relative_to(repo_root).as_posix()
-        parts = rel.split("/")
-        if any(part in {".git", ".premode", ".venv", "node_modules", "__pycache__"} for part in parts):
-            continue
-        if ignore.is_ignored(rel):
-            continue
-        files.append(path)
+        explicit_generated = rel in (generated_exceptions or set())
+        decision = classify_candidate(repo_root, path, intent=CandidateIntent(explicit=explicit_generated, generated_required=explicit_generated), ignore=ignore, provenance=("fallback_walk",))
+        if decision.admitted and decision.normalized_path:
+            files.append(repo_root / decision.normalized_path)
     return files
 
 
@@ -974,12 +977,14 @@ def _extract_option_flags(text: str) -> set[str]:
     return set(OPTION_FLAG_RE.findall(text))
 
 
-def _file_evidence(repo_root: Path, path: Path) -> _FileEvidence | None:
+def _file_evidence(repo_root: Path, path: Path, *, generated_exceptions: set[str] | None = None) -> _FileEvidence | None:
     rel = path.relative_to(repo_root).as_posix()
     role = _role_for_path(rel)
     if role == "secret":
         return None
-    if role in {"vendor", "build", "asset"}:
+    if role in {"vendor", "build"} and rel not in (generated_exceptions or set()):
+        return None
+    if role == "asset":
         return None
     text = _read_bounded(path)
     if not text and path.stat().st_size > 0:
@@ -2490,10 +2495,12 @@ def _selected_dependency_relations(relations: list[FileRelation], selected_paths
 def locate_files(repo_root: Path, prompt: str, *, max_files: int = 8, inventory_paths: list[str] | None = None) -> LocateResult:
     repo_root = Path(repo_root)
     evidence = extract_prompt_evidence(prompt)
+    generated_intent = bool(re.search(r"(?i)\b(generated|vendor|dist|build output|generated code)\b", prompt))
+    generated_exceptions = set(evidence.explicit_paths) if generated_intent else set()
 
     file_evidences: list[_FileEvidence] = []
-    for path in _iter_repo_files(repo_root, inventory_paths):
-        file = _file_evidence(repo_root, path)
+    for path in _iter_repo_files(repo_root, inventory_paths, generated_exceptions=generated_exceptions):
+        file = _file_evidence(repo_root, path, generated_exceptions=generated_exceptions)
         if file is None:
             continue
         file_evidences.append(file)
