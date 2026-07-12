@@ -78,7 +78,7 @@ def test_server_handles_valid_transform_call(repo: Path, monkeypatch: pytest.Mon
             "method": "tools/call",
             "params": {
                 "name": "pcodex_transform_subagent_prompt",
-                "arguments": {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+                "arguments": {"subagent_prompt": RAW_PROMPT, "dry_run": True},
             },
         },
         cwd=repo,
@@ -97,7 +97,7 @@ def test_server_preserves_raw_prompt(repo: Path, monkeypatch: pytest.MonkeyPatch
 
     result = pcodex_mcp_server.call_tool(
         "pcodex_transform_subagent_prompt",
-        {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+        {"subagent_prompt": RAW_PROMPT, "dry_run": True},
         cwd=repo,
         compile_runner=_alias_runner,
     )["structuredContent"]
@@ -112,7 +112,7 @@ def test_server_returns_raw_prompt_when_disabled(repo: Path, monkeypatch: pytest
 
     result = pcodex_mcp_server.call_tool(
         "pcodex_transform_subagent_prompt",
-        {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+        {"subagent_prompt": RAW_PROMPT, "dry_run": True},
         cwd=repo,
         compile_runner=_alias_runner,
     )["structuredContent"]
@@ -132,7 +132,7 @@ def test_server_returns_raw_prompt_plus_error_on_compile_failure(
 
     result = pcodex_mcp_server.call_tool(
         "pcodex_transform_subagent_prompt",
-        {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+        {"subagent_prompt": RAW_PROMPT, "dry_run": True},
         cwd=repo,
         compile_runner=failing_runner,
     )["structuredContent"]
@@ -178,7 +178,7 @@ def test_server_emits_json_only_and_no_secret_env_dump(
             "method": "tools/call",
             "params": {
                 "name": "pcodex_transform_subagent_prompt",
-                "arguments": {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+                "arguments": {"subagent_prompt": RAW_PROMPT, "dry_run": True},
             },
         },
         cwd=repo,
@@ -206,12 +206,26 @@ def test_server_does_not_launch_live_codex(repo: Path, monkeypatch: pytest.Monke
 
     pcodex_mcp_server.call_tool(
         "pcodex_transform_subagent_prompt",
-        {"subagent_prompt": RAW_PROMPT, "project_root": str(repo), "dry_run": True},
+        {"subagent_prompt": RAW_PROMPT, "dry_run": True},
         cwd=repo,
         compile_runner=runner,
     )
 
     assert calls == [RAW_PROMPT]
+
+
+def test_server_rejects_model_selected_project_root(repo: Path) -> None:
+    with pytest.raises(ValueError, match="server-bound"):
+        pcodex_mcp_server.call_tool(
+            "pcodex_transform_subagent_prompt",
+            {"subagent_prompt": RAW_PROMPT, "project_root": "/"},
+            cwd=repo,
+            compile_runner=_alias_runner,
+        )
+
+
+def test_tool_schema_does_not_expose_project_root() -> None:
+    assert "project_root" not in pcodex_mcp.TOOL_INPUT_SCHEMA["properties"]
 
 
 def test_server_uses_pcodex_mcp_tool_function(monkeypatch: pytest.MonkeyPatch) -> None:

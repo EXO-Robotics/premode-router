@@ -1,0 +1,10 @@
+{
+  "schema_version": "pcodex.artifact_allowlist.v1",
+  "wheel_allowed_prefixes": ["premode/", "premode_router-"],
+  "bundle_allowed_prefixes": ["artifacts/", "plugins/pcodex/", "receipts/"],
+  "prohibited_parts": [
+    ".git", ".venv", ".premode", ".pcodex", "__MACOSX", "__pycache__",
+    "observer", "transcript", "audit.db", "worktree"
+  ],
+  "prohibited_suffixes": [".pyc", ".sqlite", ".sqlite3"]
+}

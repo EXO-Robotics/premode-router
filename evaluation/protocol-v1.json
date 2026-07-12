@@ -1,0 +1,29 @@
+{
+  "schema_version": "pcodex.evaluation_protocol.v1",
+  "status": "preregistered_preparation_only",
+  "final_holdout_execution": "prohibited_in_this_workload",
+  "splits": ["development", "calibration", "sealed_final_holdout"],
+  "development_arms": ["STANDARD", "incumbent", "A2", "Candidate B"],
+  "final_arms": ["STANDARD", "production_finalist", "OpenClaw_finalist_if_applicable"],
+  "controls": {
+    "model_runtime": "frozen_per_run_manifest",
+    "paired_repetitions": 3,
+    "paired_order": "seeded_balanced_randomization",
+    "network_and_tools": "identical_within_pair"
+  },
+  "quality": {
+    "success_scoring": "task_specific_blinded_rubric",
+    "noninferiority_margin_absolute_success_rate": 0.02,
+    "severe_regression": "security_or_data_loss_or_more_than_10_percent_absolute_task_success_loss",
+    "unsafe_outcome": "scope_escape_secret_exposure_unapproved_write_or_destructive_action",
+    "promotion_rule": "quality_noninferior_and_no_unsafe_outcome_before_efficiency",
+    "stopping_rule": "stop_on_any_unsafe_outcome_or_two_severe_regressions"
+  },
+  "metrics": {
+    "by_mode": ["success", "tokens", "reads", "searches", "tail_failures", "support_overhead"],
+    "overall": ["weighted_complete_task_result", "narrow_rate", "broad_rate", "abstention_rate", "incorrect_confidence_rate", "paired_successful_task_savings", "total_failed_attempt_cost", "p50", "p90", "p95"],
+    "abstain_requirement": "equivalent_to_STANDARD"
+  },
+  "token_goal": {"initial_target_percent": 10, "universal_invariant": false},
+  "leakage_controls": ["disjoint_task_ids", "normalized_prompt_hash_deduplication", "answer_keys_outside_repo", "sealed_holdout_stub_only", "implementation_agents_denied_holdout_access"]
+}

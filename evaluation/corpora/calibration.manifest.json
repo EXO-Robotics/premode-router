@@ -1,0 +1,6 @@
+{
+  "schema_version": "pcodex.corpus_manifest.v1",
+  "split": "calibration",
+  "tasks": [],
+  "answer_keys": "out_of_tree_opaque_references_only"
+}

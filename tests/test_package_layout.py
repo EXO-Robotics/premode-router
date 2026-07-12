@@ -3,6 +3,19 @@ from pathlib import Path
 import pytest
 
 from premode.cli import main
+from premode import plugins
+
+
+def test_core_install_includes_stable_default_without_entry_point(monkeypatch):
+    monkeypatch.setattr(plugins, "_entry_points", lambda group=plugins.ENTRY_POINT_GROUP: [])
+
+    assert "literal_symbol" in plugins.available_plugin_aliases()
+    resolved = plugins.resolve_packet_plugin("literal_symbol")
+
+    assert resolved.plugin_package == "premode-router"
+    assert resolved.packet_version == "v5"
+    assert resolved.packet_variant == "tool_assisted_anchors_internal"
+    assert resolved.packet_strategy == "literal_symbol"
 
 
 def test_package_imports_from_dunder_init():
