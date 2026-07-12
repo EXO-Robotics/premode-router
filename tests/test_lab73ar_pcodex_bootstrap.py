@@ -142,7 +142,7 @@ def test_pcodex_compile_dry_run_uses_plugin_alias_when_available(
     assert "literal_symbol" in payload["premode_command"]
 
 
-def test_pcodex_compile_dry_run_falls_back_to_explicit_flags(
+def test_pcodex_compile_dry_run_uses_bundled_default_without_external_entry_point(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -154,9 +154,9 @@ def test_pcodex_compile_dry_run_falls_back_to_explicit_flags(
     assert pcodex.main(["compile", "Fix completion", "--repo", str(repo), "--dry-run"]) == 0
     payload = json.loads(capsys.readouterr().out)
 
-    assert payload["route"] == "explicit_fallback"
-    assert "--packet-variant" in payload["premode_command"]
-    assert "tool_assisted_anchors_internal" in payload["premode_command"]
+    assert payload["route"] == "plugin_alias"
+    assert "--plugin" in payload["premode_command"]
+    assert "literal_symbol" in payload["premode_command"]
 
 
 def test_pcodex_run_dry_run_does_not_launch_live_codex(

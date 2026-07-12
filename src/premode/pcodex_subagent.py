@@ -50,6 +50,7 @@ def transform_subagent_prompt(
     dry_run: bool = False,
     compile_runner: CompileRunner | None = None,
     profile: str | None = "lite",
+    no_write: bool = False,
 ) -> SubagentTransformResult:
     mode_state = pcodex.resolve_mode_state(project_root, validate_tuned=True, require_runnable=False)
     mode = str(mode_state.get("configured_mode") or mode_state.get("mode") or "on")
@@ -108,7 +109,17 @@ def transform_subagent_prompt(
             metadata={**base_metadata, "status": "disabled_raw_prompt"},
         )
 
-    runner = compile_runner or pcodex.compile_pcodex_packet
+    if compile_runner is None and no_write:
+        def runner(root: Path, prompt: str, selected_profile: str | None, **kwargs: Any) -> dict[str, Any]:
+            return pcodex.compile_pcodex_packet(
+                root,
+                prompt,
+                selected_profile,
+                tuning_profile=kwargs.get("tuning_profile"),
+                write_policy="advisory",
+            )
+    else:
+        runner = compile_runner or pcodex.compile_pcodex_packet
     try:
         compiled = pcodex.run_compile_runner(runner, project_root, subagent_prompt, profile, tuning_profile=tuning_profile)
     except Exception as exc:
@@ -147,13 +158,17 @@ def transform_subagent_prompt(
             error="compile runner returned no packet",
             metadata={**base_metadata, "status": "compile_failed_raw_prompt"},
         )
-    telemetry = pcodex.record_runtime_telemetry(
-        project_root,
-        configured_mode=mode,
-        effective_mode=effective_mode,
-        fallback_reason=fallback_reason,
+    telemetry = (
+        {"telemetry": {"status": "not_recorded", "reason": "no_write"}}
+        if no_write
+        else pcodex.record_runtime_telemetry(
+            project_root,
+            configured_mode=mode,
+            effective_mode=effective_mode,
+            fallback_reason=fallback_reason,
+        )
     )
-    packet_path = None if dry_run else _write_packet(packet)
+    packet_path = None if dry_run or no_write else _write_packet(packet)
     route = str(compiled.get("route") or "")
     transformed = compose_transformed_prompt(subagent_prompt, packet)
     return SubagentTransformResult(

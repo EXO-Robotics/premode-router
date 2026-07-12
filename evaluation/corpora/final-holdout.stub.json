@@ -1,0 +1,10 @@
+{
+  "schema_version": "pcodex.sealed_holdout_stub.v1",
+  "split": "sealed_final_holdout",
+  "populated": false,
+  "task_count": null,
+  "commitment_sha256": null,
+  "custodian": "release_evaluation_owner",
+  "access_policy": "not_accessible_to_implementation_agents",
+  "contains_prompts_or_expected_answers": false
+}

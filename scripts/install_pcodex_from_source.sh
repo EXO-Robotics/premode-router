@@ -47,7 +47,6 @@ script_dir() {
 
 require_repo_layout() {
   [[ -f "$REPO_ROOT/pyproject.toml" ]] || fail "missing pyproject.toml at repo root: $REPO_ROOT"
-  [[ -f "$REPO_ROOT/packages/premode-plugin-literal-symbol/pyproject.toml" ]] || fail "missing plugin pyproject.toml"
   [[ -d "$REPO_ROOT/src/premode" ]] || fail "missing src/premode package directory"
 }
 
@@ -85,6 +84,8 @@ safe_remove_install_root() {
       ;;
   esac
   if [[ -d "$INSTALL_ROOT" ]]; then
+    [[ ! -L "$INSTALL_ROOT" ]] || fail "refusing to remove symlink install root: $INSTALL_ROOT"
+    [[ -f "$INSTALL_ROOT/install_manifest.json" ]] || fail "refusing to remove unowned install root without install_manifest.json: $INSTALL_ROOT"
     rm -rf "$INSTALL_ROOT"
     log "removed install root: $INSTALL_ROOT"
   else
@@ -183,6 +184,7 @@ done
 SCRIPT_DIR="$(script_dir)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd -P)"
 INSTALL_ROOT="${INSTALL_ROOT%/}"
+[[ "$INSTALL_ROOT" != *"/../"* && "$INSTALL_ROOT" != */.. && "$INSTALL_ROOT" != ../* ]] || fail "install root must not contain parent traversal: $INSTALL_ROOT"
 
 [[ "$VERBOSE" -eq 0 ]] || set -x
 trap cleanup_build_root EXIT
@@ -210,7 +212,6 @@ fi
 run_cmd "$INSTALL_ROOT/bin/python" -m pip install --upgrade pip setuptools wheel
 BUILD_REPO_ROOT="$(prepare_build_source | tail -n 1)"
 run_cmd "$INSTALL_ROOT/bin/python" -m pip install "$BUILD_REPO_ROOT"
-run_cmd "$INSTALL_ROOT/bin/python" -m pip install "$BUILD_REPO_ROOT/packages/premode-plugin-literal-symbol"
 run_cmd "$INSTALL_ROOT/bin/python" -m premode.install_manifest \
   --write "$INSTALL_ROOT/install_manifest.json" \
   --install-root "$INSTALL_ROOT" \

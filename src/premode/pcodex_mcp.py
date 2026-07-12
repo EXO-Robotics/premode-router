@@ -17,7 +17,6 @@ TOOL_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "subagent_prompt": {"type": "string"},
-        "project_root": {"type": ["string", "null"]},
         "parent_prompt": {"type": ["string", "null"]},
         "spawn_metadata": {"type": ["object", "null"], "additionalProperties": True},
         "dry_run": {"type": ["boolean", "null"]},
@@ -138,9 +137,10 @@ def pcodex_transform_subagent_prompt_tool(
         dry_run=bool(dry_run),
         compile_runner=compile_runner,
         profile=profile,
+        no_write=True,
     )
     metadata: dict[str, object] = {
-        "packet_path": result.packet_path,
+        "packet_path": None,
         "input_prompt_preserved": subagent_prompt in result.prompt,
         "model_facing_sections": result.metadata.get("model_facing_sections") or MODEL_FACING_SECTIONS,
         "status": result.metadata.get("status"),

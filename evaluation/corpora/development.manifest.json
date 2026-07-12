@@ -1,0 +1,7 @@
+{
+  "schema_version": "pcodex.corpus_manifest.v1",
+  "split": "development",
+  "tasks": [],
+  "required_repository_taxonomy": ["natural", "monorepo", "mixed_language", "config_build_heavy", "generated_content", "duplicate_basename", "openclaw"],
+  "required_task_taxonomy": ["broad_prompt", "explicit_path", "dirty_worktree", "source_test"]
+}

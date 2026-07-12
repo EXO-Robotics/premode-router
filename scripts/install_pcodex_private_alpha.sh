@@ -15,7 +15,7 @@ usage() {
 Usage: install_pcodex_private_alpha.sh [options]
 
 Options:
-  --artifact-root PATH              Local artifact root containing dist_core and dist_plugin.
+  --artifact-root PATH              Local artifact root containing the complete core wheel.
   --install-root PATH               Local install root. Default: $HOME/.pcodex-alpha
   --skip-codex-registration         Do not run codex mcp registration smoke.
   --isolated-codex-registration     Register/remove pcodex under install-root/codex_home only. Default.
@@ -106,9 +106,7 @@ PYVERSION
 
 verify_artifact_layout() {
   [[ -d "$ARTIFACT_ROOT/dist_core" ]] || fail "missing dist_core under $ARTIFACT_ROOT"
-  [[ -d "$ARTIFACT_ROOT/dist_plugin" ]] || fail "missing dist_plugin under $ARTIFACT_ROOT"
   [[ -f "$ARTIFACT_ROOT/dist_core/premode_router-0.2.6.24-py3-none-any.whl" ]] || fail "missing core wheel"
-  [[ -f "$ARTIFACT_ROOT/dist_plugin/premode_plugin_literal_symbol-0.1.0-py3-none-any.whl" ]] || fail "missing plugin wheel"
 }
 
 hash_file() {
@@ -190,6 +188,9 @@ done
 
 ARTIFACT_ROOT="$(cd "$ARTIFACT_ROOT" 2>/dev/null && pwd -P)" || fail "artifact root does not exist: $ARTIFACT_ROOT"
 INSTALL_ROOT="${INSTALL_ROOT%/}"
+[[ -n "$INSTALL_ROOT" ]] || fail "install root cannot be empty"
+[[ "$INSTALL_ROOT" != "/" && "$INSTALL_ROOT" != "$HOME" ]] || fail "refusing unsafe install root: $INSTALL_ROOT"
+[[ "$INSTALL_ROOT" != *"/../"* && "$INSTALL_ROOT" != */.. && "$INSTALL_ROOT" != ../* ]] || fail "install root must not contain parent traversal: $INSTALL_ROOT"
 VENV="$INSTALL_ROOT/venv"
 BIN_DIR="$INSTALL_ROOT/bin"
 ISOLATED_CODEX_HOME="$INSTALL_ROOT/codex_home"
@@ -200,8 +201,11 @@ PREMODE_SHIM="$BIN_DIR/premode"
 PCODEX_SHIM="$BIN_DIR/pcodex"
 
 if [[ "$UNINSTALL" -eq 1 ]]; then
+  [[ ! -L "$INSTALL_ROOT" ]] || fail "refusing to uninstall through symlink root: $INSTALL_ROOT"
+  [[ -f "$INSTALL_ROOT/.pcodex-private-alpha-owned" ]] || fail "refusing to uninstall unowned root without marker: $INSTALL_ROOT"
   log "uninstall mode: removing isolated install artifacts under $INSTALL_ROOT"
-  rm -rf "$VENV" "$BIN_DIR" "$ISOLATED_CODEX_HOME" "$ENV_FILE" "$BENCHMARK_OUT" "$REPORT_OUT"
+  rm -rf "$VENV" "$BIN_DIR" "$ISOLATED_CODEX_HOME" "$ENV_FILE" "$BENCHMARK_OUT" "$REPORT_OUT" "$INSTALL_ROOT/.pcodex-private-alpha-owned"
+  rmdir "$INSTALL_ROOT" 2>/dev/null || true
   log "removed: $VENV"
   log "removed: $BIN_DIR"
   log "removed: $ISOLATED_CODEX_HOME"
@@ -217,6 +221,7 @@ elif [[ "$CODEX_MODE" != "isolated" && "$CODEX_MODE" != "skip" ]]; then
 fi
 
 mkdir -p "$INSTALL_ROOT" "$BIN_DIR"
+printf 'pcodex-private-alpha-v1\n' > "$INSTALL_ROOT/.pcodex-private-alpha-owned"
 : > "$REPORT_OUT"
 log "install root: $INSTALL_ROOT" | tee -a "$REPORT_OUT"
 log "artifact root: $ARTIFACT_ROOT" | tee -a "$REPORT_OUT"
@@ -237,8 +242,7 @@ fi
 log "installing from local artifacts only" | tee -a "$REPORT_OUT"
 "$VENV/bin/python" -m pip install --no-index \
   --find-links "$ARTIFACT_ROOT/dist_core" \
-  --find-links "$ARTIFACT_ROOT/dist_plugin" \
-  premode-router premode-plugin-literal-symbol 2>&1 | tee -a "$REPORT_OUT"
+  premode-router 2>&1 | tee -a "$REPORT_OUT"
 
 write_shim "$PREMODE_SHIM" "$VENV/bin/premode"
 write_shim "$PCODEX_SHIM" "$VENV/bin/pcodex"

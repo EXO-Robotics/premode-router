@@ -45,10 +45,14 @@ def call_tool(
 ) -> dict[str, Any]:
     if name != TOOL_NAME:
         raise ValueError(f"unsupported tool: {name}")
+    if "project_root" in arguments:
+        raise ValueError("project_root is server-bound and cannot be supplied by a tool call")
     prompt = arguments.get("subagent_prompt")
     if not isinstance(prompt, str):
         raise ValueError("subagent_prompt is required")
-    project_root = arguments.get("project_root") or cwd or Path.cwd()
+    project_root = (cwd or Path.cwd()).resolve()
+    if not project_root.is_dir():
+        raise ValueError("bound workspace root is not a directory")
     parent_prompt = arguments.get("parent_prompt")
     spawn_metadata = arguments.get("spawn_metadata")
     dry_run = arguments.get("dry_run")

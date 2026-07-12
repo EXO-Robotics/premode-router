@@ -4,7 +4,10 @@ from dataclasses import dataclass
 from importlib import metadata
 from typing import Any
 
+from .default_plugin import get_literal_symbol_plugin
+
 ENTRY_POINT_GROUP = "premode.plugins"
+BUILTIN_PLUGIN_LOADERS = {"literal_symbol": get_literal_symbol_plugin}
 
 
 class PluginAliasError(ValueError):
@@ -46,7 +49,8 @@ def _entry_points(group: str = ENTRY_POINT_GROUP) -> list[Any]:
 
 
 def available_plugin_aliases() -> list[str]:
-    return sorted({str(ep.name) for ep in _entry_points() if getattr(ep, "name", None)})
+    discovered = {str(ep.name) for ep in _entry_points() if getattr(ep, "name", None)}
+    return sorted(discovered | set(BUILTIN_PLUGIN_LOADERS))
 
 
 def _available_suffix() -> str:
@@ -86,12 +90,15 @@ def resolve_packet_plugin(
         raise PluginAliasError("Pre-mode plugin alias cannot be empty." + _available_suffix())
 
     matches = [ep for ep in _entry_points() if getattr(ep, "name", None) == alias]
-    if not matches:
-        raise PluginAliasError(f"Unknown Pre-mode plugin alias '{alias}'." + _available_suffix())
     if len(matches) > 1:
         raise PluginAliasError(f"Duplicate Pre-mode plugin alias '{alias}' found; refusing to choose one.")
-
-    plugin = _load_metadata(matches[0])
+    if not matches:
+        builtin = BUILTIN_PLUGIN_LOADERS.get(alias)
+        if builtin is None:
+            raise PluginAliasError(f"Unknown Pre-mode plugin alias '{alias}'." + _available_suffix())
+        plugin = builtin()
+    else:
+        plugin = _load_metadata(matches[0])
     if not (plugin.get("strategy_id") or plugin.get("name")):
         raise PluginAliasError(f"Pre-mode plugin alias '{alias}' is missing required metadata field 'strategy_id' or 'name'.")
 
