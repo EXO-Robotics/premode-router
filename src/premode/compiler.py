@@ -6591,6 +6591,7 @@ def build_compiled_packet(
     context_only: bool = False,
     record: bool = True,
     include_packet_debug_metadata: bool = False,
+    include_packet_causality_trace: bool = False,
     tuning_profile: Path | str | None = None,
     canonical_core_packet: bool = False,
 ) -> dict[str, Any]:
@@ -6875,7 +6876,8 @@ def build_compiled_packet(
         "saved_context_tokens": metrics.get("saved_context_tokens"),
         "local_manifest_tokens": metrics.get("local_manifest_tokens"),
     })
-    manifest["packet_causality_trace"] = build_packet_causality_trace(manifest, packet)
+    if include_packet_causality_trace:
+        manifest["packet_causality_trace"] = build_packet_causality_trace(manifest, packet)
     return {"packet": packet, "manifest": manifest, "cacheable_prefix": prefix, "dynamic_suffix": suffix}
 
 
@@ -7210,6 +7212,7 @@ def compile_prompt(
     record: bool = True,
     record_artifacts: bool | None = None,
     include_packet_debug_metadata: bool = False,
+    include_packet_causality_trace: bool = False,
     tuning_profile: Path | str | None = None,
     canonical_core_packet: bool = False,
 ) -> dict[str, Any]:
@@ -7229,6 +7232,7 @@ def compile_prompt(
         context_only=context_only,
         record=record_artifacts,
         include_packet_debug_metadata=include_packet_debug_metadata,
+        include_packet_causality_trace=include_packet_causality_trace,
         tuning_profile=tuning_profile,
         canonical_core_packet=canonical_core_packet,
     )
@@ -7334,7 +7338,6 @@ def compile_prompt(
         "routing_filter_diagnostics": manifest.get("routing_filter_diagnostics"),
         "context_receipt": manifest.get("context_receipt"),
         "packet_audit_receipt": manifest.get("packet_audit_receipt"),
-        "packet_causality_trace": manifest.get("packet_causality_trace"),
         "scope_contract": manifest.get("patch_boundary"),
         "review_metadata": _harness_review_metadata_from_manifest(manifest),
         "verification_suggestions": {
@@ -7366,6 +7369,8 @@ def compile_prompt(
         "packet_sha256": manifest["metrics"].get("packet_sha256"),
         "compiled_packet_sha256": sha256_text(packet),
     }
+    if include_packet_causality_trace:
+        record["packet_causality_trace"] = manifest["packet_causality_trace"]
     record["packet_hashes"] = {
         "packet_sha256": record["compiled_packet_sha256"],
         "cacheable_prefix_sha256": record.get("cacheable_prefix_sha256"),

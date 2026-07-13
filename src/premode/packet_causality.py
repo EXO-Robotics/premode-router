@@ -1,29 +1,50 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import json
 from pathlib import PurePosixPath
+import re
 from typing import Any, Literal
 
 
-TRACE_SCHEMA = "packet-causality-trace.v1"
-COMPARISON_SCHEMA = "packet-causality-comparison.v1"
+TRACE_SCHEMA = "packet-causality-trace.v2"
+COMPARISON_SCHEMA = "packet-causality-comparison.v2"
+PATH_IDENTITY_POLICY = "case_sensitive_sanitized_relative_v1"
+MAX_PATH_CHARS = 512
+MAX_PATH_COMPONENTS = 64
+MAX_AMBIGUITY_CATEGORIES = 16
+MAX_PROVENANCE_ROLES = 32
 
 METADATA_ONLY = "METADATA_ONLY"
 CONFIDENCE_CHANGED_MODE_UNCHANGED = "CONFIDENCE_CHANGED_MODE_UNCHANGED"
 AMBIGUITY_CHANGED_MODE_UNCHANGED = "AMBIGUITY_CHANGED_MODE_UNCHANGED"
 RANK_CHANGED_MEMBERSHIP_STABLE = "RANK_CHANGED_MEMBERSHIP_STABLE"
+RANK_MEMBERSHIP_CHANGED_PROJECTION_STABLE = "RANK_MEMBERSHIP_CHANGED_PROJECTION_STABLE"
 SCORE_CHANGED_RANK_STABLE = "SCORE_CHANGED_RANK_STABLE"
 BELOW_PRESELECTION_CUT = "BELOW_PRESELECTION_CUT"
 RELATION_TARGET_UNREACHABLE = "RELATION_TARGET_UNREACHABLE"
 ROLE_CHANGED_PROJECTION_STABLE = "ROLE_CHANGED_PROJECTION_STABLE"
+LOCATOR_ROLE_CHANGED_PROJECTION_STABLE = "LOCATOR_ROLE_CHANGED_PROJECTION_STABLE"
 SUPPORT_CHANGED_BUDGET_CUT = "SUPPORT_CHANGED_BUDGET_CUT"
 PATH_REMOVED_BY_DEDUP = "PATH_REMOVED_BY_DEDUP"
 MODE_CHANGED_PACKET_EQUIVALENT = "MODE_CHANGED_PACKET_EQUIVALENT"
 PACKET_PROJECTION_CHANGED = "PACKET_PROJECTION_CHANGED"
 PACKET_BYTES_CHANGED = "PACKET_BYTES_CHANGED"
 UNEXPECTED_PACKET_CHANGE = "UNEXPECTED_PACKET_CHANGE"
+
+KNOWN_AMBIGUITY_CATEGORIES = frozenset({
+    "asset_candidates_pruned",
+    "confidence_downgraded_by_ambiguity",
+    "dependency_cluster_split",
+    "multiple_related_helpers",
+    "primary_imports_unranked_dependency",
+    "proximity_only_support",
+    "result_hit_max_files_cap",
+    "terms_split_across_many_files",
+    "test_only_direct_evidence",
+    "top_score_gap_small",
+    "uncovered_core_terms",
+})
 
 ComparisonClass = Literal[
     "TARGET_EFFECTIVE",
@@ -45,9 +66,18 @@ def _sha(value: Any) -> str:
 
 def _clean_path(value: Any) -> str | None:
     raw = str(value or "").replace("\\", "/").strip()
-    if not raw or raw.startswith("/") or ".." in PurePosixPath(raw).parts:
+    if (
+        not raw
+        or "\x00" in raw
+        or len(raw) > MAX_PATH_CHARS
+        or raw.startswith(("/", "//"))
+        or re.match(r"^[A-Za-z]:/", raw)
+    ):
         return None
-    return PurePosixPath(raw).as_posix()
+    path = PurePosixPath(raw)
+    if ".." in path.parts or len(path.parts) > MAX_PATH_COMPONENTS:
+        return None
+    return path.as_posix()
 
 
 def _paths(values: Any, *, limit: int = 64) -> list[str]:
@@ -56,7 +86,7 @@ def _paths(values: Any, *, limit: int = 64) -> list[str]:
     for raw in values if isinstance(values, (list, tuple)) else []:
         value = raw.get("path") if isinstance(raw, dict) else raw
         path = _clean_path(value)
-        key = path.casefold() if path else ""
+        key = path or ""
         if path and key not in seen:
             result.append(path)
             seen.add(key)
@@ -130,6 +160,23 @@ def _projection(routing: dict[str, Any], packet: str) -> dict[str, Any]:
     }
 
 
+def _ambiguity_summary(values: Any) -> dict[str, Any]:
+    raw_values = [str(value) for value in values if value is not None] if isinstance(values, (list, tuple)) else []
+    normalized = {
+        re.sub(r"[^a-z0-9_]+", "_", value.split(":", 1)[0].casefold()).strip("_") or "unspecified"
+        for value in raw_values
+    }
+    all_categories = sorted(normalized & KNOWN_AMBIGUITY_CATEGORIES)
+    unknown_count = sum(category not in KNOWN_AMBIGUITY_CATEGORIES for category in normalized)
+    return {
+        "count": len(raw_values),
+        "categories": all_categories[:MAX_AMBIGUITY_CATEGORIES],
+        "unknown_category_count": unknown_count,
+        "sha256": _sha(raw_values),
+        "truncated": len(all_categories) > MAX_AMBIGUITY_CATEGORIES,
+    }
+
+
 def build_packet_causality_trace(manifest: dict[str, Any], packet: str) -> dict[str, Any]:
     """Build a task/source-content-free deterministic trace of one compilation."""
     ledger_rows = _ledger_rows(manifest)
@@ -158,22 +205,29 @@ def build_packet_causality_trace(manifest: dict[str, Any], packet: str) -> dict[
         "support": _paths(backbone.get("support_files")),
     }
     routing = manifest.get("routing_decision") if isinstance(manifest.get("routing_decision"), dict) else {}
+    provenance_roles = sorted(
+        (str(item.get("role") or "")[:64], _clean_path(item.get("path")) or "")
+        for item in routing.get("candidate_provenance") or []
+        if isinstance(item, dict) and _clean_path(item.get("path"))
+    )
     routing_summary = {
         "mode": str(routing.get("mode") or "abstain"),
         "confidence": str(routing.get("confidence") or "low"),
-        "ambiguity": sorted(str(value) for value in routing.get("ambiguity_indicators") or []),
+        "ambiguity": _ambiguity_summary(routing.get("ambiguity_indicators") or []),
         "primary": _paths(routing.get("primary_paths")),
         "verification": _paths(routing.get("verification_paths")),
         "support": _paths(routing.get("support_paths")),
-        "roles": sorted(
-            (str(item.get("role") or ""), _clean_path(item.get("path")) or "")
-            for item in routing.get("candidate_provenance") or []
-            if isinstance(item, dict) and _clean_path(item.get("path"))
-        ),
+        "roles": provenance_roles[:MAX_PROVENANCE_ROLES],
+        "role_count": len(provenance_roles),
+        "roles_sha256": _sha(provenance_roles),
+        "roles_truncated": len(provenance_roles) > MAX_PROVENANCE_ROLES,
     }
     projection = _projection(routing, packet)
     ranked_stage = _stage(locator_rows, paths=[row["path"] for row in locator_rows], count=len(locator_rows))
-    ranked_stage["score_sha256"] = _sha([(row["path"], row["role"], row["score"]) for row in locator_rows])
+    ranked_stage["ordered_paths_sha256"] = _sha([row["path"] for row in locator_rows])
+    ranked_stage["membership_sha256"] = _sha(sorted({row["path"] for row in locator_rows}))
+    ranked_stage["locator_role_sha256"] = _sha(sorted((row["path"], row["role"]) for row in locator_rows))
+    ranked_stage["score_sha256"] = _sha(sorted((row["path"], row["score"]) for row in locator_rows))
     stages = {
         "candidate_inventory": _stage(ledger_rows, paths=[row["path"] for row in ledger_rows], count=len(ledger_rows)),
         "admitted_candidates": _stage(admitted, paths=[row["path"] for row in admitted], count=len(admitted)),
@@ -187,6 +241,7 @@ def build_packet_causality_trace(manifest: dict[str, Any], packet: str) -> dict[
     }
     trace: dict[str, Any] = {
         "schema_version": TRACE_SCHEMA,
+        "path_identity_policy": PATH_IDENTITY_POLICY,
         "exact_task_sha256": str(manifest.get("raw_prompt_sha256") or _sha(str(manifest.get("canonical_user_prompt") or "").encode("utf-8"))),
         "stages": stages,
         "routing_summary": routing_summary,
@@ -225,20 +280,31 @@ def compare_packet_causality_traces(
             reasons.append(CONFIDENCE_CHANGED_MODE_UNCHANGED)
         if left_route.get("ambiguity") != right_route.get("ambiguity") and left_route.get("mode") == right_route.get("mode"):
             reasons.append(AMBIGUITY_CHANGED_MODE_UNCHANGED)
-        if left_route.get("roles") != right_route.get("roles") and not projection_changed:
+        left_role_signature = (left_route.get("roles"), left_route.get("role_count"), left_route.get("roles_sha256"))
+        right_role_signature = (right_route.get("roles"), right_route.get("role_count"), right_route.get("roles_sha256"))
+        if left_role_signature != right_role_signature and not projection_changed:
             reasons.append(ROLE_CHANGED_PROJECTION_STABLE)
         left_ranked = left_stages.get("ranked_candidates") or {}
         right_ranked = right_stages.get("ranked_candidates") or {}
         left_ranked_paths = left_ranked.get("paths") or []
         right_ranked_paths = right_ranked.get("paths") or []
-        rank_order_changed = left_ranked_paths != right_ranked_paths
-        rank_membership_stable = sorted(path.casefold() for path in left_ranked_paths) == sorted(path.casefold() for path in right_ranked_paths)
-        score_changed = left_ranked.get("score_sha256") != right_ranked.get("score_sha256")
+        left_order_signature = left_ranked.get("ordered_paths_sha256") or _sha(left_ranked_paths)
+        right_order_signature = right_ranked.get("ordered_paths_sha256") or _sha(right_ranked_paths)
+        left_membership_signature = left_ranked.get("membership_sha256") or _sha(sorted(left_ranked_paths))
+        right_membership_signature = right_ranked.get("membership_sha256") or _sha(sorted(right_ranked_paths))
+        rank_order_changed = left_order_signature != right_order_signature
+        rank_membership_stable = left_membership_signature == right_membership_signature
+        score_changed = rank_membership_stable and left_ranked.get("score_sha256") != right_ranked.get("score_sha256")
+        locator_role_changed = rank_membership_stable and left_ranked.get("locator_role_sha256") != right_ranked.get("locator_role_sha256")
         preselection_changed = (left_stages.get("preselection") or {}).get("sha256") != (right_stages.get("preselection") or {}).get("sha256")
         if rank_order_changed and rank_membership_stable and not preselection_changed:
             reasons.append(RANK_CHANGED_MEMBERSHIP_STABLE)
+        if not rank_membership_stable and not projection_changed:
+            reasons.append(RANK_MEMBERSHIP_CHANGED_PROJECTION_STABLE)
         if score_changed and not rank_order_changed:
             reasons.append(SCORE_CHANGED_RANK_STABLE)
+        if locator_role_changed and not projection_changed:
+            reasons.append(LOCATOR_ROLE_CHANGED_PROJECTION_STABLE)
         # BELOW_PRESELECTION_CUT, RELATION_TARGET_UNREACHABLE,
         # SUPPORT_CHANGED_BUDGET_CUT, and PATH_REMOVED_BY_DEDUP are reserved
         # until their pipeline stages expose explicit event receipts; aggregate

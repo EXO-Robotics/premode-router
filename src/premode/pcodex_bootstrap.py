@@ -1070,7 +1070,6 @@ def compile_pcodex_packet(
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
         "canonical_core_packet": bool(compiled.get("canonical_core_packet")),
         "routing_decision": compiled.get("routing_decision"),
-        "packet_causality_trace": compiled.get("packet_causality_trace"),
         "selected_paths": (
             list(dict.fromkeys(
                 str(path)
