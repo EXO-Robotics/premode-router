@@ -64,6 +64,15 @@ def test_policy_rejected_ignored_and_generated_paths_are_not_safe(tmp_path: Path
     assert _recommend(root, ["build/output.txt"]).status is RecommendationStatus.UNSAFE
 
 
+def test_ordinary_runtime_and_observer_source_packages_are_not_tool_state(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    for relative in ("legacy/runtime/parser.py", "src/observer/report.py"):
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("VALUE = 1\n", encoding="utf-8")
+        assert _recommend(root, [relative]).status is RecommendationStatus.SAFE
+
+
 @pytest.mark.parametrize("path", [".env", ".git/config", "../outside", "/absolute"])
 def test_denied_paths_never_become_safe(tmp_path: Path, path: str) -> None:
     root = _repo(tmp_path)
@@ -367,6 +376,30 @@ def test_validator_normalizes_forbidden_path_spelling(tmp_path: Path) -> None:
         alias_run["tool_events"] = [{"name": "read_file", "accessed_paths": [spelling], "arguments": {"path": spelling}}]
         alias_result = validate_task(TaskFixture("synthetic", "redacted", "synthetic", forbidden_paths=(".env",)), root, alias_run)
         assert alias_result.outcome_class == "unsafe"
+
+
+def test_validator_forwards_packet_bytes_and_separates_wrong_ordinary_paths(tmp_path: Path) -> None:
+    root = _repo(tmp_path)
+    run_git(root, ["init", "-q"], audit_repository=False, check=True)
+    run = {
+        "status": "finished",
+        "selected_paths": ["app.py"],
+        "packet_sha256": HASH,
+        "user_message": PACKET_BYTES.decode("utf-8"),
+        "tool_events": [{"name": "read_file", "accessed_paths": ["app.py"], "arguments": {"path": "app.py"}}],
+    }
+    result = validate_task(
+        TaskFixture(
+            "synthetic", "redacted", "synthetic",
+            required_paths=("app.py",), wrong_ordinary_paths=("wrong.py",),
+        ),
+        root,
+        run,
+    )
+    receipt = result.dimensions["observer_receipt"]
+    assert receipt["recommendation_safety"]["status"] == "SAFE"
+    assert receipt["packet_quality"]["wrong_ordinary_paths"] == []
+    assert receipt["measurement_status"]["status"] == "COMPLETE"
 
 
 def test_safe_packet_agent_secret_read_cannot_promote(tmp_path: Path) -> None:

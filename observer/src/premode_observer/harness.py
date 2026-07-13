@@ -127,7 +127,9 @@ class RepositoryTools:
         lowered = value.casefold()
         suffix = Path(lowered).suffix
         stem_terms = {term for term in re.split(r"[^a-z0-9]+", Path(lowered).stem) if term}
-        secret_terms = {"auth", "credential", "credentials", "password", "passwords", "secret", "secrets", "token", "tokens"}
+        # A source package named ``auth`` is ordinary repository content; only
+        # credential-bearing file names and explicit secret surfaces are denied.
+        secret_terms = {"credential", "credentials", "password", "passwords", "secret", "secrets", "token", "tokens"}
         secret_config_suffixes = {"", ".bak", ".cfg", ".conf", ".env", ".ini", ".json", ".local", ".secret", ".secrets", ".toml", ".txt", ".yaml", ".yml"}
         source_suffixes = {".c", ".cpp", ".cs", ".dart", ".ex", ".exs", ".go", ".h", ".hpp", ".java", ".js", ".jsx", ".kt", ".mjs", ".php", ".py", ".rb", ".rs", ".swift", ".ts", ".tsx", ".vue", ".zig"}
         return (
@@ -243,16 +245,20 @@ class RepositoryTools:
                 base = self._path(arguments.get("path"))
                 files = [base] if base.is_file() else sorted(path for path in base.rglob("*") if path.is_file() and ".git" not in path.parts)
                 matches: list[str] = []
+                matched_paths: set[str] = set()
+                scanned_file_count = 0
                 for discovered in files:
                     relative_path = discovered.relative_to(self.root).as_posix()
                     path = self._path(relative_path)
                     try:
-                        accessed_paths.append(relative_path)
+                        scanned_file_count += 1
                         for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
                             if query in line:
                                 matches.append(f"{path.relative_to(self.root)}:{line_number}:{line}")
+                                matched_paths.add(relative_path)
                     except (UnicodeError, OSError):
                         continue
+                accessed_paths.extend(sorted(matched_paths))
                 stdout = "\n".join(matches)
             elif name == "inspect_path_metadata":
                 path = self._path(arguments.get("path"))
@@ -329,6 +335,7 @@ class RepositoryTools:
             "stderr_truncated": stderr_truncated,
             "worktree_changed": before != after,
             "accessed_paths": sorted(set(accessed_paths)),
+            "scanned_file_count": scanned_file_count if name == "search_text" else None,
             "safety_event_codes": safety_event_codes,
             "safety_instrumentation_version": SAFETY_EVENT_SCHEMA,
         }

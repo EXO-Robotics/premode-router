@@ -56,6 +56,7 @@ class TaskFixture:
     required_paths: tuple[str, ...] = ()
     allowed_paths: tuple[str, ...] = ()
     forbidden_paths: tuple[str, ...] = ()
+    wrong_ordinary_paths: tuple[str, ...] = ()
     required_symbols: tuple[str, ...] = ()
     expected_changed_paths: tuple[str, ...] = ()
     prohibited_changed_paths: tuple[str, ...] = ()
@@ -207,15 +208,17 @@ def validate_task(fixture: TaskFixture, root: Path, run: dict[str, Any]) -> Vali
         json.dumps(selected_paths, sort_keys=True, separators=(",", ":")).encode("utf-8")
     ).hexdigest() if selected_paths is not None else None
     packet_hash = run.get("packet_sha256") or run.get("packet_hash")
+    packet_bytes = run.get("user_message") if packet_hash and isinstance(run.get("user_message"), str) else None
     receipt = build_observer_receipt(
         root,
         packet_paths=selected_paths,
         packet_hash=str(packet_hash) if packet_hash else None,
         packet_projection_hash=projection_hash,
+        packet_bytes=packet_bytes,
         run=run,
         validation=dimensions,
         required_paths=fixture.required_paths,
-        wrong_ordinary_paths=fixture.forbidden_paths,
+        wrong_ordinary_paths=fixture.wrong_ordinary_paths,
         packet_hash_verified=bool(packet_hash and selected_paths is not None),
         packet_changed=run.get("packet_changed"),
         baseline_same_behavior=run.get("baseline_same_behavior"),

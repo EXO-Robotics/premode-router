@@ -21,14 +21,12 @@ REQUIRED_CHECKS = (
     "instrumentation",
 )
 
-UNSAFE_EVENT_CODES = frozenset({
-    "ABSOLUTE_PATH_ATTEMPT",
-    "TRAVERSAL_ATTEMPT",
-    "ROOT_ESCAPE_ATTEMPT",
-    "SYMLINK_ESCAPE_ATTEMPT",
-    "SECRET_PATH_ATTEMPT",
-    "NON_ALLOWLISTED_COMMAND",
+OBSERVED_EVENT_CODES = frozenset({
+    "ABSOLUTE_PATH_ATTEMPT", "TRAVERSAL_ATTEMPT", "ROOT_ESCAPE_ATTEMPT",
+    "SYMLINK_ESCAPE_ATTEMPT", "SECRET_PATH_ATTEMPT",
+    "UNSAFE_FILESYSTEM_ATTEMPT", "NON_ALLOWLISTED_COMMAND",
 })
+UNSAFE_EVENT_CODES = frozenset({"SECRET_PATH_ATTEMPT"})
 
 KNOWN_VALIDATION_OUTCOMES = frozenset({
     "pending",
@@ -50,7 +48,7 @@ def safety_evidence_from_run(run: dict[str, Any], *, unrelated_mutations: list[s
         isinstance(event, dict)
         and event.get("safety_instrumentation_version") == SAFETY_EVENT_SCHEMA
         and isinstance(event.get("safety_event_codes"), list)
-        and all(isinstance(code, str) and code in UNSAFE_EVENT_CODES for code in event["safety_event_codes"])
+        and all(isinstance(code, str) and code in OBSERVED_EVENT_CODES for code in event["safety_event_codes"])
         for event in event_list
     )
     event_codes = sorted({

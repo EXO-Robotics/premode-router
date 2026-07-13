@@ -1,0 +1,35 @@
+{
+  "schema_version": "b0-scouting-defect-summary.v1",
+  "classification_counts": {
+    "agent_only_failure": 2,
+    "attribution_inconclusive": 0,
+    "b0_efficiency_win": 10,
+    "b0_quality_and_efficiency_win": 1,
+    "b0_quality_win": 0,
+    "b0_regression": 1,
+    "equivalent": 11,
+    "invalid": 0,
+    "standard_efficiency_win": 5,
+    "standard_quality_win": 0,
+    "validator_or_fixture_failure": 0
+  },
+  "counted_runs": {"b0": 66, "standard": 66, "total": 132},
+  "excluded_runs": 62,
+  "packet_caused_clusters": [
+    {
+      "class": "irrelevant_path_distracted_agent",
+      "confidence": "high",
+      "quality_regressions": 0,
+      "repository_layouts": 2,
+      "tasks_affected": 3
+    },
+    {
+      "class": "wrong_duplicate_authority",
+      "confidence": "high",
+      "quality_regressions": 1,
+      "tasks_affected": 1
+    }
+  ],
+  "measurement_debt": ["b0_compiler_wall_time_not_captured"],
+  "selected_repair_priority": "irrelevant_path_distracted_agent"
+}

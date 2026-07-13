@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://premode.invalid/schemas/b0-scouting-study.v1.json",
+  "title": "B0 scouting study private record envelope",
+  "type": "object",
+  "required": ["schema_version", "record_type", "record"],
+  "properties": {
+    "schema_version": {"const": "b0-scouting-study.v1"},
+    "record_type": {
+      "enum": ["task", "schedule", "run", "comparison", "cluster"]
+    },
+    "record": {"type": "object"}
+  },
+  "additionalProperties": false
+}
