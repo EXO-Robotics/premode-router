@@ -86,7 +86,7 @@ def test_cli_flags_select_v3_and_save(monkeypatch, capsys, repo):
     payload = json.loads(capsys.readouterr().out)
     assert payload["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
     assert payload["cacheable_prefix_tokens"] == 0
-    assert payload["routing_decision"]["mode"] == "abstain"
+    assert payload["production_ranking"]["routing_mode"] == "abstain"
     assert (repo / ".premode" / "out" / "last_packet.md").exists()
 
 

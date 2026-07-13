@@ -19,7 +19,7 @@ These files define the current install, setup, validation, benchmark, tuning, an
 
 ## Current Private-Beta
 
-Base package version: `v0.2.6.24`.
+Beta package version: `0.3.0b1`.
 
 The primary workflow is deliberately narrow:
 
@@ -31,6 +31,7 @@ pcodex run "Fix the failing test"
 pcodex review --since-compile
 pcodex off
 pcodex cleanup --local-state --dry-run
+pcodex uninstall --dry-run
 ```
 
 Optional maintenance:
@@ -58,6 +59,8 @@ The repo-local Codex UX surface lives in `.agents/skills`, `.agents/plugins/mark
 Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/resolve-pcodex.sh`, checking `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`. If none exists, the skill reports paste-safe setup guidance instead of a raw command-not-found error.
 
 `pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
+
+`pcodex uninstall --dry-run` is a literal read-only preview over the versioned managed-state receipt. `pcodex uninstall --yes` removes only receipt-proven, unmodified files and preserves missing, unknown, preexisting, unrelated, or user-modified state. Plugin marketplace/MCP registration removal remains deferred until exact registration authority is established.
 
 Terminal `pcodex` commands remain the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
 

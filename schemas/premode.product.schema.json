@@ -4,22 +4,130 @@
   "title": "pCodex product manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["$schema", "schema_version", "product_name", "status", "version_source", "production_package", "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces", "production_ranking_authority", "canonical_packet_authority", "generated_state_ownership", "integration_status", "known_public_command_gaps"],
+  "required": [
+    "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
+    "supported_runtime", "version_source", "production_package", "phase_boundary",
+    "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
+    "production_ranking_authority", "canonical_packet_authority", "install_state_authority",
+    "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
+  ],
   "properties": {
     "$schema": {"const": "./schemas/premode.product.schema.json"},
-    "schema_version": {"const": "premode.product.v1"},
+    "schema_version": {"const": "premode.product.v2"},
     "product_name": {"const": "pCodex"},
+    "release_target": {"const": "0.3.0b1"},
+    "release_class": {"const": "Codex-first private technical beta"},
     "status": {"type": "string", "minLength": 1},
+    "supported_runtime": {"const": "Codex CLI terminal workflow"},
     "version_source": {"const": "pyproject.toml:[project].version"},
     "production_package": {"const": "premode-router"},
-    "production_branch_policy": {"type": "object", "required": ["authority", "feature_branches_require_review", "tags_are_not_automatic"], "additionalProperties": false, "properties": {"authority": {"const": "origin/Private-Beta"}, "feature_branches_require_review": {"const": true}, "tags_are_not_automatic": {"const": true}}},
+    "phase_boundary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["phase_a", "phase_b", "roadmap_authority", "phase_b_remains_required"],
+      "properties": {
+        "phase_a": {"type": "string", "minLength": 1},
+        "phase_b": {"type": "string", "minLength": 1},
+        "roadmap_authority": {"type": "string", "minLength": 1},
+        "phase_b_remains_required": {"const": true}
+      }
+    },
+    "production_branch_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["authority", "feature_branches_require_review", "tags_are_not_automatic"],
+      "properties": {
+        "authority": {"const": "origin/Private-Beta"},
+        "feature_branches_require_review": {"const": true},
+        "tags_are_not_automatic": {"const": true}
+      }
+    },
     "public_commands": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "advanced_commands": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "research_surfaces": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "production_ranking_authority": {"type": "object", "required": ["plugin", "package", "fallback"], "additionalProperties": false, "properties": {"plugin": {"const": "literal_symbol"}, "package": {"const": "premode-router"}, "fallback": {"const": "ranked_paths_plus_anchors"}}},
-    "canonical_packet_authority": {"type": "object", "required": ["version", "variant", "strategy", "public_renderer", "model_facing_sections", "internal_anchors_model_facing"], "additionalProperties": false, "properties": {"version": {"const": "v5"}, "variant": {"const": "tool_assisted_anchors_internal"}, "strategy": {"const": "literal_symbol"}, "public_renderer": {"const": "canonical_core_v1"}, "model_facing_sections": {"type": "array", "items": {"enum": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"]}, "uniqueItems": true}, "internal_anchors_model_facing": {"const": false}}},
-    "generated_state_ownership": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["path", "owner", "cleanup"], "additionalProperties": false, "properties": {"path": {"type": "string", "minLength": 1}, "owner": {"type": "string", "minLength": 1}, "cleanup": {"type": "string", "minLength": 1}}}},
-    "integration_status": {"type": "object", "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"], "additionalProperties": false, "properties": {"codex_cli": {"const": "supported_terminal_workflow"}, "codex_repo_assets": {"const": "repo_local_opt_in"}, "mcp": {"const": "advanced_opt_in_not_automatic"}, "openclaw": {"const": "advanced_repo_profile_not_execution_runtime"}}},
-    "known_public_command_gaps": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+    "production_ranking_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["interface", "provider_version", "result_schema", "compatibility_provider", "product_algorithm_agnostic", "public_experiment_identifiers", "fallback"],
+      "properties": {
+        "interface": {"const": "ProductionRankingProviderV1"},
+        "provider_version": {"const": "production-ranking-provider.v1"},
+        "result_schema": {"const": "schemas/production-ranking-provider-v1.schema.json"},
+        "compatibility_provider": {"const": "IncumbentManifestRankingProviderV1"},
+        "product_algorithm_agnostic": {"const": true},
+        "public_experiment_identifiers": {"const": false},
+        "fallback": {"type": "string", "minLength": 1}
+      }
+    },
+    "canonical_packet_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "variant", "strategy", "public_renderer", "model_facing_sections", "internal_anchors_model_facing"],
+      "properties": {
+        "version": {"const": "v5"},
+        "variant": {"const": "tool_assisted_anchors_internal"},
+        "strategy": {"const": "literal_symbol"},
+        "public_renderer": {"const": "canonical_core_v1"},
+        "model_facing_sections": {"type": "array", "items": {"enum": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"]}, "uniqueItems": true},
+        "internal_anchors_model_facing": {"const": false}
+      }
+    },
+    "install_state_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "schema", "default_receipt", "scope", "source_install_provenance", "authority_relationship", "preview_is_read_only", "unknown_schemas_fail_closed", "raw_prompts_or_packets_stored"],
+      "properties": {
+        "schema_version": {"const": "pcodex.install-state.v1"},
+        "schema": {"const": "schemas/pcodex.install-state.schema.json"},
+        "default_receipt": {"const": ".premode/install-state.json"},
+        "scope": {"const": "per-file managed integration state"},
+        "source_install_provenance": {"type": "string", "minLength": 1},
+        "authority_relationship": {"type": "string", "minLength": 1},
+        "preview_is_read_only": {"const": true},
+        "unknown_schemas_fail_closed": {"const": true},
+        "raw_prompts_or_packets_stored": {"const": false}
+      }
+    },
+    "public_surface_inventory": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["surface", "classification", "kind"],
+        "properties": {
+          "surface": {"type": "string", "minLength": 1},
+          "classification": {"enum": ["public_core", "public_codex", "advanced", "experimental", "research", "deprecated", "historical", "internal"]},
+          "kind": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "stateful_surface_inventory": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["surface", "location", "classification", "owner", "creation_trigger", "read_behavior", "write_behavior", "sensitivity", "schema_version", "cleanup_policy", "repair_policy", "uninstall_policy", "conflict_policy", "user_modification_policy"],
+        "properties": {
+          "surface": {"type": "string", "minLength": 1},
+          "location": {"type": "string", "minLength": 1},
+          "classification": {"enum": ["public_core", "public_codex", "advanced", "experimental", "research", "deprecated", "historical", "internal"]},
+          "owner": {"type": "string", "minLength": 1},
+          "creation_trigger": {"type": "string", "minLength": 1},
+          "read_behavior": {"type": "string", "minLength": 1},
+          "write_behavior": {"type": "string", "minLength": 1},
+          "sensitivity": {"type": "string", "minLength": 1},
+          "schema_version": {"type": "string", "minLength": 1},
+          "cleanup_policy": {"type": "string", "minLength": 1},
+          "repair_policy": {"type": "string", "minLength": 1},
+          "uninstall_policy": {"type": "string", "minLength": 1},
+          "conflict_policy": {"type": "string", "minLength": 1},
+          "user_modification_policy": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "integration_status": {
+      "type": "object", "additionalProperties": false,
+      "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"],
+      "properties": {
+        "codex_cli": {"const": "supported_terminal_workflow"},
+        "codex_repo_assets": {"const": "repo_local_opt_in"},
+        "mcp": {"const": "advanced_opt_in_not_automatic"},
+        "openclaw": {"const": "advanced_experimental_not_production_supported"}
+      }
+    },
+    "known_beta_debt": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
   }
 }

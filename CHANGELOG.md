@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0b1
+
+- Reconciled the Codex-first private-beta product contract and public/state ownership inventory.
+- Added the versioned `ProductionRankingProviderV1` product seam without changing incumbent ranking behavior.
+- Added atomic managed install-state receipts and receipt-driven bounded uninstall preview/apply foundations.
+- Kept OpenClaw advanced/experimental and preserved the post-beta 90/100 roadmap gates.
+
 ## v0.2.6.24
 
 - Reframed compiled packets as data packets around the exact canonical user prompt.

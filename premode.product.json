@@ -1,10 +1,19 @@
 {
   "$schema": "./schemas/premode.product.schema.json",
-  "schema_version": "premode.product.v1",
+  "schema_version": "premode.product.v2",
   "product_name": "pCodex",
-  "status": "source-visible proprietary Private-Beta",
+  "release_target": "0.3.0b1",
+  "release_class": "Codex-first private technical beta",
+  "status": "source-visible proprietary private beta; not production-ready",
+  "supported_runtime": "Codex CLI terminal workflow",
   "version_source": "pyproject.toml:[project].version",
   "production_package": "premode-router",
+  "phase_boundary": {
+    "phase_a": "Codex-first 0.3.0b1 beta readiness",
+    "phase_b": "Post-beta completion to the full 90/100 roadmap",
+    "roadmap_authority": "docs/PRODUCT_ROADMAP.md",
+    "phase_b_remains_required": true
+  },
   "production_branch_policy": {
     "authority": "origin/Private-Beta",
     "feature_branches_require_review": true,
@@ -18,6 +27,7 @@
     "pcodex review",
     "pcodex off",
     "pcodex cleanup",
+    "pcodex uninstall",
     "premode review-patch"
   ],
   "advanced_commands": [
@@ -41,9 +51,13 @@
     "observer and live-token harnesses"
   ],
   "production_ranking_authority": {
-    "plugin": "literal_symbol",
-    "package": "premode-router",
-    "fallback": "ranked_paths_plus_anchors"
+    "interface": "ProductionRankingProviderV1",
+    "provider_version": "production-ranking-provider.v1",
+    "result_schema": "schemas/production-ranking-provider-v1.schema.json",
+    "compatibility_provider": "IncumbentManifestRankingProviderV1",
+    "product_algorithm_agnostic": true,
+    "public_experiment_identifiers": false,
+    "fallback": "explicit fallback or first-class abstention"
   },
   "canonical_packet_authority": {
     "version": "v5",
@@ -53,26 +67,116 @@
     "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"],
     "internal_anchors_model_facing": false
   },
-  "generated_state_ownership": [
-    {"path": ".premode/out/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/audit/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/metrics/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/pcodex_state.json", "owner": "pcodex", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/lcc.lock.json", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/inventory/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/topology/", "owner": "premode", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/tuning/", "owner": "pcodex_tuning", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".premode/pcodex_codex_home/", "owner": "pcodex", "cleanup": "pcodex cleanup --local-state --yes"},
-    {"path": ".pcodex/", "owner": "legacy_pcodex", "cleanup": "manual_after_inspection"},
-    {"path": "PCODEX_SETUP_REPORT.md", "owner": "user_bootstrap_workflow", "cleanup": "manual"}
+  "install_state_authority": {
+    "schema_version": "pcodex.install-state.v1",
+    "schema": "schemas/pcodex.install-state.schema.json",
+    "default_receipt": ".premode/install-state.json",
+    "scope": "per-file managed integration state",
+    "source_install_provenance": "install_manifest.json remains authoritative for the current isolated source-install root",
+    "authority_relationship": "complementary scopes; neither receipt supersedes the other",
+    "preview_is_read_only": true,
+    "unknown_schemas_fail_closed": true,
+    "raw_prompts_or_packets_stored": false
+  },
+  "public_surface_inventory": [
+    {"surface": "premode production package", "classification": "public_core", "kind": "package"},
+    {"surface": "canonical_core_v1 packet renderer", "classification": "public_core", "kind": "renderer"},
+    {"surface": "ProductionRankingProviderV1", "classification": "public_core", "kind": "provider_interface"},
+    {"surface": "pcodex setup/status/run/doctor/review/off/cleanup/uninstall", "classification": "public_codex", "kind": "commands"},
+    {"surface": "plugins/pcodex skills", "classification": "public_codex", "kind": "codex_plugin_assets"},
+    {"surface": "pcodex first-run/on/tuned/tune/ui/compile/integrate", "classification": "advanced", "kind": "commands"},
+    {"surface": "pcodex MCP server", "classification": "advanced", "kind": "integration"},
+    {"surface": "OpenClaw repository profile", "classification": "advanced", "kind": "adapter"},
+    {"surface": "OpenClaw execution integration", "classification": "experimental", "kind": "adapter"},
+    {"surface": "observer and Qwen evidence", "classification": "research", "kind": "evidence"},
+    {"surface": "lab and live-token harnesses", "classification": "research", "kind": "harness"},
+    {"surface": "current isolated source installer", "classification": "public_codex", "kind": "installer"},
+    {"surface": "legacy private-bundle installer and alpha naming", "classification": "deprecated", "kind": "compatibility"},
+    {"surface": "docs/history", "classification": "historical", "kind": "documentation"},
+    {"surface": "routing diagnostics and candidate evidence", "classification": "internal", "kind": "diagnostics"}
+  ],
+  "stateful_surface_inventory": [
+    {
+      "surface": "repository packet files", "location": ".premode/out/", "classification": "public_core", "owner": "premode", "creation_trigger": "compile or explicitly stateful dry-run", "read_behavior": "read as local compile cache and review input", "write_behavior": "atomic generated files", "sensitivity": "private", "schema_version": "component-versioned", "cleanup_policy": "bounded local cleanup or receipt-proven uninstall", "repair_policy": "regenerate only with write approval", "uninstall_policy": "remove only when ownership and installed hash match", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository audit and metrics", "location": ".premode/audit/ and .premode/metrics/", "classification": "advanced", "owner": "premode", "creation_trigger": "record-enabled compile or review", "read_behavior": "content-free local receipts", "write_behavior": "append or atomic receipt write", "sensitivity": "private", "schema_version": "component-versioned", "cleanup_policy": "bounded local cleanup", "repair_policy": "do not synthesize missing history", "uninstall_policy": "remove only proven-owned records", "conflict_policy": "preserve unknown records", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository mode state", "location": ".premode/pcodex_state.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "on, off, tuned, or setup", "read_behavior": "read current local mode", "write_behavior": "atomic JSON", "sensitivity": "private", "schema_version": "pcodex.state.v1", "cleanup_policy": "bounded local cleanup", "repair_policy": "recreate only with approval", "uninstall_policy": "remove only proven-owned unmodified state", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository lock and cache", "location": ".premode/lcc.lock.json and .premode/out/cache_manifest.json", "classification": "internal", "owner": "premode", "creation_trigger": "stateful status or compile", "read_behavior": "validate deterministic compile inputs", "write_behavior": "atomic JSON", "sensitivity": "private", "schema_version": "component-versioned", "cleanup_policy": "bounded local cleanup", "repair_policy": "regenerate only with write approval", "uninstall_policy": "remove only proven-owned files", "conflict_policy": "treat stale or unknown as conflict", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository inventory and topology", "location": ".premode/inventory/ and .premode/topology/", "classification": "internal", "owner": "premode", "creation_trigger": "stateful discovery or compile", "read_behavior": "read repository path metadata", "write_behavior": "atomic generated indexes", "sensitivity": "private", "schema_version": "component-versioned", "cleanup_policy": "bounded local cleanup", "repair_policy": "regenerate only with write approval", "uninstall_policy": "remove only proven-owned indexes", "conflict_policy": "unknown schema fails closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository tuning state", "location": ".premode/tuning/", "classification": "advanced", "owner": "pcodex", "creation_trigger": "explicit tuning command", "read_behavior": "read validated local profile", "write_behavior": "explicit generated artifacts", "sensitivity": "private", "schema_version": "component-versioned", "cleanup_policy": "bounded local cleanup after preview", "repair_policy": "revalidate or regenerate explicitly", "uninstall_policy": "remove only proven-owned unmodified artifacts", "conflict_policy": "preserve unknown artifacts", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "managed install-state receipt", "location": ".premode/install-state.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful managed setup, repair, migration, or reinstall", "read_behavior": "read-only preview and ownership proof", "write_behavior": "atomic after target success", "sensitivity": "private", "schema_version": "pcodex.install-state.v1", "cleanup_policy": "retain as ownership evidence", "repair_policy": "never downgrade future schema", "uninstall_policy": "drives bounded planner and executor", "conflict_policy": "missing, corrupt, or unknown fails closed", "user_modification_policy": "preserve and require manual action"
+    },
+    {
+      "surface": "managed-state ownership marker", "location": ".premode/managed-state-owner.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "first successful managed install", "read_behavior": "bind the managed root and authoritative install-state receipt", "write_behavior": "atomic creation with private permissions", "sensitivity": "private", "schema_version": "pcodex.managed-state-owner.v1", "cleanup_policy": "retain as lifecycle authority", "repair_policy": "missing or mismatched marker requires manual action", "uninstall_policy": "never remove while managed receipts remain", "conflict_policy": "fail closed", "user_modification_policy": "preserve and block automatic mutation"
+    },
+    {
+      "surface": "uninstall operation receipt", "location": ".premode/uninstall-operation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful bounded uninstall apply", "read_behavior": "audit completed removals and preserved conflicts", "write_behavior": "atomic only after quarantined bytes are removed", "sensitivity": "private", "schema_version": "pcodex.uninstall-operation.v1", "cleanup_policy": "retain as lifecycle evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership", "uninstall_policy": "not a deletion authority by itself", "conflict_policy": "unrelated or malformed output blocks mutation", "user_modification_policy": "preserve and require a different output path"
+    },
+    {
+      "surface": "uninstall quarantine", "location": ".premode/uninstall-quarantine-<operation-id>/", "classification": "internal", "owner": "pcodex", "creation_trigger": "bounded uninstall apply after preview", "read_behavior": "validate renamed files through no-follow directory descriptors", "write_behavior": "private transient directory with descriptor-relative rename and unlink", "sensitivity": "matches target", "schema_version": "none", "cleanup_policy": "remove before the applied operation receipt is committed", "repair_policy": "restore the current item immediately on validation or receipt failure", "uninstall_policy": "never scan or delete unrelated quarantine-like names", "conflict_policy": "fail closed", "user_modification_policy": "restore or preserve"
+    },
+    {
+      "surface": "isolated Codex home", "location": ".premode/pcodex_codex_home/", "classification": "advanced", "owner": "pcodex", "creation_trigger": "explicit isolated setup", "read_behavior": "read isolated Codex integration state", "write_behavior": "explicit setup writes", "sensitivity": "sensitive", "schema_version": "external Codex configuration", "cleanup_policy": "bounded local cleanup after preview", "repair_policy": "recreate only with explicit approval", "uninstall_policy": "remove only receipt-proven unmodified files", "conflict_policy": "preserve unknown or unrelated configuration", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "repository pCodex config", "location": ".pcodex/config.toml", "classification": "advanced", "owner": "user", "creation_trigger": "explicit install or configuration", "read_behavior": "read local enablement", "write_behavior": "explicit configuration write", "sensitivity": "private", "schema_version": "toml-v1", "cleanup_policy": "manual unless a receipt proves product ownership", "repair_policy": "never overwrite different content", "uninstall_policy": "preserve by default", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "user pCodex config", "location": "$HOME/.pcodex/config.toml", "classification": "advanced", "owner": "user", "creation_trigger": "explicit user configuration", "read_behavior": "fallback config read", "write_behavior": "not written by normal beta commands", "sensitivity": "private", "schema_version": "toml-v1", "cleanup_policy": "manual", "repair_policy": "manual", "uninstall_policy": "preserve", "conflict_policy": "unrelated entries preserved", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "Codex plugin and skill files", "location": ".agents/skills/pcodex*, .agents/plugins/, plugins/pcodex/", "classification": "public_codex", "owner": "pcodex_codex_plugin", "creation_trigger": "explicit integrate or plugin init write", "read_behavior": "Codex repo-local discovery", "write_behavior": "explicit bounded file writes", "sensitivity": "public_safe", "schema_version": "skill and plugin metadata versions", "cleanup_policy": "receipt-driven per file", "repair_policy": "replace only matching owned versions", "uninstall_policy": "deferred where canonical plugin authority is unresolved", "conflict_policy": "preserve unrelated plugin entries", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "Codex marketplace registration", "location": ".agents/plugins/marketplace.json or external Codex registration", "classification": "advanced", "owner": "mixed", "creation_trigger": "explicit plugin init or registration", "read_behavior": "read registration entries", "write_behavior": "bounded entry update only", "sensitivity": "private", "schema_version": "external", "cleanup_policy": "remove only exact receipt-proven entry", "repair_policy": "preserve siblings", "uninstall_policy": "plugin-specific removal deferred", "conflict_policy": "unknown or unrelated entries preserved", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "MCP configuration", "location": "repo-local or external Codex MCP config", "classification": "advanced", "owner": "mixed", "creation_trigger": "explicit MCP registration", "read_behavior": "read registration status", "write_behavior": "never changed by normal setup", "sensitivity": "sensitive", "schema_version": "external", "cleanup_policy": "remove only exact receipt-proven server entry", "repair_policy": "preserve unrelated servers", "uninstall_policy": "manual until registration receipt exists", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "source installer root and provenance manifest", "location": "$HOME/.pcodex-alpha/ and install_manifest.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit current source installer", "read_behavior": "read install-root provenance and ownership metadata", "write_behavior": "installer-managed", "sensitivity": "private", "schema_version": "pcodex.install_manifest.v1", "cleanup_policy": "source installer --uninstall after manifest/root/Python validation", "repair_policy": "reinstall explicitly", "uninstall_policy": "current install-root authority; separate from per-file managed integration receipt", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "temporary files", "location": "same-directory atomic temporary files", "classification": "internal", "owner": "pcodex", "creation_trigger": "atomic state write", "read_behavior": "never authoritative", "write_behavior": "create, fsync, replace, cleanup", "sensitivity": "matches target", "schema_version": "none", "cleanup_policy": "remove interrupted temporary file", "repair_policy": "retry operation", "uninstall_policy": "never scan broad temp directories", "conflict_policy": "ignore unknown sibling temp files", "user_modification_policy": "preserve unknown files"
+    },
+    {
+      "surface": "runtime logs", "location": "explicit pCodex or Pre-mode log outputs", "classification": "internal", "owner": "mixed", "creation_trigger": "explicit diagnostic or harness operation", "read_behavior": "diagnostic inspection only", "write_behavior": "command-specific", "sensitivity": "private", "schema_version": "component-versioned or plain text", "cleanup_policy": "never scan or delete by filename alone", "repair_policy": "do not synthesize", "uninstall_policy": "remove only exact receipt-proven logs", "conflict_policy": "preserve unknown logs", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "migration markers", "location": "future receipt-declared migration marker paths", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit migration apply", "read_behavior": "version and completion check", "write_behavior": "atomic and receipt-declared", "sensitivity": "private_metadata", "schema_version": "migration-specific", "cleanup_policy": "receipt-driven", "repair_policy": "unknown versions fail closed", "uninstall_policy": "remove only proven-owned unmodified marker", "conflict_policy": "preserve partial legacy state", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "legacy plugin state", "location": "legacy .agents or .pcodex integration assets", "classification": "deprecated", "owner": "unresolved", "creation_trigger": "historical installers", "read_behavior": "inspection only", "write_behavior": "none by normal beta commands", "sensitivity": "private", "schema_version": "legacy", "cleanup_policy": "manual after inspection", "repair_policy": "migrate only with explicit receipt", "uninstall_policy": "deferred", "conflict_policy": "unknown owner", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "observer and Qwen evidence", "location": "observer databases, runs, and experiment artifacts", "classification": "research", "owner": "research_lane", "creation_trigger": "algorithm-lane execution", "read_behavior": "not read by lifecycle foundation", "write_behavior": "never written by product lane", "sensitivity": "private", "schema_version": "research-specific", "cleanup_policy": "not product-owned", "repair_policy": "not product-owned", "uninstall_policy": "never remove", "conflict_policy": "exclude from product receipts", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "OpenClaw-related state", "location": "OpenClaw templates, fixtures, profiles, or external runtime state", "classification": "experimental", "owner": "external_or_research", "creation_trigger": "explicit experimental workflow", "read_behavior": "profile detection only in beta", "write_behavior": "no production lifecycle writes", "sensitivity": "private", "schema_version": "experimental", "cleanup_policy": "not product-owned unless a future receipt proves otherwise", "repair_policy": "deferred", "uninstall_policy": "never remove in 0.3.0b1", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+    }
   ],
   "integration_status": {
     "codex_cli": "supported_terminal_workflow",
     "codex_repo_assets": "repo_local_opt_in",
     "mcp": "advanced_opt_in_not_automatic",
-    "openclaw": "advanced_repo_profile_not_execution_runtime"
+    "openclaw": "advanced_experimental_not_production_supported"
   },
-  "known_public_command_gaps": [
-    "pcodex uninstall"
+  "known_beta_debt": [
+    "canonical plugin-specific marketplace and registration removal",
+    "literal byte-level no-write expansion across every advisory command",
+    "broader packaging and platform matrix",
+    "production OpenClaw integration",
+    "full held-out 10-repository 100-task evidence and three case studies"
   ]
 }

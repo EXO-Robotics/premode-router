@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.install-state.schema.json",
+  "title": "pCodex managed install-state receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_version", "operation_id", "operation_type", "timestamp", "managed_root_hash", "ownership_id", "items"],
+  "properties": {
+    "schema_version": {"const": "pcodex.install-state.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "operation_id": {"type": "string", "minLength": 1},
+    "operation_type": {"enum": ["setup", "repair", "migration", "reinstall"]},
+    "timestamp": {"type": "string", "minLength": 1},
+    "managed_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ownership_id": {"type": "string", "minLength": 1},
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["owned_path", "owner", "preexisting_state", "original_hash", "installed_hash", "current_hash", "creation_or_modification", "sensitivity", "cleanup_policy", "repair_policy", "conflict_state", "user_modified", "external_registration"],
+        "properties": {
+          "owned_path": {"type": "string", "minLength": 1},
+          "owner": {"type": "string", "minLength": 1},
+          "preexisting_state": {"enum": ["absent", "identical", "different", "unknown"]},
+          "original_hash": {"type": ["string", "null"]},
+          "installed_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+          "current_hash": {"type": ["string", "null"]},
+          "creation_or_modification": {"enum": ["created", "preexisting_identical", "modified", "registration"]},
+          "sensitivity": {"enum": ["public_safe", "private_metadata", "sensitive"]},
+          "cleanup_policy": {"type": "string", "minLength": 1},
+          "repair_policy": {"type": "string", "minLength": 1},
+          "conflict_state": {"type": ["string", "null"]},
+          "user_modified": {"type": "boolean"},
+          "external_registration": {"type": ["object", "null"]}
+        }
+      }
+    }
+  }
+}

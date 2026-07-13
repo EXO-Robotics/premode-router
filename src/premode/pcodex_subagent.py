@@ -10,6 +10,7 @@ from typing import Any
 from . import pcodex_bootstrap as pcodex
 from .candidate_policy import CandidateIntent, classify_candidate, is_generated_candidate_path
 from .core_packet import CorePath, render_core_packet
+from .production_ranking import ProductionRankingContractError, ranking_result_from_dict
 
 
 CompileRunner = Callable[..., dict[str, Any]]
@@ -49,6 +50,41 @@ def _validated_decision_and_packet(
     prompt: str,
     compiled: Mapping[str, Any],
 ) -> tuple[dict[str, Any] | None, str | None]:
+    product_raw = compiled.get("production_ranking")
+    if isinstance(product_raw, Mapping):
+        try:
+            product = ranking_result_from_dict(product_raw)
+        except ProductionRankingContractError:
+            return None, None
+        roles = (("primary_paths", "primary"), ("verify_paths", "verification"), ("support_paths", "support"))
+        items: list[CorePath] = []
+        seen: set[str] = set()
+        explicit_paths = {
+            path.casefold()
+            for path in re.findall(r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w.-])", prompt)
+        }
+        generated_intent = bool(re.search(r"(?i)\b(generated|vendor|dist|build output|generated code)\b", prompt))
+        for key, role in roles:
+            for value in getattr(product, key):
+                explicit = value.casefold() in explicit_paths
+                policy = classify_candidate(
+                    project_root,
+                    value,
+                    intent=CandidateIntent(
+                        explicit=explicit,
+                        generated_required=explicit and (generated_intent or is_generated_candidate_path(value)),
+                        support_only=role == "support",
+                    ),
+                    provenance=("production_ranking_provider",),
+                )
+                if not policy.admitted or not policy.normalized_path or policy.normalized_path.casefold() in seen:
+                    return None, None
+                seen.add(policy.normalized_path.casefold())
+                items.append(CorePath(path=policy.normalized_path, role=role))  # type: ignore[arg-type]
+        expected = prompt if product.routing_mode == "abstain" else render_core_packet(prompt, items)
+        if compiled.get("packet") != expected:
+            return None, None
+        return product.to_dict(), expected
     raw = compiled.get("routing_decision")
     if not isinstance(raw, dict) or raw.get("schema_version") != "routing-decision.v1":
         return None, None
@@ -258,7 +294,17 @@ def transform_subagent_prompt(
             error="invalid_routing_decision",
             metadata={**base_metadata, "status": "invalid_routing_decision_raw_prompt"},
         )
-    routing_mode = routing_decision["mode"]
+    routing_mode = routing_decision.get("routing_mode") or routing_decision.get("mode")
+    public_ranking = (
+        routing_decision
+        if "routing_mode" in routing_decision
+        else {
+            "routing_mode": routing_mode,
+            "primary_paths": list(routing_decision.get("primary_paths") or []),
+            "verify_paths": list(routing_decision.get("verification_paths") or []),
+            "support_paths": list(routing_decision.get("support_paths") or []),
+        }
+    )
     if routing_mode == "abstain":
         return SubagentTransformResult(
             prompt=subagent_prompt,
@@ -268,7 +314,7 @@ def transform_subagent_prompt(
             transform_applied=False,
             tuning_profile=tuning_profile,
             route="abstain",
-            metadata={**base_metadata, "status": "abstained_raw_prompt", "routing_decision": routing_decision},
+            metadata={**base_metadata, "status": "abstained_raw_prompt", "production_ranking": public_ranking},
         )
     assert packet is not None
     telemetry = (
@@ -301,7 +347,7 @@ def transform_subagent_prompt(
             "premode_command": compiled.get("premode_command"),
             "packet_sha256": compiled.get("packet_sha256"),
             "model_facing_sections": compiled.get("model_facing_sections"),
-            "routing_decision": routing_decision,
+            "production_ranking": public_ranking,
             "telemetry": telemetry.get("telemetry"),
         },
     )

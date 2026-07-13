@@ -33,6 +33,7 @@
     "premode/locator.py",
     "premode/lockfile.py",
     "premode/log_scanner.py",
+    "premode/managed_state.py",
     "premode/mcp_server.py",
     "premode/metrics.py",
     "premode/packet_schema.py",
@@ -45,6 +46,9 @@
     "premode/plugin.py",
     "premode/plugins.py",
     "premode/profiles.py",
+    "premode/product_contract.py",
+    "premode/production_ranking.py",
+    "premode/production_ranking_incumbent.py",
     "premode/redaction.py",
     "premode/repo_map.py",
     "premode/repo_summary.py",
@@ -67,7 +71,9 @@
     "premode_router-*.dist-info/entry_points.txt",
     "premode_router-*.dist-info/top_level.txt",
     "premode_router-*.dist-info/RECORD",
-    "premode_router-*.dist-info/licenses/*"
+    "premode_router-*.dist-info/licenses/*",
+    "premode_router-*.data/data/share/premode-router/premode.product.json",
+    "premode_router-*.data/data/share/premode-router/schemas/*.json"
   ],
   "wheel_prohibited_globs": [
     "premode/lab73*.py",

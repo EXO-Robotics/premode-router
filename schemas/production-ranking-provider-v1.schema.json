@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "production-ranking-provider-v1.schema.json",
+  "title": "ProductionRankingProviderV1 result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "routing_mode",
+    "primary_paths",
+    "verify_paths",
+    "support_paths",
+    "abstention_reason",
+    "decision_receipt",
+    "provider_version"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.production-ranking-result.v1"},
+    "routing_mode": {"enum": ["narrow", "broad", "fallback", "abstain"]},
+    "primary_paths": {"$ref": "#/$defs/paths"},
+    "verify_paths": {"$ref": "#/$defs/paths"},
+    "support_paths": {"$ref": "#/$defs/paths"},
+    "abstention_reason": {"enum": [null, "conservative_safety_boundary", "insufficient_path_evidence", "provider_declined", "unsupported_task_class"]},
+    "decision_receipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "exact_task_sha256", "routing_mode", "primary_path_count", "verify_path_count", "support_path_count", "source_contract"],
+      "properties": {
+        "schema_version": {"const": "pcodex.production-ranking-decision-receipt.v1"},
+        "exact_task_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "routing_mode": {"enum": ["narrow", "broad", "fallback", "abstain"]},
+        "primary_path_count": {"type": "integer", "minimum": 0},
+        "verify_path_count": {"type": "integer", "minimum": 0},
+        "support_path_count": {"type": "integer", "minimum": 0},
+        "source_contract": {
+          "type": "string",
+          "pattern": "^(?!.*(?:candidate|experiment|observer|qwen|d3|c2))[a-z0-9][a-z0-9._-]*$"
+        }
+      }
+    },
+    "provider_version": {"const": "production-ranking-provider.v1"}
+  },
+  "$defs": {
+    "paths": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

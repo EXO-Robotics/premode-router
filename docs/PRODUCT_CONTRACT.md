@@ -1,26 +1,27 @@
 # pCodex Product Contract
 
-Status: source-visible proprietary Private-Beta. This document is the authority for the supported release product at the `Private-Beta` branch head. Implementation and tests remain authoritative when this document is wrong.
+Status: authoritative for the Codex-first `0.3.0b1` private technical beta. The machine-readable companion is `premode.product.json`. Implementation and tests remain authoritative when prose is wrong.
 
 ## Product promise
 
-pCodex is the Codex CLI product surface for Pre-mode Router. It preserves the user's task, selects likely repository paths reproducibly for identical eligible inputs, configuration, and version, formats a compact canonical core packet, and can launch Codex with that packet. The public renderer is `canonical_core_v1`, with `TASK`, `LIKELY FILES`, and role-labelled path sections; internal anchors are diagnostic-only. The production package is `premode-router`; its bundled `literal_symbol` selector retains the internal identifiers packet version `v5` and variant `tool_assisted_anchors_internal`, but those identifiers do not describe the legacy XML renderer or authorize extra model-facing fields. Compatible third-party entry points remain optional extensions and are not required for the default strategy.
+pCodex accepts the exact user task, ranks likely repository paths, and returns bounded path guidance with minimal optional anchors through the canonical packet. It preserves the task exactly; it does not rewrite, summarize, decompose, or replace it. The canonical model-facing renderer is `canonical_core_v1`, with `TASK`, `LIKELY FILES`, and optional `PRIMARY`, `VERIFY`, and `SUPPORT` path sections.
 
-The first supported runtime is Python 3.11 or newer on a local source installation, driving Codex CLI through explicit terminal commands. Source installation is documented in `docs/FIRST_RUN.md`. No package-registry release is asserted.
+pCodex is a context-selection and routing product. It is not a planner, local reasoning engine, autonomous agent, hosted service, or replacement for Codex. Unsupported task classes produce an explicit conservative fallback or exact abstention. Empty path guidance is valid.
 
-## Deliberate non-goals
+## Beta boundary
 
-pCodex is not a reasoning engine, planner, autonomous agent, hosted service, or replacement for Codex. It does not promise correct patches, universal token savings, native `/pcodex` slash commands, hosted Codex UI integration, automatic MCP invocation, internal Codex subagent interception, or automatic global Codex configuration.
+Phase A is Codex-first `0.3.0b1` beta readiness. The supported runtime is the local Codex CLI terminal workflow. The production package is `premode-router`, requires Python 3.11 or newer, and is currently source-visible proprietary beta software. No package-registry publication, production readiness, or universal platform support is asserted.
 
-OpenClaw detection and the `openclaw_control_plane` repository profile are implemented advanced adapter behavior, but OpenClaw is not a supported execution runtime or standalone product integration. Templates, fixtures, and control-plane research do not automate OpenClaw, Unreal, Blender, or bridge writes.
+Phase B remains the post-beta program to the full 90/100 roadmap in `docs/PRODUCT_ROADMAP.md`. It still requires production OpenClaw integration, broader platform and lifecycle proof, a frozen 10-repository/100-task held-out corpus, reproducible public evidence, and three reproducible case studies. Phase A does not weaken or replace those gates.
 
-## Supported workflow and commands
+OpenClaw is advanced and experimental in `0.3.0b1`; it is not production-supported. Existing profiles, templates, fixtures, and research remain available but do not constitute an OpenClaw execution integration.
 
-The public workflow is dry-run first:
+## Public and non-public surfaces
+
+The normal public commands are:
 
 ```text
-pcodex doctor
-pcodex setup --skip-tune --no-mcp
+pcodex setup
 pcodex status
 pcodex run --dry-run "<task>"
 pcodex run "<task>"
@@ -28,47 +29,56 @@ pcodex doctor
 pcodex review --since-compile
 pcodex off
 pcodex cleanup --local-state --dry-run
+pcodex cleanup --local-state --yes
+pcodex uninstall --dry-run
+pcodex uninstall --yes
 premode review-patch --since-compile
 ```
 
-Supported public pCodex commands are `setup`, `status`, `run`, `doctor`, `review`, `off`, and `cleanup`; `premode review-patch` remains the lower-level review command. The intended headline command `pcodex uninstall` is not implemented and is therefore a recorded gap, not a supported command. `cleanup --local-state` owns bounded local cleanup but is not a complete uninstaller. `first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, and `integrate codex` are advanced compatibility or operator surfaces. MCP, plugin scaffolding, benchmarks, stress tools, labs, hooks, selector identifiers, and tuning internals are not normal public help promises.
+`cleanup --local-state` is the legacy bounded cleanup surface for known repo-local generated state. `uninstall` is the receipt-driven lifecycle foundation: preview is a pure read and apply removes only state whose ownership and installed hash are proven. It is not a broad directory cleaner.
 
-## Read and write boundaries
+`first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, `integrate codex`, MCP, plugin initialization, benchmarks, stress tools, labs, hooks, and tuning internals are advanced, internal, or research surfaces as classified in `docs/PUBLIC_SURFACES.md` and `premode.product.json`.
 
-Compilation may read repository metadata and eligible files subject to ignore, sensitivity, and task-root boundaries. Running pCodex may also read its repo-local configuration and state plus the installed Codex executable's help/capabilities. It must not treat ignored secrets as model-facing context.
+## Ranking authority and packet authority
 
-Owned generated state is repo-local unless an explicitly approved installation or integration command says otherwise:
+`ProductionRankingProviderV1` is the sole product-facing ranking seam. Its contract and version are documented in `docs/ALGORITHM_INTEGRATION_INTERFACE.md`. It accepts:
 
-| Path | Owner | Purpose | Cleanup responsibility |
-| --- | --- | --- | --- |
-| `.premode/out/` | Pre-mode | packets and compile outputs | `pcodex cleanup --local-state --yes` or user deletion |
-| `.premode/audit/`, `.premode/metrics/` | Pre-mode | content-free review/measurement records | same |
-| `.premode/pcodex_state.json` | pCodex | mode state | same |
-| `.premode/lcc.lock.json` | Pre-mode | deterministic compile authority | same |
-| `.premode/inventory/`, `.premode/topology/` | Pre-mode | local indexes | same |
-| `.premode/tuning/` | pCodex tuning | repo-specific advanced state | same; review before versioning |
-| `.premode/pcodex_codex_home/` | pCodex | isolated Codex configuration used by bounded setup/integration flows | `pcodex cleanup --local-state --yes` |
-| `.pcodex/` | legacy pCodex material | compatibility path, not in the active cleanup allowlist | manual, after inspection |
-| `PCODEX_SETUP_REPORT.md` | user/bootstrap workflow | optional pasted-bootstrap report; not emitted by the active CLI | manual |
-| `.agents/skills/pcodex*`, `.agents/plugins/`, `plugins/pcodex/` | Codex integration command/repo | repo-local integration assets | remove only with explicit user approval |
-| `$HOME/.pcodex-alpha/` | source installer | isolated installation | installer manifest-guided user removal |
+- `exact_task`;
+- `resolved_repository_context`;
+- `supported_execution_options`.
 
-Normal commands must not mutate global Codex config. Integration writes require `pcodex integrate codex --write`; optional MCP setup remains separate and user-approved. Uninstall is currently manual: remove the manifest-recorded install root and intentionally created repo-local assets/state. pCodex must not delete user-authored files merely because they share a parent directory.
+It returns `routing_mode`, `primary_paths`, `verify_paths`, `support_paths`, `abstention_reason`, a content-free `decision_receipt`, and `provider_version`.
 
-## Integration status
+The product interface is independent of experiment candidates, observer internals, and model infrastructure. The current behavior is wrapped by `IncumbentManifestRankingProviderV1` without changing its ranking semantics. Provider output consumed by the canonical renderer contains no experiment identities. Unknown provider versions fail safely.
 
-Codex CLI terminal operation is the supported product integration. Repo-local skills and plugin scaffolds are discoverability/UX assets, not marketplace publication. The local stdio MCP transformer is advanced and opt-in, not automatically registered or invoked. The OpenClaw repository profile is advanced; OpenClaw execution integration is unsupported.
+The canonical packet remains version `v5`, variant `tool_assisted_anchors_internal`, strategy `literal_symbol`, rendered publicly as `canonical_core_v1`. Internal anchors, diagnostics, candidate evidence, observer data, benchmark metadata, and experiment identities do not enter the model-facing packet.
 
-## Claims that remain unproven
+## Read, write, and privacy boundary
 
-The project has not proven universal end-to-end token or cost savings, improved patch quality across repositories, production readiness, public package availability, hosted-agent interception, automatic MCP behavior, or production-grade OpenClaw support. Benchmark and packet-size results are bounded measurements, not general product guarantees.
+Compilation may read repository metadata and eligible files within ignore, sensitivity, and task-root boundaries. pCodex may read repo-local configuration/state and the installed Codex executable's capabilities. It must not treat ignored secrets as model-facing context.
+
+Normal commands do not mutate global Codex configuration. Integration writes require explicit state-changing commands. The authoritative state inventory is `premode.product.json`; `docs/PUBLIC_SURFACES.md` is its human-readable map.
+
+Two existing lifecycle receipts have complementary, non-overlapping authority. The current source installer continues to own `install_manifest.json`, which binds and validates the isolated source-install root and is consumed by `scripts/install_pcodex_from_source.sh --uninstall`. The `pcodex.install-state.v1` receipt is the per-file authority for managed repo/Codex integration state and drives `pcodex uninstall`. Neither supersedes the other. Managed receipts contain ownership metadata and hashes, not raw prompts or model packets. Receipt and target writes are atomic, versioned, and permission-conscious. A receipt is written only after the target operation succeeds; a failed receipt write rolls back a newly created managed file. Unknown future receipt schemas are never downgraded.
+
+An item may be automatically removed only when pCodex proves ownership, the current hash still matches the installed hash or an explicitly safe generated variant, removal is bounded to the managed root, and the state-changing action was approved. User-modified files and unrelated configuration entries are preserved. Missing, corrupt, future-schema, path-escape, symlink, or unknown-owner state fails closed with a conflict or manual-action report.
+
+Uninstall preview reports `will_remove`, `will_restore`, `will_preserve`, `conflict`, `not_found`, `unknown_owner`, and `requires_manual_action`. Preview does not create state, refresh caches, record telemetry, update timestamps, create packet or temporary files, mutate receipts, change Codex configuration, or launch Codex/OpenClaw.
+
+The beta executor can currently remove regular files created through the managed-state API when the receipt, separate ownership marker, owner, safe managed-root binding, and installed hash all match. Preexisting identical files are preserved. Removal of the current isolated source-install root remains under its existing manifest-validated installer command; `pcodex uninstall` does not duplicate that broad-root responsibility. Plugin marketplace/MCP entry removal, partial installs without receipts, and OpenClaw/research state are intentionally deferred.
+
+## Explicitly unsupported claims
+
+The beta does not promise universal task coverage, universal token or cost savings, improved patch quality across repositories, autonomous planning, production OpenClaw support, hosted-agent interception, automatic MCP invocation, automatic global configuration, public package availability, or hidden ranking behavior not backed by the algorithm lane.
 
 ## Authority map
 
-- Product and claim boundary: this document and `premode.product.json`.
+- Product promise, scope, lifecycle: this document and `premode.product.json`.
+- Surface and state classification: `premode.product.json`, summarized by `docs/PUBLIC_SURFACES.md`.
+- Ranking seam: `docs/ALGORITHM_INTEGRATION_INTERFACE.md`, `src/premode/production_ranking.py`, and its JSON schema.
+- Canonical packet: `src/premode/core_packet.py` plus characterization tests.
+- Install-state receipt: `src/premode/managed_state.py` and `schemas/pcodex.install-state.schema.json`.
 - First run: `docs/FIRST_RUN.md`.
-- Codex status and limitations: `docs/PCODEX_MCP_STATUS.md` and `docs/CLAIMS_AND_LIMITATIONS.md`.
-- Troubleshooting: `docs/PRIVATE_BETA_TESTER_PACKET.md`.
-- Historical material: `docs/history/`; it is never current operating authority.
-- Version: root `pyproject.toml` `[project].version`, mirrored by `src/premode/__init__.py` and checked by CI.
-- Release branch: remote `Private-Beta`; feature branches are reviewed before merge and tags/releases require separate authority.
+- Claims: `docs/CLAIMS_AND_LIMITATIONS.md`.
+- Version: root `pyproject.toml`, mirrored by `src/premode/__init__.py` and checked by tests.
+- Historical material: `docs/history/`; never current operating authority.

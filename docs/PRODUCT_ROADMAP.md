@@ -6,6 +6,12 @@ Pre-mode Router is a local-first deterministic preflight, context-control, and p
 
 Codex CLI is the first supported runtime. The long-term direction is agent-agnostic.
 
+## 0.3.0b1 phase boundary and 90/100 program
+
+Phase A is the Codex-first `0.3.0b1` private technical beta: reconciled product authority, one stable production-ranking provider seam, executable managed-state ownership rules, bounded receipt-driven uninstall, literal no-write previews for the new lifecycle surface, and installed-artifact proof.
+
+Phase B remains required after beta before a 90/100 product claim. It includes production OpenClaw integration, broader platform and lifecycle proof, a frozen 10-repository/100-task held-out corpus, reproducible public evidence, and three reproducible case studies. The historical version roadmap below remains implementation context; completing Phase A does not declare the full roadmap complete.
+
 ## Roadmap summary
 
 ```text

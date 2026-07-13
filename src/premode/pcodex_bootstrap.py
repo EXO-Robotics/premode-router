@@ -20,6 +20,7 @@ from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
 from .cache_manifest import read_cache_manifest, write_cache_manifest
 from .install_manifest import read_install_manifest
+from .managed_state import ManagedStateError, apply_uninstall, plan_uninstall
 from .inventory import load_inventory, refresh_inventory_if_needed, summarize_inventory
 from .lockfile import read_lockfile, sha256_text, update_lockfile_from_resolver
 from .topology import refresh_topology_if_needed, summarize_topology
@@ -1057,6 +1058,7 @@ def compile_pcodex_packet(
         canonical_core_packet=True,
         **kwargs,
     )
+    production_ranking = compiled.get("production_ranking") if isinstance(compiled.get("production_ranking"), dict) else {}
     result = {
         "status": "compile_degraded" if compiled.get("compile_degraded") else "compiled",
         "route": route,
@@ -1069,14 +1071,14 @@ def compile_pcodex_packet(
         "packet_variant": compiled.get("packet_variant"),
         "packet_strategy": compiled.get("strategy_selected") or kwargs.get("packet_strategy"),
         "canonical_core_packet": bool(compiled.get("canonical_core_packet")),
-        "routing_decision": compiled.get("routing_decision"),
+        "production_ranking": production_ranking,
         "selected_paths": (
             list(dict.fromkeys(
                 str(path)
-                for bucket in ("primary_paths", "verification_paths", "support_paths")
-                for path in ((compiled.get("routing_decision") or {}).get(bucket) or [])
+                for bucket in ("primary_paths", "verify_paths", "support_paths")
+                for path in (production_ranking.get(bucket) or [])
             ))
-            if isinstance(compiled.get("routing_decision"), dict)
+            if production_ranking
             else _selected_paths_from_compile_result(compiled)
         ),
         "model_facing_sections": [
@@ -2454,7 +2456,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{setup,status,run,review,off,cleanup,doctor}",
+        metavar="{setup,status,run,review,off,cleanup,uninstall,doctor}",
     )
     doctor_parser = sub.add_parser("doctor", help="Check local pCodex readiness.")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
@@ -2471,6 +2473,15 @@ def _parser() -> argparse.ArgumentParser:
     cleanup_mode.add_argument("--yes", action="store_true", help="Remove generated local state.")
     cleanup_parser.add_argument("--json", action="store_true", help="Print machine-readable cleanup result.")
     cleanup_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    uninstall_parser = sub.add_parser("uninstall", help="Preview or remove only receipt-proven pCodex state.")
+    uninstall_mode = uninstall_parser.add_mutually_exclusive_group()
+    uninstall_mode.add_argument("--dry-run", action="store_true", help="Read the receipt and preview safe actions without writing.")
+    uninstall_mode.add_argument("--yes", action="store_true", help="Apply only receipt-proven safe actions.")
+    uninstall_parser.add_argument("--state-receipt", default=None, help="Install-state receipt. Defaults to .premode/install-state.json.")
+    uninstall_parser.add_argument("--managed-root", default=None, help="Managed root bound to the receipt. Defaults to the repository root.")
+    uninstall_parser.add_argument("--operation-receipt", default=None, help=argparse.SUPPRESS)
+    uninstall_parser.add_argument("--json", action="store_true", help="Print machine-readable uninstall result.")
+    uninstall_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
     status_parser = sub.add_parser("status", help="Show the current local mode and readiness.")
@@ -2596,6 +2607,39 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(format_cleanup(payload))
         return 0
+    if args.command == "uninstall":
+        if not args.dry_run and not args.yes:
+            print(
+                json.dumps({"status": "error", "error": "pcodex uninstall requires --dry-run or --yes", "codex_launch": "not_executed"}, indent=2, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 2
+        managed_root = Path(args.managed_root).expanduser() if args.managed_root else repo_root
+        receipt_path = Path(args.state_receipt).expanduser() if args.state_receipt else managed_root / ".premode" / "install-state.json"
+        try:
+            payload = (
+                plan_uninstall(managed_root, receipt_path)
+                if args.dry_run
+                else apply_uninstall(
+                    managed_root,
+                    receipt_path,
+                    operation_receipt_path=Path(args.operation_receipt).expanduser() if args.operation_receipt else None,
+                )
+            )
+        except (ManagedStateError, OSError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc), "codex_launch": "not_executed"}, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        payload["status"] = "preview" if args.dry_run else payload.get("status") or payload.get("operation", {}).get("status", "applied")
+        payload["dry_run"] = bool(args.dry_run)
+        payload["applied"] = bool(args.yes and payload.get("applied", False))
+        payload["codex_launch"] = "not_executed"
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(f"pCodex uninstall {payload['status']}:")
+            for key in ("will_remove", "will_restore", "will_preserve", "conflict", "not_found", "unknown_owner", "requires_manual_action"):
+                print(f"- {key}: {len(payload.get(key) or [])}")
+        return 0 if args.dry_run or payload.get("applied") or payload.get("status") == "no_changes" else 2
     if args.command == "install":
         print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))
         return 0

@@ -153,13 +153,13 @@ def pcodex_transform_subagent_prompt_tool(
         "tuning_profile": result.tuning_profile,
         "tuning": result.metadata.get("tuning"),
         "fallback": result.metadata.get("fallback"),
-        "routing_mode": (result.metadata.get("routing_decision") or {}).get("mode") if isinstance(result.metadata.get("routing_decision"), dict) else None,
+        "routing_mode": (result.metadata.get("production_ranking") or {}).get("routing_mode") if isinstance(result.metadata.get("production_ranking"), dict) else None,
         "selected_paths": [
             path
-            for bucket in ("primary_paths", "verification_paths", "support_paths")
-            for path in ((result.metadata.get("routing_decision") or {}).get(bucket) or [])
+            for bucket in ("primary_paths", "verify_paths", "support_paths")
+            for path in ((result.metadata.get("production_ranking") or {}).get(bucket) or [])
             if isinstance(path, str)
-        ] if isinstance(result.metadata.get("routing_decision"), dict) else [],
+        ] if isinstance(result.metadata.get("production_ranking"), dict) else [],
     }
     if result.error:
         metadata["error_status"] = result.metadata.get("status")

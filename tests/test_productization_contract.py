@@ -37,6 +37,12 @@ def test_release_allowlist_is_default_deny_for_wheels() -> None:
     assert validate_names(["premode/private_dump.py"], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True) == ["unexpected_wheel_member:premode/private_dump.py"]
 
 
+def test_source_distribution_prunes_test_and_release_script_trees() -> None:
+    manifest = (ROOT / "MANIFEST.in").read_text(encoding="utf-8")
+    assert "prune tests" in manifest
+    assert "prune scripts" in manifest
+
+
 def test_public_repository_hygiene_guard_passes() -> None:
     result = scan(ROOT)
     assert result["passed"], result["failures"]
@@ -106,3 +112,18 @@ def test_artifact_scanner_covers_private_identity_categories(tmp_path: Path) -> 
     assert any(item.startswith("prohibited_email:") for item in failures)
     assert any(item.startswith("prohibited_private_network:") for item in failures)
     assert any(item.startswith("prohibited_system_id:") for item in failures)
+
+
+def test_artifact_exact_signature_allowance_handles_sdist_prefix_without_hiding_secret(tmp_path: Path) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    archive = tmp_path / "source.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(
+            "premode_router-0/src/premode/redaction.py",
+            'PATTERN = r"github_' + 'pat_[A-Za-z0-9_]{20,}"\nREAL = "github_' + 'pat_1234567890abcdefghijklmnop"\n',
+        )
+
+    failures = validate_archive_content(archive, policy)
+
+    assert any(item.startswith("prohibited_content:") for item in failures)
+    assert any(item.startswith("prohibited_secret:") for item in failures)

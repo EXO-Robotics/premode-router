@@ -84,7 +84,15 @@ def validate_archive_content(path: Path, policy: dict[str, object]) -> list[str]
         with tarfile.open(path, "r:gz") as archive:
             payloads = [(item.name, archive.extractfile(item).read()) for item in archive.getmembers() if item.isfile() and archive.extractfile(item) is not None]
     for name, data in payloads:
-        for signature in allowed_signatures.get(name, ()):
+        member_signatures = tuple(
+            signature
+            for member, signatures in allowed_signatures.items()
+            if name == member
+            or name.endswith("/" + member)
+            or (member.startswith("premode/") and name.endswith("/src/" + member))
+            for signature in signatures
+        )
+        for signature in member_signatures:
             data = data.replace(signature, b"")
         for pattern in patterns:
             lowered = data.lower()
@@ -217,6 +225,11 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         smoke_home.mkdir()
         smoke_env = {**env, "HOME": str(smoke_home), "PATH": str(smoke_bin) + os.pathsep + env.get("PATH", "")}
         run(str(smoke_bin / "pcodex"), "--help", cwd=temp, env=smoke_env)
+        installed_contract = json.loads(run(
+            str(smoke_python), "-c",
+            "import json; from premode.product_contract import validate_installed_product_contract as v; print(json.dumps(v(),sort_keys=True))",
+            cwd=temp, env=smoke_env,
+        ))
         setup_payload = json.loads(run(str(smoke_bin / "pcodex"), "setup", "--skip-tune", "--no-mcp", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         status_payload = json.loads(run(str(smoke_bin / "pcodex"), "status", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         before_user_files = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file() and ".premode" not in path.parts}
@@ -228,8 +241,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             "r=compile_prompt(Path(sys.argv[1]),sys.argv[2],'lite',packet_version='v5',"
             "packet_variant='tool_assisted_anchors_internal',packet_strategy='literal_symbol',"
             "canonical_core_packet=True,record_artifacts=False); "
-            "d=r.get('routing_decision') or {}; "
-            "print(json.dumps({'routing_decision':d,'selected_paths':[*(d.get('primary_paths') or []),*(d.get('verification_paths') or []),*(d.get('support_paths') or [])]}))",
+            "d=r.get('production_ranking') or {}; "
+            "print(json.dumps({'production_ranking':d,'selected_paths':[*(d.get('primary_paths') or []),*(d.get('verify_paths') or []),*(d.get('support_paths') or [])]}))",
             str(fixture), smoke_task, cwd=temp, env=smoke_env,
         ))
         after_user_files = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file() and ".premode" not in path.parts}
@@ -238,16 +251,54 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         selected = compile_payload.get("selected_paths") or []
         if any(part in str(path).split("/") for path in selected for part in {".git", ".pcodex", ".premode"}):
             raise RuntimeError(f"installed smoke selected runtime state: {selected}")
-        decision = compile_payload.get("routing_decision") if isinstance(compile_payload.get("routing_decision"), dict) else {}
-        if decision.get("mode") == "abstain" or "src/app.py" not in selected:
+        decision = compile_payload.get("production_ranking") if isinstance(compile_payload.get("production_ranking"), dict) else {}
+        if decision.get("routing_mode") == "abstain" or "src/app.py" not in selected:
             raise RuntimeError(f"installed smoke did not exercise routed default strategy: {decision} {selected}")
+        before_uninstall_preview = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file()}
+        uninstall_preview = json.loads(run(
+            str(smoke_bin / "pcodex"), "uninstall", "--dry-run", "--json", "--repo-root", str(fixture),
+            cwd=temp, env=smoke_env,
+        ))
+        after_uninstall_preview = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file()}
+        if before_uninstall_preview != after_uninstall_preview or uninstall_preview.get("writes_performed") is not False:
+            raise RuntimeError("installed uninstall preview mutated fixture state")
+
+        sdist_smoke = "not_requested"
+        if with_sdist:
+            sdists = list(artifacts.glob("*.tar.gz"))
+            if len(sdists) != 1:
+                raise RuntimeError(f"expected exactly one sdist, found {len(sdists)}")
+            sdist_wheel_dir = temp / "sdist-wheel"
+            sdist_wheel_dir.mkdir()
+            run(python, "-m", "pip", "wheel", "--no-deps", "--no-build-isolation", "--wheel-dir", str(sdist_wheel_dir), str(sdists[0]), cwd=temp, env=env)
+            sdist_wheels = list(sdist_wheel_dir.glob("*.whl"))
+            if len(sdist_wheels) != 1:
+                raise RuntimeError("sdist did not produce exactly one wheel")
+            sdist_root = temp / "smoke-sdist"
+            run(python, "-m", "venv", str(sdist_root))
+            sdist_python = sdist_root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            sdist_bin = sdist_root / ("Scripts" if os.name == "nt" else "bin")
+            run(str(sdist_python), "-m", "pip", "install", "--no-index", "--no-deps", str(sdist_wheels[0]), cwd=temp)
+            run(str(sdist_python), "-c", "from premode.product_contract import validate_installed_product_contract as v; assert v()['status']=='valid'", cwd=temp)
+            run(str(sdist_python), "-c", "from premode.production_ranking import PRODUCTION_RANKING_PROVIDER_VERSION as v; assert v=='production-ranking-provider.v1'", cwd=temp)
+            run(str(sdist_bin / "pcodex"), "--help", cwd=temp)
+            run(str(sdist_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
+            run(str(sdist_python), "-c", "import importlib.util; assert importlib.util.find_spec('premode') is None", cwd=temp)
+            sdist_smoke = "passed"
         write_json(output / "receipts" / "install-smoke.json", {
             "status": "passed", "offline": True, "source_checkout_absent": True,
             "default_strategy": probe, "commit": commit_sha,
             "setup_status": setup_payload.get("setup_status"), "pcodex_status": status_payload.get("status"),
             "dry_run_codex_launch": dry_payload.get("codex_launch"), "selected_paths": selected,
+            "installed_contract": installed_contract,
+            "provider_version": decision.get("provider_version"),
+            "uninstall_preview_status": uninstall_preview.get("status"),
+            "uninstall_preview_writes": uninstall_preview.get("writes_performed"),
+            "sdist_smoke": sdist_smoke,
             "external_strategy_distribution_present": False,
         })
+        run(str(smoke_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
+        run(str(smoke_python), "-c", "import importlib.util; assert importlib.util.find_spec('premode') is None", cwd=temp)
         bundle = write_tester_bundle(source, output, artifacts)
         bundle_failures = validate_names(members(bundle), allowed_prefixes=list(policy["bundle_allowed_prefixes"]), policy=policy)
         bundle_failures.extend(validate_archive_content(bundle, policy))

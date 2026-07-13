@@ -31,6 +31,8 @@ from .context_constraints import (
 )
 from .core_packet import CorePath, core_packet_leakage, render_core_packet
 from .routing_contract import decision_from_manifest
+from .production_ranking import ProductionRankingProviderV1, ProductionRankingRequestV1, rank_with_provider
+from .production_ranking_incumbent import IncumbentManifestRankingProviderV1
 from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, extract_evidence_snippets
 from .repo_summary import summarize_file
 from .repo_map import (
@@ -5730,13 +5732,14 @@ def _v5_internal_anchor_suffix_lines(manifest: dict[str, Any]) -> list[str]:
 
 
 def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, str]:
-    backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
-    routing = manifest.get("routing_decision") if isinstance(manifest.get("routing_decision"), dict) else {}
+    routing = manifest.get("production_ranking") if isinstance(manifest.get("production_ranking"), dict) else {}
+    if not routing:
+        routing = manifest.get("routing_decision") if isinstance(manifest.get("routing_decision"), dict) else {}
     primary = [str(path) for path in routing.get("primary_paths") or [] if path]
-    related = [str(path) for path in routing.get("verification_paths") or [] if path]
+    related = [str(path) for path in (routing.get("verify_paths") or routing.get("verification_paths") or []) if path]
     support = [str(path) for path in routing.get("support_paths") or [] if path]
     exact_task = str(manifest.get("canonical_user_prompt") or "")
-    if routing.get("mode") == "abstain":
+    if (routing.get("routing_mode") or routing.get("mode")) == "abstain":
         return exact_task, "", exact_task
     def item(path: str, role: str) -> CorePath:
         # The public canonical packet is a deterministic projection of the
@@ -6592,6 +6595,7 @@ def build_compiled_packet(
     include_packet_debug_metadata: bool = False,
     tuning_profile: Path | str | None = None,
     canonical_core_packet: bool = False,
+    production_ranking_provider: ProductionRankingProviderV1 | None = None,
 ) -> dict[str, Any]:
     selected_context = select_context(repo_root, raw_prompt, profile_name, use_repo_map=use_repo_map, context_only=context_only, record=record)
     manifest = selected_context["manifest"]
@@ -6789,7 +6793,19 @@ def build_compiled_packet(
             manifest["metrics"]["model_facing_evidence_tokens"] = 0
 
     if canonical_core_packet:
+        # Keep the internal routing receipt for compatibility and diagnostics,
+        # but render only the stable product-facing projection.
         manifest["routing_decision"] = decision_from_manifest(repo_root, manifest).to_dict()
+        ranking_request = ProductionRankingRequestV1(
+            exact_task=raw_prompt,
+            resolved_repository_context={"repo_root": str(repo_root), "manifest": manifest},
+            supported_execution_options={
+                "canonical_packet_renderer": "canonical_core_v1",
+                "packet_version": marker,
+            },
+        )
+        provider = production_ranking_provider or IncumbentManifestRankingProviderV1()
+        manifest["production_ranking"] = rank_with_provider(provider, ranking_request).to_dict()
     packet, prefix, suffix = _render_packet_parts_from_manifest(manifest, selected)
     if marker == PACKET_V5_MARKER:
         manifest["model_facing_leakage_check"] = (
@@ -7210,6 +7226,7 @@ def compile_prompt(
     include_packet_debug_metadata: bool = False,
     tuning_profile: Path | str | None = None,
     canonical_core_packet: bool = False,
+    production_ranking_provider: ProductionRankingProviderV1 | None = None,
 ) -> dict[str, Any]:
     if record_artifacts is None:
         record_artifacts = record
@@ -7229,6 +7246,7 @@ def compile_prompt(
         include_packet_debug_metadata=include_packet_debug_metadata,
         tuning_profile=tuning_profile,
         canonical_core_packet=canonical_core_packet,
+        production_ranking_provider=production_ranking_provider,
     )
     packet = compiled["packet"]
     manifest = compiled["manifest"]
@@ -7252,7 +7270,7 @@ def compile_prompt(
         "packet_mode": manifest.get("packet_mode"),
         "model_facing_packet_mode": manifest.get("model_facing_packet_mode"),
         "canonical_core_packet": bool(manifest.get("canonical_core_packet")),
-        "routing_decision": manifest.get("routing_decision"),
+        "production_ranking": manifest.get("production_ranking"),
         "packet_receipt_mode": manifest.get("packet_receipt_mode"),
         "selected_paths_only_first_class": bool(manifest.get("selected_paths_only_first_class")),
         "packet_detail_mode": manifest.get("packet_detail_mode"),
@@ -7363,6 +7381,10 @@ def compile_prompt(
         "packet_sha256": manifest["metrics"].get("packet_sha256"),
         "compiled_packet_sha256": sha256_text(packet),
     }
+    if not manifest.get("production_ranking") and manifest.get("routing_decision") is not None:
+        # Legacy/non-canonical packet modes retain their historical diagnostic
+        # receipt. Canonical pCodex output exposes only production_ranking.
+        record["routing_decision"] = manifest.get("routing_decision")
     record["packet_hashes"] = {
         "packet_sha256": record["compiled_packet_sha256"],
         "cacheable_prefix_sha256": record.get("cacheable_prefix_sha256"),

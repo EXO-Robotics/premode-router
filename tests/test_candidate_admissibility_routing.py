@@ -74,7 +74,7 @@ def test_stale_runtime_index_is_not_reused_by_read_only_compile(tmp_path: Path) 
     result = compile_prompt(repo, "Change calculate_total to reject negative values and update its test.", record_artifacts=False, canonical_core_packet=True, packet_version="v5", packet_variant="tool_assisted_anchors_internal", packet_strategy="literal_symbol")
     rendered = result["packet"]
     assert ".pcodex" not in rendered
-    assert all(".pcodex" not in path for bucket in ("primary_paths", "verification_paths", "support_paths") for path in result["routing_decision"][bucket])
+    assert all(".pcodex" not in path for bucket in ("primary_paths", "verify_paths", "support_paths") for path in result["production_ranking"][bucket])
 
 
 def test_outside_symlink_and_fifo_are_denied(tmp_path: Path) -> None:
@@ -167,11 +167,7 @@ def test_explicit_source_and_test_keep_source_primary_and_test_verification(tmp_
         packet_strategy="literal_symbol",
     )
 
-    decision = result["routing_decision"]
-    assert decision["mode"] != "abstain"
-    assert decision["primary_paths"] == ("src/app.py",)
-    assert decision["verification_paths"] == ("tests/test_app.py",)
-    assert {(item["role"], item["path"]) for item in decision["candidate_provenance"]} >= {
-        ("primary", "src/app.py"),
-        ("verification", "tests/test_app.py"),
-    }
+    decision = result["production_ranking"]
+    assert decision["routing_mode"] != "abstain"
+    assert decision["primary_paths"] == ["src/app.py"]
+    assert decision["verify_paths"] == ["tests/test_app.py"]

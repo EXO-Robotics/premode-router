@@ -123,7 +123,7 @@ def test_primary_help_exposes_only_narrow_surfaces(capsys) -> None:
         assert exc.code == 0
     help_text = capsys.readouterr().out
 
-    for command in ("setup", "status", "run", "review", "off", "cleanup", "doctor"):
+    for command in ("setup", "status", "run", "review", "off", "cleanup", "uninstall", "doctor"):
         assert command in help_text
     for developer_surface in ("tune", "tuned", "mcp-server", "integrate", "plugin", "ui", "compile"):
         assert developer_surface not in help_text
@@ -271,7 +271,7 @@ def test_integrated_degraded_pcodex_uses_canonical_fallback(tmp_path: Path, monk
     assert compiled["packet"].splitlines().count(task) == 1
     assert "LIKELY FILES" not in compiled["packet"]
     assert compiled["packet"] == task
-    assert compiled["routing_decision"]["mode"] == "abstain"
+    assert compiled["production_ranking"]["routing_mode"] == "abstain"
     assert "No likely files met the confidence threshold." not in compiled["packet"]
     assert "large_repo_budget_exceeded" not in compiled["packet"]
 

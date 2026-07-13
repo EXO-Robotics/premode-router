@@ -1,11 +1,13 @@
 include README.md
 include CHANGELOG.md
 include pyproject.toml
+include premode.product.json
+recursive-include schemas *.json
 recursive-include src *.py
-recursive-include tests *.py
 recursive-include docs *.md *.json
 recursive-include examples *
-recursive-include scripts *
+prune tests
+prune scripts
 recursive-exclude .git *
 recursive-exclude .venv *
 recursive-exclude **/__pycache__ *
