@@ -30,6 +30,7 @@ from .context_constraints import (
     is_restricted_edit_bucket_path,
 )
 from .core_packet import CorePath, core_packet_leakage, render_core_packet
+from .packet_causality import build_packet_causality_trace
 from .routing_contract import decision_from_manifest
 from .evidence_snippets import DEFAULT_SNIPPET_BUDGET_TOKENS, extract_evidence_snippets
 from .repo_summary import summarize_file
@@ -6874,6 +6875,7 @@ def build_compiled_packet(
         "saved_context_tokens": metrics.get("saved_context_tokens"),
         "local_manifest_tokens": metrics.get("local_manifest_tokens"),
     })
+    manifest["packet_causality_trace"] = build_packet_causality_trace(manifest, packet)
     return {"packet": packet, "manifest": manifest, "cacheable_prefix": prefix, "dynamic_suffix": suffix}
 
 
@@ -7332,6 +7334,7 @@ def compile_prompt(
         "routing_filter_diagnostics": manifest.get("routing_filter_diagnostics"),
         "context_receipt": manifest.get("context_receipt"),
         "packet_audit_receipt": manifest.get("packet_audit_receipt"),
+        "packet_causality_trace": manifest.get("packet_causality_trace"),
         "scope_contract": manifest.get("patch_boundary"),
         "review_metadata": _harness_review_metadata_from_manifest(manifest),
         "verification_suggestions": {
