@@ -44,6 +44,13 @@ def test_release_allowlist_is_default_deny_for_sdist_source_members() -> None:
     assert validate_sdist_names([prefix + "src/premode/no_write.py"], policy) == []
     assert validate_sdist_names([prefix + "src/app.py"], policy) == ["unexpected_sdist_member:src/app.py"]
     assert validate_sdist_names([prefix + "src/premode/private_dump.py"], policy) == ["unexpected_sdist_member:src/premode/private_dump.py"]
+    assert validate_sdist_names([prefix + "plugins/pcodex/accidental.txt"], policy) == [
+        "unexpected_sdist_member:plugins/pcodex/accidental.txt"
+    ]
+    accidental_wheel = "premode_router-0.3.0b1.data/data/share/premode-router/plugins/pcodex/accidental.txt"
+    assert validate_names(
+        [accidental_wheel], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True
+    ) == [f"unexpected_wheel_member:{accidental_wheel}"]
 
 
 def test_source_distribution_prunes_test_and_release_script_trees() -> None:

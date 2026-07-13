@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EXO-Robotics/premode-router/schemas/pcodex.codex-native-operation.v1.schema.json",
+  "title": "pCodex native Codex operation journal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "operation", "ownership_id", "plugin_version", "with_mcp",
+    "workspace", "marketplace_root", "codex_home", "config_path",
+    "config_preexisting_hash", "unrelated_value_hash", "phase"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.codex-native-operation.v1"},
+    "operation": {"enum": ["install", "disable", "uninstall"]},
+    "ownership_id": {"type": "string", "pattern": "^[0-9a-f-]{36}$"},
+    "plugin_version": {"type": "string"},
+    "with_mcp": {"type": "boolean"},
+    "workspace": {"type": "string"},
+    "marketplace_root": {"type": "string"},
+    "codex_home": {"type": "string"},
+    "config_path": {"type": "string"},
+    "config_preexisting_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "unrelated_value_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "phase": {
+      "enum": [
+        "started", "marketplace_registered", "plugin_registered", "mcp_registered",
+        "manual_recovery_required", "plugin_disabled", "mcp_disabled",
+        "plugin_removed", "mcp_removed", "marketplace_removed"
+      ]
+    }
+  }
+}

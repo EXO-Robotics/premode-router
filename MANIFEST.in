@@ -3,7 +3,12 @@ include CHANGELOG.md
 include pyproject.toml
 include premode.product.json
 recursive-include schemas *.json
+recursive-include plugins/pcodex *
+include plugins/pcodex/.codex-plugin/plugin.json
 recursive-include src *.py
+recursive-exclude src/premode lab73*.py
+exclude src/premode/live_token_harness.py
+exclude src/premode/sharded_runner.py
 recursive-include docs *.md *.json
 recursive-include examples *
 prune tests

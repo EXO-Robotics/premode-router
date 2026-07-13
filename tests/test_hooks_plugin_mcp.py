@@ -22,13 +22,12 @@ def test_hook_strict_blocks_uncompiled_and_augment_adds_context(repo):
 def test_plugin_manifest_hooks_mcp_parse(repo):
     init_project(repo)
     paths = install_local_plugin(repo, "repo")
-    for key in ["marketplace", "manifest", "hooks", "mcp"]:
-        data = json.loads(open(paths[key], encoding="utf-8").read())
-        assert data
-    manifest = json.loads(open(paths["manifest"], encoding="utf-8").read())
+    manifest = json.loads((repo / "plugins" / "pcodex" / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
     assert manifest["skills"] == "./skills/"
-    assert manifest["hooks"] == "./hooks/hooks.json"
-    assert manifest["mcpServers"] == "./.mcp.json"
+    assert "hooks" not in manifest
+    assert "mcpServers" not in manifest
+    assert paths["canonical_command"] == "pcodex integrate codex --write"
+    assert not (repo / ".agents" / "plugins" / "plugins" / "premode-router").exists()
 
 
 def test_mcp_tools_json_safe_read_only(repo):

@@ -22,11 +22,11 @@ The supported runtime is Codex CLI through explicit terminal commands. Terminal 
 
 Do not assume `/pcodex` slash commands, native hosted Codex UI integration, automatic MCP invocation, native installed-Codex schema discovery, or real internal Codex subagent interception.
 
-Repo-local Codex UX assets live under `.agents/skills`, `.agents/plugins/marketplace.json`, and top-level `plugins/`. The local pCodex plugin scaffold is discoverable from `plugins/pcodex` and is not a public marketplace publication or production approval.
+`plugins/pcodex` is the sole canonical plugin source and ships in wheel and sdist artifacts. `.agents/plugins/marketplace.json` is mixed registration state, not content authority. Historical `.agents/skills/pcodex*` and `premode-router` trees are legacy migration inputs only.
 
-Use `pcodex integrate codex --dry-run` before writing these UX assets. `pcodex integrate codex --write` writes only repo-local skill/plugin/marketplace files. `pcodex integrate codex --write --with-mcp` adds only optional repo-local MCP scaffold/config messaging; MCP activation remains separate and user-approved, and global Codex config is not mutated by default.
+Use `pcodex integrate codex --dry-run` before `--write`. Status, repair, reversible disable, uninstall, and conservative migration share the same receipt-bound command family. `--with-mcp` is explicit and never implied by normal plugin installation.
 
-Repo-local pCodex skills use `.agents/skills/pcodex/bin/resolve-pcodex.sh` before running terminal commands. The resolver checks `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`, and otherwise prints paste-safe install guidance without writing files or launching Codex.
+The plugin-local resolver uses `PCODEX_BIN` or `pcodex` on `PATH`. It does not depend on a source checkout, target-repository helper, sibling repository, or legacy alpha install.
 
 ## 5. Python requirement
 

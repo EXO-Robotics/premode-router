@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EXO-Robotics/premode-router/schemas/pcodex.codex-plugin-operation.v1.schema.json",
+  "title": "pCodex repository plugin operation journal v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation", "ownership_id", "phase"],
+  "properties": {
+    "schema_version": {"const": "pcodex.codex-plugin-operation.v1"},
+    "operation": {"enum": ["install", "migration", "disable", "repair", "uninstall"]},
+    "ownership_id": {"type": "string"},
+    "plugin_version": {"type": "string"},
+    "phase": {"type": "string"},
+    "planned_files": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+    "planned_hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+    "with_mcp": {"type": "boolean"},
+    "legacy_removed": {"type": "array", "items": {"type": "string"}},
+    "marketplace_preexisting_entry": {"type": ["object", "null"]},
+    "marketplace_preexisting_file_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"}
+  }
+}

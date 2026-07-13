@@ -38,18 +38,18 @@ def _inside_git_repo(repo_root: Path) -> bool:
 
 
 def _plugin_checks(repo_root: Path) -> dict:
-    root = repo_root / ".agents" / "plugins" / "plugins" / "premode-router"
+    root = repo_root / "plugins" / "pcodex"
     manifest = root / ".codex-plugin" / "plugin.json"
-    hooks = root / "hooks" / "hooks.json"
     mcp = root / ".mcp.json"
     skills_dir = root / "skills"
     return {
         "installed": root.exists(),
         "manifest": _json_valid(manifest),
-        "hooks": _json_valid(hooks),
-        "mcp": _json_valid(mcp),
+        "hooks": {"present": False, "valid": True, "reason": "unsupported_and_omitted"},
+        "mcp": _json_valid(mcp) if mcp.exists() else {"present": False, "valid": True, "reason": "optional_disabled"},
         "skills": sorted(p.name for p in skills_dir.iterdir() if p.is_dir()) if skills_dir.exists() else [],
-        "hook_script_executable": (root / "hooks" / "premode_hook.py").exists() and bool((root / "hooks" / "premode_hook.py").stat().st_mode & 0o111),
+        "helper_executable": (root / "skills" / "pcodex" / "bin" / "resolve-pcodex.sh").exists()
+        and bool((root / "skills" / "pcodex" / "bin" / "resolve-pcodex.sh").stat().st_mode & 0o111),
     }
 
 

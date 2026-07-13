@@ -82,137 +82,6 @@ LOCAL_STATE_CLEANUP_TARGETS = [
     ".premode/pcodex_codex_home/",
 ]
 
-PCODEX_RESOLVER_RELATIVE_PATH = ".agents/skills/pcodex/bin/resolve-pcodex.sh"
-
-PCODEX_RESOLVER_SCRIPT = """#!/usr/bin/env sh
-set -eu
-
-if [ -x "./.venv/bin/pcodex" ]; then
-  printf '%s\\n' "./.venv/bin/pcodex"
-  exit 0
-fi
-
-if [ -n "${HOME:-}" ] && [ -x "$HOME/.pcodex-alpha/bin/pcodex" ]; then
-  printf '%s\\n' "$HOME/.pcodex-alpha/bin/pcodex"
-  exit 0
-fi
-
-if command -v pcodex >/dev/null 2>&1; then
-  command -v pcodex
-  exit 0
-fi
-
-cat >&2 <<'EOF'
-pCodex executable not found.
-
-Looked for:
-- ./.venv/bin/pcodex
-- $HOME/.pcodex-alpha/bin/pcodex
-- pcodex on PATH
-
-Install/setup guidance:
-- From the pCodex source checkout, create or refresh the local install so a pcodex executable exists.
-- For a repo-local developer checkout, run the source install/bootstrap flow first, then retry this skill.
-- Do not run live Codex tasks until `pcodex status --advisory --json` succeeds.
-EOF
-exit 127
-"""
-
-PCODEX_SKILL_RUNTIME_BINDING = f"""Resolve the pCodex executable before running commands:
-
-```sh
-PCODEX_BIN="$(./{PCODEX_RESOLVER_RELATIVE_PATH})" || exit $?
-```
-
-Resolver order:
-
-1. `./.venv/bin/pcodex`
-2. `$HOME/.pcodex-alpha/bin/pcodex`
-3. `command -v pcodex`
-
-If the resolver fails, report its install guidance exactly enough to be useful, but do not print environment dumps, secrets, raw prompts, or full filesystem listings.
-"""
-
-CODEX_NATIVE_SKILL_SPECS: dict[str, dict[str, str]] = {
-    "pcodex": {
-        "description": "Use terminal pcodex commands for safe pCodex overview and workflow checks.",
-        "body": f"""# pCodex
-
-Use terminal `pcodex` commands as the reliable control plane for this repo.
-
-{PCODEX_SKILL_RUNTIME_BINDING}
-
-Start with safe local checks:
-
-- `$PCODEX_BIN status --json`
-- `$PCODEX_BIN doctor --json`
-- `$PCODEX_BIN run --dry-run "<task>"`
-
-Keep setup and previews local. Do not launch live Codex from this skill. Do not modify application source files. Optional MCP wiring is explicit and user-approved; terminal commands remain the guaranteed interface.
-""",
-    },
-    "pcodex-status": {
-        "description": "Inspect pCodex status, doctor output, mode, tuning, and readiness.",
-        "body": f"""# pCodex Status
-
-Use this skill to inspect pCodex readiness without changing application source files.
-
-Use terminal `pcodex` commands as the reliable control plane.
-
-{PCODEX_SKILL_RUNTIME_BINDING}
-
-Preferred safe checks:
-
-- `$PCODEX_BIN status --advisory --json`
-- `$PCODEX_BIN doctor --advisory --json`
-
-Review configured mode, effective mode, algorithm, tuning state, MCP status, fallback state, and next recommended action. Optional MCP wiring is explicit and user-approved. Do not launch live Codex from this skill.
-""",
-    },
-    "pcodex-dry-run": {
-        "description": "Preview a pCodex task locally with pcodex run --dry-run.",
-        "body": f"""# pCodex Dry Run
-
-Use this skill to preview a requested task without launching live Codex.
-
-{PCODEX_SKILL_RUNTIME_BINDING}
-
-Preferred command:
-
-- `$PCODEX_BIN run --dry-run "<task>" --json`
-
-Confirm `codex_launch` reports `not_executed` before treating the preview as safe. Do not modify application source files. Optional MCP wiring is explicit and user-approved; terminal commands remain the reliable control plane.
-
-If the user requires no file modifications at all, first inspect `$PCODEX_BIN status --advisory --json`. If generated `.premode` state is missing or stale and `pcodex run --dry-run` would refresh generated state, do not run it. Report that dry-run is blocked until generated-state refresh is explicitly allowed or a no-write dry-run mode exists.
-""",
-    },
-    "pcodex-tune": {
-        "description": "Run or inspect local pCodex tuning verification without live Codex.",
-        "body": f"""# pCodex Tune
-
-Use this skill for local tuning inspection or verification only.
-
-{PCODEX_SKILL_RUNTIME_BINDING}
-
-Safe checks include:
-
-- `$PCODEX_BIN status --advisory --json`
-- `$PCODEX_BIN doctor --advisory --json`
-- `$PCODEX_BIN tune --validate`
-- `$PCODEX_BIN tune --verify`
-
-Do not launch live Codex from this skill. Do not modify application source files. Optional MCP wiring is explicit and user-approved, and terminal `pcodex` commands remain the guaranteed interface.
-""",
-    },
-}
-
-CODEX_NATIVE_ALLOWED_PREFIXES = (
-    ".agents/skills/",
-    "plugins/pcodex/",
-    ".agents/plugins/marketplace.json",
-)
-
-
 @dataclass(frozen=True)
 class PcodexConfig:
     enabled: bool = False
@@ -2140,210 +2009,22 @@ def format_setup_dashboard(payload: dict[str, Any], *, verbose: bool = False) ->
     return "\n".join(lines)
 
 
-def _skill_markdown(name: str, spec: dict[str, str]) -> str:
-    return (
-        "---\n"
-        f"name: {name}\n"
-        f"description: {spec['description']}\n"
-        "---\n"
-        f"{spec['body'].rstrip()}\n"
-    )
-
-
-def _pcodex_plugin_manifest() -> dict[str, Any]:
-    return {
-        "schema_version": "codex.plugin.v1",
-        "name": "pcodex",
-        "display_name": "pCodex",
-        "version": "0.1.0-local",
-        "description": "Repo-local pCodex skills and optional MCP scaffold for terminal-first Codex workflows.",
-        "source": {"type": "local", "path": "plugins/pcodex"},
-        "skills": "./skills/",
-        "entrypoints": {"skills": "skills"},
-        "capabilities": ["skills", "optional_mcp"],
-        "policy": {
-            "publication": "repo_local_only",
-            "production_approval": False,
-            "global_config_mutation": False,
-            "live_codex_launch": False,
-        },
-    }
-
-
-def _pcodex_plugin_mcp_config() -> dict[str, Any]:
-    return {
-        "pcodex": {
-            "command": "pcodex",
-            "args": ["mcp-server"],
-            "enabled_by_default": False,
-            "activation": "optional_explicit_user_approved",
-            "notes": [
-                "Repo-local scaffold only.",
-                "Does not mutate ~/.codex/config.toml.",
-                "Does not prove automatic MCP invocation.",
-            ],
-        }
-    }
-
-
-def _load_marketplace(repo_root: Path) -> dict[str, Any]:
-    path = repo_root / ".agents" / "plugins" / "marketplace.json"
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    if payload.get("name") == "local-pemode-marketplace":
-        payload["name"] = "local-premode-marketplace"
-    payload.setdefault("name", "local-premode-marketplace")
-    payload.setdefault("interface", {"displayName": "Local Pre-mode Plugins"})
-    plugins = payload.get("plugins")
-    if not isinstance(plugins, list):
-        payload["plugins"] = []
-    return payload
-
-
-def _pcodex_marketplace_payload(repo_root: Path) -> dict[str, Any]:
-    payload = _load_marketplace(repo_root)
-    plugins = [item for item in payload.get("plugins", []) if isinstance(item, dict) and item.get("name") != "pcodex"]
-    plugins.append(
-        {
-            "name": "pcodex",
-            "source": {"source": "local", "path": "./plugins/pcodex"},
-            "policy": {
-                "installation": "AVAILABLE",
-                "authentication": "NONE",
-                "publication": "REPO_LOCAL_ONLY",
-                "productionApproval": False,
-                "globalConfigMutation": False,
-            },
-            "category": "Developer Tools",
-            "description": "Repo-local pCodex skills and optional MCP scaffold. Terminal pcodex remains the guaranteed control plane.",
-        }
-    )
-    payload["plugins"] = plugins
-    return payload
-
-
-def _codex_native_surface_files(repo_root: Path) -> dict[str, str]:
-    files: dict[str, str] = {}
-    for name, spec in CODEX_NATIVE_SKILL_SPECS.items():
-        skill = _skill_markdown(name, spec)
-        files[f".agents/skills/{name}/SKILL.md"] = skill
-        files[f"plugins/pcodex/skills/{name}/SKILL.md"] = skill
-    files[PCODEX_RESOLVER_RELATIVE_PATH] = PCODEX_RESOLVER_SCRIPT
-    files["plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh"] = PCODEX_RESOLVER_SCRIPT
-    files["plugins/pcodex/.codex-plugin/plugin.json"] = json.dumps(_pcodex_plugin_manifest(), indent=2, sort_keys=True) + "\n"
-    files["plugins/pcodex/.mcp.json"] = json.dumps(_pcodex_plugin_mcp_config(), indent=2, sort_keys=True) + "\n"
-    files["plugins/pcodex/assets/README.md"] = (
-        "# pCodex Plugin Assets\n\n"
-        "Repo-local placeholder for future pCodex plugin assets. This directory does not publish or activate MCP by itself.\n"
-    )
-    files[".agents/plugins/marketplace.json"] = json.dumps(_pcodex_marketplace_payload(repo_root), indent=2, sort_keys=True) + "\n"
-    return files
-
-
-def _filter_codex_native_files(files: dict[str, str], *, plugin_only: bool = False) -> dict[str, str]:
-    if not plugin_only:
-        return dict(files)
-    return {path: text for path, text in files.items() if path.startswith("plugins/pcodex/") or path == ".agents/plugins/marketplace.json"}
-
-
-def _validate_codex_native_write_scope(files: dict[str, str]) -> None:
-    for relative_path in files:
-        if not any(relative_path.startswith(prefix) or relative_path == prefix for prefix in CODEX_NATIVE_ALLOWED_PREFIXES):
-            raise ValueError(f"disallowed pCodex integration path: {relative_path}")
-
-
-def _codex_native_plan(repo_root: Path, files: dict[str, str], *, with_mcp: bool, command: str, dry_run: bool) -> dict[str, Any]:
-    planned = sorted(files)
-    existing = [path for path in planned if (repo_root / path).exists()]
-    would_write = [path for path in planned if not (repo_root / path).exists() or (repo_root / path).read_text(encoding="utf-8") != files[path]]
-    return {
-        "schema_version": "pcodex.codex_native_surface.v1",
-        "status": "dry_run" if dry_run else "planned",
-        "command": command,
-        "repo_root": str(repo_root),
-        "dry_run": dry_run,
-        "planned_files": planned,
-        "existing_files": existing,
-        "would_write_files": would_write,
-        "allowed_write_prefixes": list(CODEX_NATIVE_ALLOWED_PREFIXES),
-        "mcp": {
-            "repo_local_scaffold_file": "plugins/pcodex/.mcp.json" if "plugins/pcodex/.mcp.json" in files else None,
-            "included_in_plugin_scaffold": "plugins/pcodex/.mcp.json" in files,
-            "activation": "explicit_user_approved" if with_mcp else "skipped_by_default",
-            "global_config_mutation": False,
-            "warning": "MCP activation is separate and user-approved; this command does not mutate ~/.codex/config.toml.",
-        },
-        "codex_launch": "not_executed",
-        "global_config_mutation": False,
-        "publication": "not_published",
-    }
-
-
-def _write_codex_native_files(repo_root: Path, files: dict[str, str]) -> dict[str, list[str]]:
-    _validate_codex_native_write_scope(files)
-    written: list[str] = []
-    unchanged: list[str] = []
-    for relative_path, content in sorted(files.items()):
-        path = repo_root / relative_path
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if path.exists() and path.read_text(encoding="utf-8") == content:
-            if relative_path.endswith("/resolve-pcodex.sh"):
-                path.chmod(path.stat().st_mode | 0o755)
-            unchanged.append(relative_path)
-            continue
-        path.write_text(content, encoding="utf-8")
-        if relative_path.endswith("/resolve-pcodex.sh"):
-            path.chmod(0o755)
-        written.append(relative_path)
-    return {"written_files": written, "unchanged_files": unchanged}
-
-
 def integrate_codex_surface(repo_root: Path, *, dry_run: bool, write: bool, with_mcp: bool) -> dict[str, Any]:
-    files = _codex_native_surface_files(repo_root)
-    plan = _codex_native_plan(repo_root, files, with_mcp=with_mcp, command="integrate codex", dry_run=dry_run)
+    from .codex_plugin import apply_integration, integration_preview
+
     if dry_run or not write:
-        return plan
-    result = _write_codex_native_files(repo_root, files)
-    return {
-        **_codex_native_plan(repo_root, files, with_mcp=with_mcp, command="integrate codex", dry_run=False),
-        "status": "written",
-        **result,
-    }
+        return integration_preview(repo_root, with_mcp=with_mcp)
+    return apply_integration(repo_root, with_mcp=with_mcp)
 
 
 def plugin_init_local_marketplace(repo_root: Path, *, dry_run: bool) -> dict[str, Any]:
-    files = _filter_codex_native_files(_codex_native_surface_files(repo_root), plugin_only=True)
-    plan = _codex_native_plan(repo_root, files, with_mcp=False, command="plugin init --local-marketplace", dry_run=dry_run)
-    if dry_run:
-        return plan
-    result = _write_codex_native_files(repo_root, files)
-    return {
-        **_codex_native_plan(repo_root, files, with_mcp=False, command="plugin init --local-marketplace", dry_run=False),
-        "status": "written",
-        **result,
-    }
+    return integrate_codex_surface(repo_root, dry_run=dry_run, write=not dry_run, with_mcp=False)
 
 
 def format_codex_native_plan(payload: dict[str, Any]) -> str:
-    lines = [
-        "pCodex Codex integration",
-        f"Status: {payload.get('status')}",
-        f"Dry run: {str(payload.get('dry_run')).lower()}",
-        f"Planned files: {len(payload.get('planned_files') or [])}",
-        f"Existing files: {len(payload.get('existing_files') or [])}",
-        f"Would write: {len(payload.get('would_write_files') or [])}",
-        "MCP: optional; activation is separate and user-approved.",
-        "Global Codex config mutation: no",
-        "Live Codex launch: no",
-    ]
-    written = payload.get("written_files")
-    if isinstance(written, list):
-        lines.append(f"Written files: {len(written)}")
-    return "\n".join(lines)
+    from .codex_plugin import format_result
+
+    return format_result(payload)
 
 
 def pcodex_ui_payload(repo_root: Path) -> dict[str, Any]:
@@ -2712,9 +2393,14 @@ def _parser() -> argparse.ArgumentParser:
     integrate_sub = integrate.add_subparsers(dest="integrate_command", required=True)
     integrate_codex = integrate_sub.add_parser("codex")
     integrate_mode = integrate_codex.add_mutually_exclusive_group()
-    integrate_mode.add_argument("--dry-run", action="store_true", help="Report planned repo-local Codex UX files without writing.")
-    integrate_mode.add_argument("--write", action="store_true", help="Create or update repo-local Codex UX files.")
-    integrate_codex.add_argument("--with-mcp", action="store_true", help="Include explicit optional MCP scaffold messaging; no global registration.")
+    integrate_mode.add_argument("--dry-run", action="store_true", help="Preview canonical plugin and registration changes without writing.")
+    integrate_mode.add_argument("--write", action="store_true", help="Install the canonical plugin with exact ownership receipts.")
+    integrate_mode.add_argument("--status", action="store_true", help="Inspect plugin and registration state without repairing it.")
+    integrate_mode.add_argument("--repair", action="store_true", help="Restore missing proven-owned state or re-enable a disabled plugin.")
+    integrate_mode.add_argument("--disable", action="store_true", help="Reversibly disable the receipt-owned marketplace entry.")
+    integrate_mode.add_argument("--uninstall", action="store_true", help="Remove only exact receipt-owned plugin and registration state.")
+    integrate_codex.add_argument("--migrate", action="store_true", help="Use migration semantics with --dry-run or --write; bare --migrate previews safely.")
+    integrate_codex.add_argument("--with-mcp", action="store_true", help="Explicitly include the optional workspace-bound MCP descriptor.")
     integrate_codex.add_argument("--json", action="store_true", help="Print machine-readable integration result.")
     integrate_codex.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     plugin = sub.add_parser("plugin")
@@ -3003,12 +2689,39 @@ def main(argv: list[str] | None = None) -> int:
         if args.integrate_command != "codex":
             print(json.dumps({"status": "error", "error": "unsupported integrate target"}, indent=2, sort_keys=True), file=sys.stderr)
             return 2
-        dry_run = bool(args.dry_run or not args.write)
-        payload = integrate_codex_surface(repo_root, dry_run=dry_run, write=bool(args.write), with_mcp=bool(args.with_mcp))
+        from .codex_plugin import (
+            apply_integration,
+            disable_integration,
+            integration_preview,
+            plugin_status,
+            repair_integration,
+            uninstall_integration,
+        )
+
+        if args.status:
+            payload = plugin_status(repo_root, native=True)
+        elif args.repair:
+            payload = repair_integration(repo_root, native=True)
+        elif args.disable:
+            payload = disable_integration(repo_root, native=True)
+        elif args.uninstall:
+            payload = uninstall_integration(repo_root, native=True)
+        elif args.write:
+            payload = apply_integration(repo_root, with_mcp=bool(args.with_mcp), migration=bool(args.migrate), native=True)
+        else:
+            payload = integration_preview(repo_root, with_mcp=bool(args.with_mcp), migration=bool(args.migrate), native=True)
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(format_codex_native_plan(payload))
+        if (
+            payload.get("status") == "blocked"
+            or payload.get("readiness") == "BLOCKED"
+            or (payload.get("conflicts") and payload.get("dry_run") is not True)
+        ):
+            return 2
+        if payload.get("readiness") == "NEEDS_ACTION" or payload.get("status") in {"needs_codex", "installed_needs_codex"}:
+            return 1
         return 0
     if args.command == "plugin":
         if args.plugin_command != "init" or not args.local_marketplace:
@@ -3081,3 +2794,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, indent=2, sort_keys=True))
         return int(result.get("returncode", 0) or 0)
     return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

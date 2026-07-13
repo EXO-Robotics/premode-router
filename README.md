@@ -59,17 +59,17 @@ Local control-plane files include `.premode/pcodex_state.json`, `.premode/lcc.lo
 
 ## Codex-Native UX Surface
 
-The repo-local Codex UX surface lives in `.agents/skills`, `.agents/plugins/marketplace.json`, and top-level `plugins/`. The pCodex plugin scaffold is local-only under `plugins/pcodex`; it is the intended discovery surface for a local Codex plugin marketplace and does not imply public marketplace publication or production approval.
+`plugins/pcodex` is the only authoritative Codex plugin source. Wheel and sdist artifacts ship that tree as installed data; `pcodex integrate codex --write` installs it with separate file, repo-marketplace, native Codex-config, enable-state, and cache receipts. Legacy `.agents/skills/pcodex*` and `premode-router` trees are migration inputs, never current source authority. This does not imply public marketplace publication or production approval.
 
-Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/resolve-pcodex.sh`, checking `./.venv/bin/pcodex`, `$HOME/.pcodex-alpha/bin/pcodex`, then `pcodex` on `PATH`. If none exists, the skill reports paste-safe setup guidance instead of a raw command-not-found error.
+The plugin-local helper resolves `PCODEX_BIN` or `pcodex` on `PATH`; it does not assume a checkout `.venv`, sibling repository, or legacy alpha installation.
 
 `pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
 
-`pcodex install` is a literal read-only preview; `pcodex install --apply` creates a deterministic product-owned lifecycle marker and its versioned authority receipt while leaving repository config user-owned. `pcodex repair --dry-run` is a literal read-only plan. `pcodex repair --yes` restores only missing receipt-proven state whose expected product bytes match the installed hash. `pcodex uninstall --dry-run` is the corresponding read-only removal preview; `pcodex uninstall --yes` removes only receipt-proven, unmodified, single-link regular files. Modified, unknown, preexisting, unrelated, symlink, hard-link, and unsupported registration state is preserved or blocked. Plugin marketplace/MCP registration removal remains deferred until exact registration authority is established.
+The public managed-state lifecycle and plugin lifecycle use separate receipts. `pcodex integrate codex --dry-run|--status` are read-only and do not launch Codex. `--write`, `--repair`, `--disable`, and `--uninstall` act only on exact receipt-proven plugin files, repo marketplace values, native Codex tables, and cache files. Modified, unknown, linked, malformed, and future-schema state is preserved or blocked.
 
-Terminal `pcodex` commands remain the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
+Terminal `pcodex` commands remain the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is absent by default; explicit `--write --with-mcp` adds a workspace-bound plugin descriptor, Codex registration, and receipts. Full MCP containment remains separately deferred. Previews launch neither Codex nor MCP.
 
-`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 local evidence shows the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex schema discovery, automatic Codex tool invocation, and real internal subagent interception are not yet proven.
+`pcodex mcp-server` exposes the local MCP tool name `pcodex_transform_subagent_prompt`. Alpha4 local evidence shows the command-backed local MCP path can start the stdio server, list the tool/schema through `tools/list`, and transform a safe dummy prompt. Native installed-Codex plugin/skill listing and MCP registration discovery are proven in an isolated Codex 0.143.0 fixture. Model-visible skill triggering, automatic Codex tool invocation, and real internal subagent interception are not proven.
 
 ## Supported Claims
 
@@ -83,7 +83,7 @@ Do not claim:
 - savings on all Codex tasks
 - production-ready Codex interception
 - automatic internal Codex subagent routing
-- native installed-Codex schema discovery
+- model-visible installed-skill triggering
 - hosted Codex UI integration
 - public package release readiness
 

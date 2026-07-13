@@ -116,8 +116,8 @@ def test_secret_redaction_catches_common_secret_shapes(repo):
 
 def test_richer_plugin_skills_created(repo):
     init_project(repo)
-    paths = install_local_plugin(repo)
-    skills = paths["skills"]
-    for name in ["premode-router", "compile-repair", "controlled-patch", "log-triage", "branch-review"]:
-        assert name in skills
-        assert Path(skills[name]).exists()
+    install_local_plugin(repo)
+    skills = repo / "plugins" / "pcodex" / "skills"
+    for name in ["pcodex", "pcodex-status", "pcodex-dry-run", "pcodex-tune"]:
+        assert (skills / name / "SKILL.md").exists()
+    assert not (repo / ".agents" / "plugins" / "plugins" / "premode-router").exists()

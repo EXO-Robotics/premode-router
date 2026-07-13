@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EXO-Robotics/premode-router/schemas/pcodex.codex-native-state.v1.schema.json",
+  "title": "pCodex native Codex registration authority v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "ownership_id", "plugin_version", "codex_home",
+    "config_path", "config_preexisting_hash", "with_mcp", "workspace",
+    "registrations", "cache"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.codex-native-state.v1"},
+    "ownership_id": {"type": "string", "format": "uuid"},
+    "plugin_version": {"type": "string"},
+    "codex_home": {"type": "string"},
+    "config_path": {"type": "string"},
+    "config_preexisting_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "with_mcp": {"type": "boolean"},
+    "workspace": {"type": "string"},
+    "registrations": {
+      "type": "object",
+      "required": ["codex_marketplace", "codex_plugin_enable"],
+      "additionalProperties": {"$ref": "#/$defs/registration"}
+    },
+    "cache": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["registration_type", "path", "files", "installed_value_hash", "ownership_id", "cleanup_policy", "repair_policy"],
+      "properties": {
+        "registration_type": {"const": "codex_plugin_cache"},
+        "path": {"type": "string"},
+        "files": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+        "installed_value_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "ownership_id": {"type": "string"},
+        "cleanup_policy": {"type": "string"},
+        "repair_policy": {"type": "string"}
+      }
+    }
+  },
+  "$defs": {
+    "registration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "registration_type", "registration_scope", "registration_key",
+        "preexisting_value_hash", "installed_value_hash", "current_value_hash",
+        "ownership_id", "source_plugin_version", "target_plugin_version",
+        "managed_fields", "preserved_fields", "user_modified", "conflict_state",
+        "cleanup_policy", "repair_policy"
+      ],
+      "properties": {
+        "registration_type": {"type": "string"},
+        "registration_scope": {"type": "string"},
+        "registration_key": {"type": "string"},
+        "preexisting_value_hash": {"type": "null"},
+        "installed_value_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "current_value_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "disabled_value_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "ownership_id": {"type": "string", "format": "uuid"},
+        "source_plugin_version": {"type": "string"},
+        "target_plugin_version": {"type": "string"},
+        "managed_fields": {"type": "array", "items": {"type": "string"}},
+        "preserved_fields": {"type": "array", "items": {"type": "string"}},
+        "user_modified": {"const": false},
+        "conflict_state": {"type": "null"},
+        "cleanup_policy": {"type": "string"},
+        "repair_policy": {"type": "string"}
+      }
+    }
+  }
+}

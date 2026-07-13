@@ -1,3 +1,5 @@
 # pCodex Plugin Assets
 
-Repo-local placeholder for future pCodex plugin assets. This directory does not publish or activate MCP by itself.
+No icon or screenshot is currently declared. This directory is retained as the
+canonical location for future reviewed public assets; its presence does not
+publish, register, or activate MCP.

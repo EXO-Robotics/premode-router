@@ -18,7 +18,9 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | `pcodex status --advisory` | `literal_no_write_required` | Read state and return paste-safe readiness; no lock refresh, Git helper, or Codex execution. |
 | `pcodex doctor --advisory` | `literal_no_write_required` | Read diagnostics; executable discovery is path-only and no external agent is executed. |
 | `pcodex run --dry-run` | `literal_no_write_required` | Compile in memory with `ADVISORY`; no packet, cache, lock, telemetry, receipt, or Codex capability probe. |
-| `pcodex integrate codex --dry-run` | `literal_no_write_required` | Build a repo-local integration plan in memory. |
+| `pcodex integrate codex --dry-run` | `literal_no_write_required` | Inspect canonical, legacy, marketplace, and optional-MCP state and build a plan in memory. |
+| `pcodex integrate codex --status` | `literal_no_write_required` | Classify plugin and registration state without repair or capability processes. |
+| `pcodex integrate codex --dry-run --with-mcp` | `literal_no_write_required` | Preview the optional descriptor and workspace binding without creating or launching it. |
 | `pcodex repair --dry-run` | `literal_no_write_required` | Read bound lifecycle authority and exact hashes; no repair, migration, operation receipt, or temporary file. |
 | `pcodex uninstall --dry-run` | `literal_no_write_required` | Read receipt and targets with fail-closed ownership rules; no operation receipt or quarantine. |
 | `pcodex cleanup --local-state --dry-run` | `literal_no_write_required` | List bounded generated-state targets without deletion. |

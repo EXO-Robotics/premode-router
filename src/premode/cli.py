@@ -352,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
                 setup_result["plugin"] = install_local_plugin(repo, "repo")
             except Exception as exc:
                 setup_result["plugin"] = {"warning": str(exc)}
-        setup_result["next"] = ["Use: pcodex \"Fix the build\"", "Optional: open Codex /plugins and enable Pre-mode Router; review hooks with /hooks."]
+        setup_result["next"] = ["Use: pcodex \"Fix the build\"", "Inspect canonical plugin state with: pcodex integrate codex --status"]
         _print_json(setup_result)
         return 0
     if args.command == "detect":

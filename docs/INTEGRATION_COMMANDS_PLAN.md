@@ -1,6 +1,9 @@
-# pCodex Integration Commands Plan
+# Superseded pCodex Integration Commands Plan
 
-This is a future CLI plan. It is not implemented in this patch.
+This historical plan is superseded by `docs/CODEX_INTEGRATION.md` and the
+implemented `pcodex integrate codex` lifecycle. It is retained only to explain
+earlier design intent; none of the paths or approval rules below are current
+product authority.
 
 ## Proposed Commands
 

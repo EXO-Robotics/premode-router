@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/EXO-Robotics/premode-router/schemas/pcodex.codex-plugin-state.v1.schema.json",
+  "title": "pCodex Codex plugin state receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "plugin_schema_version",
+    "ownership_id",
+    "plugin_name",
+    "plugin_version",
+    "plugin_semver",
+    "source_root_hash",
+    "installed_root",
+    "files",
+    "directories",
+    "registrations",
+    "marketplace_preexisting_file_hash",
+    "enabled",
+    "with_mcp",
+    "migration"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.codex-plugin-state.v1"},
+    "plugin_schema_version": {"const": "pcodex.plugin.v1"},
+    "ownership_id": {"type": "string", "format": "uuid"},
+    "plugin_name": {"const": "pcodex"},
+    "plugin_version": {"type": "string"},
+    "plugin_semver": {"type": "string"},
+    "source_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "installed_root": {"const": "plugins/pcodex"},
+    "files": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "object"}},
+    "directories": {"type": "array", "items": {"type": "string"}},
+    "registrations": {"type": "object", "required": ["marketplace"], "additionalProperties": {"type": "object"}},
+    "marketplace_preexisting_file_hash": {"type": ["string", "null"]},
+    "enabled": {"type": "boolean"},
+    "with_mcp": {"type": "boolean"},
+    "migration": {"type": "object"}
+  }
+}

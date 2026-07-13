@@ -19,7 +19,7 @@
     "release_class": {"const": "Codex-first private technical beta"},
     "status": {"type": "string", "minLength": 1},
     "supported_runtime": {"const": "Codex CLI terminal workflow"},
-    "version_source": {"const": "pyproject.toml:[project].version"},
+    "version_source": {"const": "src/premode/__init__.py::__version__ (pyproject and plugin versions derive from it)"},
     "production_package": {"const": "premode-router"},
     "phase_boundary": {
       "type": "object", "additionalProperties": false,
@@ -141,8 +141,8 @@
       "required": ["codex_cli", "codex_repo_assets", "mcp", "openclaw"],
       "properties": {
         "codex_cli": {"const": "supported_terminal_workflow"},
-        "codex_repo_assets": {"const": "repo_local_opt_in"},
-        "mcp": {"const": "advanced_opt_in_not_automatic"},
+        "codex_repo_assets": {"const": "canonical_receipt_bound_opt_in_with_native_registration"},
+        "mcp": {"const": "optional_workspace_bound_descriptor_and_registration_not_automatic"},
         "openclaw": {"const": "advanced_experimental_not_production_supported"}
       }
     },

@@ -43,6 +43,8 @@ premode review-patch --since-compile
 
 `first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, `integrate codex`, MCP, plugin initialization, benchmarks, stress tools, labs, hooks, and tuning internals are advanced, internal, or research surfaces as classified in `docs/PUBLIC_SURFACES.md` and `premode.product.json`.
 
+`plugins/pcodex` is the single canonical Codex plugin source. Its lifecycle is `pcodex integrate codex --dry-run|--write|--status|--repair|--disable|--uninstall`; `--dry-run --migrate` previews and `--write --migrate` applies migration while preserving legacy state without proven ownership. The plugin qualifies Codex CLI `0.143.x` only. It declares skills by default, no hooks, no automatic interception, and no MCP server unless `--with-mcp` is explicit. Native model-visible skill selection and full MCP containment are not claimed.
+
 ## Ranking authority and packet authority
 
 `ProductionRankingProviderV1` is the sole product-facing ranking seam. Its contract and version are documented in `docs/ALGORITHM_INTEGRATION_INTERFACE.md`. It accepts:

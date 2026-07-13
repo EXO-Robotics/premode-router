@@ -12,6 +12,8 @@
     "premode/candidate_policy.py",
     "premode/cli.py",
     "premode/codex_exec.py",
+    "premode/codex_native.py",
+    "premode/codex_plugin.py",
     "premode/command_discovery.py",
     "premode/compiler.py",
     "premode/config.py",
@@ -74,7 +76,23 @@
     "premode_router-*.dist-info/RECORD",
     "premode_router-*.dist-info/licenses/*",
     "premode_router-*.data/data/share/premode-router/premode.product.json",
-    "premode_router-*.data/data/share/premode-router/schemas/*.json"
+    "premode_router-*.data/data/share/premode-router/schemas/*.json",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/.codex-plugin/plugin.json",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/assets/README.md",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex-dry-run/SKILL.md",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex-status/SKILL.md",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex-tune/SKILL.md",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex/SKILL.md",
+    "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh"
+  ],
+  "plugin_allowed_members": [
+    ".codex-plugin/plugin.json",
+    "assets/README.md",
+    "skills/pcodex-dry-run/SKILL.md",
+    "skills/pcodex-status/SKILL.md",
+    "skills/pcodex-tune/SKILL.md",
+    "skills/pcodex/SKILL.md",
+    "skills/pcodex/bin/resolve-pcodex.sh"
   ],
   "wheel_prohibited_globs": [
     "premode/lab73*.py",

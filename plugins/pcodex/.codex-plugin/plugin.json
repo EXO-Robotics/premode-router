@@ -1,25 +1,38 @@
 {
-  "capabilities": [
-    "skills",
-    "optional_mcp"
+  "author": {
+    "name": "EXO Robotics",
+    "url": "https://github.com/EXO-Robotics"
+  },
+  "description": "Local-first pCodex context preflight skills for explicit terminal workflows.",
+  "homepage": "https://github.com/EXO-Robotics/premode-router",
+  "interface": {
+    "capabilities": [
+      "Read",
+      "Advisory"
+    ],
+    "category": "Developer Tools",
+    "defaultPrompt": [
+      "Run a no-write pCodex preflight for my task.",
+      "Show pCodex advisory status for this repository.",
+      "Explain the pCodex context plan without writing files."
+    ],
+    "developerName": "EXO Robotics",
+    "displayName": "pCodex",
+    "longDescription": "Run explicit, no-write pCodex status and task preflight commands before Codex work.",
+    "privacyPolicyURL": "https://github.com/EXO-Robotics/premode-router/blob/product/codex-beta-v1/docs/PRIVACY.md",
+    "shortDescription": "Local context preflight for Codex tasks.",
+    "termsOfServiceURL": "https://github.com/EXO-Robotics/premode-router/blob/product/codex-beta-v1/docs/TERMS.md",
+    "websiteURL": "https://github.com/EXO-Robotics/premode-router"
+  },
+  "keywords": [
+    "codex",
+    "context",
+    "local-first",
+    "privacy"
   ],
-  "description": "Repo-local pCodex skills and optional MCP scaffold for terminal-first Codex workflows.",
-  "display_name": "pCodex",
-  "entrypoints": {
-    "skills": "skills"
-  },
+  "license": "Proprietary",
   "name": "pcodex",
-  "policy": {
-    "global_config_mutation": false,
-    "live_codex_launch": false,
-    "production_approval": false,
-    "publication": "repo_local_only"
-  },
-  "schema_version": "codex.plugin.v1",
+  "repository": "https://github.com/EXO-Robotics/premode-router",
   "skills": "./skills/",
-  "source": {
-    "path": "plugins/pcodex",
-    "type": "local"
-  },
-  "version": "0.1.0-local"
+  "version": "0.3.0-beta.1"
 }

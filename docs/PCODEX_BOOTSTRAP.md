@@ -42,6 +42,12 @@ pcodex integrate codex --dry-run --json
 pcodex integrate codex --write
 pcodex integrate codex --write --json
 pcodex integrate codex --write --with-mcp
+pcodex integrate codex --status
+pcodex integrate codex --repair
+pcodex integrate codex --disable
+pcodex integrate codex --uninstall
+pcodex integrate codex --dry-run --migrate
+pcodex integrate codex --write --migrate
 pcodex plugin init --local-marketplace --dry-run
 pcodex plugin init --local-marketplace
 pcodex plugin init --local-marketplace --json
@@ -103,30 +109,30 @@ Plain `pcodex setup` requires neither tuning nor MCP.
 
 ## Codex Integration
 
-Use `pcodex integrate codex --dry-run` to preview the repo-local Codex UX surface. The dry-run reports planned files, existing files, whether optional MCP scaffold messaging is skipped or included, and performs no writes.
+Use `pcodex integrate codex --dry-run` to preview the canonical plugin, repo marketplace, native Codex registration/cache, legacy, and optional MCP state. The preview performs no writes and launches neither Codex nor MCP.
 
-Use `pcodex integrate codex --write` to create or update only these repo-local paths:
+Use `pcodex integrate codex --write` to create receipt-bound state for:
 
-- `.agents/skills/pcodex*/SKILL.md`
-- `.agents/skills/pcodex/bin/resolve-pcodex.sh`
 - `plugins/pcodex/**`
-- `.agents/plugins/marketplace.json`
+- `.agents/plugins/marketplace.json` `plugins[name=pcodex]`
+- `$CODEX_HOME/config.toml` target marketplace and plugin-enable tables
+- the Codex-created pCodex cache tree
+- `.pcodex/codex-plugin-state.json` and `.pcodex/codex-native-state.json`
 
-The `.agents/skills` directory is the repo-local skill path for this integration. Top-level `plugins/` is the intended discovery surface for the local pCodex plugin marketplace. The marketplace entry is repo-scoped and does not imply public marketplace publication or production approval.
+Top-level `plugins/pcodex` is the only plugin source. The repo marketplace entry and native Codex values have separate exact receipts; neither grants ownership of an entire mixed configuration file. This local registration does not imply public marketplace publication or production approval.
 
-Generated repo-local skills resolve the `pcodex` executable before running commands:
+The packaged skill resolver checks only:
 
-1. `./.venv/bin/pcodex`
-2. `$HOME/.pcodex-alpha/bin/pcodex`
-3. `command -v pcodex`
+1. explicit `PCODEX_BIN`;
+2. `pcodex` on `PATH`.
 
 If no executable is found, the resolver prints paste-safe setup guidance and exits without writing files, launching Codex, printing secrets, or dumping the environment.
 
-Terminal `pcodex` remains the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit; `--with-mcp` writes only repo-local scaffold/config files and warning text. It does not mutate `~/.codex/config.toml`, register globally, invoke MCP automatically, or run live Codex.
+Terminal `pcodex` remains the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit; `--write --with-mcp` creates the workspace-bound descriptor and exact Codex MCP registration. It does not invoke MCP automatically or prove full server containment.
 
 `pcodex plugin init --local-marketplace` creates or updates the local `plugins/pcodex` scaffold and `.agents/plugins/marketplace.json` without global mutation or publication.
 
-Codex plugin marketplace surfacing depends on Codex marketplace discovery. The repo-local `.agents/plugins/marketplace.json` file is safe to check in, but it does not by itself mutate global Codex config, install the plugin, enable the plugin, or prove that `/plugins` will show `pCodex` in every Codex build. Use `codex plugin marketplace add` only as an explicit, user-approved registration step.
+The lifecycle qualifies Codex CLI 0.143.x. `--write` is the explicit approval step that invokes Codex marketplace and plugin registration. Missing Codex yields `NEEDS_ACTION`; unsupported versions or unknown preexisting target values fail closed. Status, repair, disable, uninstall, and migration details are authoritative in `docs/CODEX_INTEGRATION.md`.
 
 `pcodex ui` reads existing pCodex status/state and prints a local terminal dashboard. `pcodex ui --json` emits the stable `pcodex.ui.v1` schema and does not write by default.
 

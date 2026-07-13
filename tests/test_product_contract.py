@@ -109,8 +109,10 @@ def test_manifest_covers_every_active_cleanup_target() -> None:
 
 
 def test_core_version_has_one_declared_authority_and_matching_runtime_mirror() -> None:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
-    assert project["version"] == premode.__version__
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert pyproject["project"]["dynamic"] == ["version"]
+    assert pyproject["tool"]["setuptools"]["dynamic"]["version"] == {"attr": "premode.__version__"}
+    assert premode.__version__ == "0.3.0b1"
 
 
 def test_production_modules_do_not_import_observer_modules() -> None:

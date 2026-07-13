@@ -1,30 +1,24 @@
 ---
 name: pcodex
-description: Use terminal pcodex commands for safe pCodex overview and workflow checks.
+description: Use when the user explicitly asks for a pCodex status check or no-write context preflight for an exact task.
 ---
 # pCodex
 
-Use terminal `pcodex` commands as the reliable control plane for this repo.
+Preserve the user's task text exactly. Use the installed `pcodex` command as
+the supported control plane; do not assume a source checkout or workspace
+`.agents` helper exists.
 
-Resolve the pCodex executable before running commands:
+Resolve the executable with the plugin-local
+`skills/pcodex/bin/resolve-pcodex.sh` when the plugin root is available. If the
+host does not expose that root, use `command -v pcodex`. If neither succeeds,
+report that `premode-router` must be installed in the active environment.
 
-```sh
-PCODEX_BIN="$(./.agents/skills/pcodex/bin/resolve-pcodex.sh)" || exit $?
-```
+Start with literal no-write checks:
 
-Resolver order:
+- `pcodex status --advisory --json`
+- `pcodex doctor --advisory --json`
+- `pcodex run --dry-run --json "<exact user task>"`
 
-1. `./.venv/bin/pcodex`
-2. `$HOME/.pcodex-alpha/bin/pcodex`
-3. `command -v pcodex`
-
-If the resolver fails, report its install guidance exactly enough to be useful, but do not print environment dumps, secrets, raw prompts, or full filesystem listings.
-
-
-Start with safe local checks:
-
-- `$PCODEX_BIN status --json`
-- `$PCODEX_BIN doctor --json`
-- `$PCODEX_BIN run --dry-run "<task>"`
-
-Keep setup and previews local. Do not launch live Codex from this skill. Do not modify application source files. Optional MCP wiring is explicit and user-approved; terminal commands remain the guaranteed interface.
+Do not write integration state, launch Codex, enable MCP, invoke experimental
+ranking behavior, or claim automatic interception. Writes require a separate,
+explicit user-approved lifecycle command.

@@ -6,7 +6,7 @@
   "release_class": "Codex-first private technical beta",
   "status": "source-visible proprietary private beta; not production-ready",
   "supported_runtime": "Codex CLI terminal workflow",
-  "version_source": "pyproject.toml:[project].version",
+  "version_source": "src/premode/__init__.py::__version__ (pyproject and plugin versions derive from it)",
   "production_package": "premode-router",
   "phase_boundary": {
     "phase_a": "Codex-first 0.3.0b1 beta readiness",
@@ -161,13 +161,16 @@
       "surface": "user pCodex config", "location": "$HOME/.pcodex/config.toml", "classification": "advanced", "owner": "user", "creation_trigger": "explicit user configuration", "read_behavior": "fallback config read", "write_behavior": "not written by normal beta commands", "sensitivity": "private", "schema_version": "toml-v1", "cleanup_policy": "manual", "repair_policy": "manual", "uninstall_policy": "preserve", "conflict_policy": "unrelated entries preserved", "user_modification_policy": "preserve"
     },
     {
-      "surface": "Codex plugin and skill files", "location": ".agents/skills/pcodex*, .agents/plugins/, plugins/pcodex/", "classification": "public_codex", "owner": "pcodex_codex_plugin", "creation_trigger": "explicit integrate or plugin init write", "read_behavior": "Codex repo-local discovery", "write_behavior": "explicit bounded file writes", "sensitivity": "public_safe", "schema_version": "skill and plugin metadata versions", "cleanup_policy": "receipt-driven per file", "repair_policy": "replace only matching owned versions", "uninstall_policy": "deferred where canonical plugin authority is unresolved", "conflict_policy": "preserve unrelated plugin entries", "user_modification_policy": "preserve"
+      "surface": "canonical Codex plugin files", "location": "plugins/pcodex/", "classification": "public_codex", "owner": "pcodex_codex_plugin", "creation_trigger": "explicit pcodex integrate codex --write", "read_behavior": "Codex plugin discovery and installed skill resolution", "write_behavior": "atomic receipt-bound regular-file creation", "sensitivity": "public_safe", "schema_version": "pcodex.plugin.v1", "cleanup_policy": "remove only enumerated single-link files matching installed hashes", "repair_policy": "restore only missing receipt-proven files from the packaged canonical source", "uninstall_policy": "exact receipt-driven removal", "conflict_policy": "modified, linked, nonregular, or unknown-owner files block mutation", "user_modification_policy": "preserve"
     },
     {
-      "surface": "Codex marketplace registration", "location": ".agents/plugins/marketplace.json or external Codex registration", "classification": "advanced", "owner": "mixed", "creation_trigger": "explicit plugin init or registration", "read_behavior": "read registration entries", "write_behavior": "bounded entry update only", "sensitivity": "private", "schema_version": "external", "cleanup_policy": "remove only exact receipt-proven entry", "repair_policy": "preserve siblings", "uninstall_policy": "plugin-specific removal deferred", "conflict_policy": "unknown or unrelated entries preserved", "user_modification_policy": "preserve"
+      "surface": "Codex marketplace registration", "location": ".agents/plugins/marketplace.json plugins[name=pcodex]", "classification": "advanced", "owner": "mixed", "creation_trigger": "explicit pcodex integrate codex --write", "read_behavior": "strict JSON structural inspection", "write_behavior": "append or replace only the receipt-bound pcodex entry while preserving sibling order and values", "sensitivity": "private", "schema_version": "external plus pcodex.codex-plugin-state.v1 authority", "cleanup_policy": "remove only the exact receipt-proven entry value", "repair_policy": "restore only a missing receipt-proven entry", "uninstall_policy": "exact entry removal with current-value hash check", "conflict_policy": "malformed, future, duplicate, modified, or unknown-owner entries fail closed", "user_modification_policy": "preserve"
     },
     {
-      "surface": "MCP configuration", "location": "repo-local or external Codex MCP config", "classification": "advanced", "owner": "mixed", "creation_trigger": "explicit MCP registration", "read_behavior": "read registration status", "write_behavior": "never changed by normal setup", "sensitivity": "sensitive", "schema_version": "external", "cleanup_policy": "remove only exact receipt-proven server entry", "repair_policy": "preserve unrelated servers", "uninstall_policy": "manual until registration receipt exists", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+      "surface": "native Codex plugin registration", "location": "$CODEX_HOME/config.toml target tables and Codex plugin cache", "classification": "advanced", "owner": "mixed with exact pcodex value authority", "creation_trigger": "explicit pcodex integrate codex --write", "read_behavior": "read-only structural inspection for preview and status", "write_behavior": "supported Codex CLI operations plus exact enable-field edit", "sensitivity": "private", "schema_version": "pcodex.codex-native-state.v1", "cleanup_policy": "remove only exact receipt-proven tables and cache tree through Codex", "repair_policy": "restore only missing or disabled receipt-proven state", "uninstall_policy": "Codex removal followed by unrelated-value verification", "conflict_policy": "malformed, future, modified, unknown-owner, or wrong-home state fails closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "optional plugin MCP descriptor", "location": "plugins/pcodex/.mcp.json and manifest mcpServers field", "classification": "advanced", "owner": "pcodex_codex_plugin when receipt-proven", "creation_trigger": "explicit pcodex integrate codex --write --with-mcp", "read_behavior": "inspect workspace-bound descriptor and authority", "write_behavior": "omitted by default; exact plugin-local descriptor only when authorized", "sensitivity": "sensitive", "schema_version": "external plus pcodex.codex-plugin-state.v1 authority", "cleanup_policy": "remove only receipt-proven descriptor bytes", "repair_policy": "restore only missing receipt-proven descriptor bytes", "uninstall_policy": "exact descriptor removal", "conflict_policy": "modified or unknown MCP state fails closed", "user_modification_policy": "preserve"
     },
     {
       "surface": "source installer root and provenance manifest", "location": "$HOME/.pcodex-alpha/ and install_manifest.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit current source installer", "read_behavior": "read install-root provenance and ownership metadata", "write_behavior": "installer-managed", "sensitivity": "private", "schema_version": "pcodex.install_manifest.v1", "cleanup_policy": "source installer --uninstall after manifest/root/Python validation", "repair_policy": "reinstall explicitly", "uninstall_policy": "current install-root authority; separate from per-file managed integration receipt", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
@@ -179,7 +182,7 @@
       "surface": "runtime logs", "location": "explicit pCodex or Pre-mode log outputs", "classification": "internal", "owner": "mixed", "creation_trigger": "explicit diagnostic or harness operation", "read_behavior": "diagnostic inspection only", "write_behavior": "command-specific", "sensitivity": "private", "schema_version": "component-versioned or plain text", "cleanup_policy": "never scan or delete by filename alone", "repair_policy": "do not synthesize", "uninstall_policy": "remove only exact receipt-proven logs", "conflict_policy": "preserve unknown logs", "user_modification_policy": "preserve"
     },
     {
-      "surface": "migration markers", "location": "future receipt-declared migration marker paths", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit migration apply", "read_behavior": "version and completion check", "write_behavior": "atomic and receipt-declared", "sensitivity": "private_metadata", "schema_version": "migration-specific", "cleanup_policy": "receipt-driven", "repair_policy": "unknown versions fail closed", "uninstall_policy": "remove only proven-owned unmodified marker", "conflict_policy": "preserve partial legacy state", "user_modification_policy": "preserve"
+      "surface": "plugin lifecycle and migration authority", "location": ".pcodex/codex-plugin-state.json and .pcodex/codex-plugin-operation.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit plugin lifecycle or migration apply", "read_behavior": "version, ownership, file, registration, phase, and completion checks", "write_behavior": "atomic operation journal followed by final authority receipt", "sensitivity": "private_metadata", "schema_version": "pcodex.codex-plugin-state.v1 and pcodex.codex-plugin-operation.v1", "cleanup_policy": "receipt-driven", "repair_policy": "unknown versions fail closed", "uninstall_policy": "remove only after exact owned-state cleanup", "conflict_policy": "partial or interrupted state never reports ready", "user_modification_policy": "preserve"
     },
     {
       "surface": "legacy plugin state", "location": "legacy .agents or .pcodex integration assets", "classification": "deprecated", "owner": "unresolved", "creation_trigger": "historical installers", "read_behavior": "inspection only", "write_behavior": "none by normal beta commands", "sensitivity": "private", "schema_version": "legacy", "cleanup_policy": "manual after inspection", "repair_policy": "migrate only with explicit receipt", "uninstall_policy": "deferred", "conflict_policy": "unknown owner", "user_modification_policy": "preserve"
@@ -193,12 +196,12 @@
   ],
   "integration_status": {
     "codex_cli": "supported_terminal_workflow",
-    "codex_repo_assets": "repo_local_opt_in",
-    "mcp": "advanced_opt_in_not_automatic",
+    "codex_repo_assets": "canonical_receipt_bound_opt_in_with_native_registration",
+    "mcp": "optional_workspace_bound_descriptor_and_registration_not_automatic",
     "openclaw": "advanced_experimental_not_production_supported"
   },
   "known_beta_debt": [
-    "canonical plugin-specific marketplace and registration removal",
+    "model-visible installed-skill trigger evidence beyond structural Codex discovery",
     "cross-platform expansion of literal no-write process and filesystem evidence",
     "broader packaging and platform matrix",
     "production OpenClaw integration",

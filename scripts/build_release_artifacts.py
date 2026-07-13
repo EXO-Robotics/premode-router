@@ -84,10 +84,12 @@ def validate_sdist_names(names: list[str], policy: dict[str, object]) -> list[st
             for member in policy.get("wheel_allowed_members", [])
             if str(member).startswith("premode/")
         ),
+        *("plugins/pcodex/" + str(member) for member in policy.get("plugin_allowed_members", [])),
     }
     allowed_globs = (
         "docs/*.md", "docs/*.json", "docs/**/*.md", "docs/**/*.json",
-        "examples/*", "schemas/*.json", "src/premode_router.egg-info/*",
+        "examples/*",
+        "schemas/*.json", "src/premode_router.egg-info/*",
     )
     failures = validate_names(relative_names, allowed_prefixes=[], policy=policy)
     for name in relative_names:
@@ -187,6 +189,26 @@ def persist_lifecycle_probe(output: Path, label: str, payload: dict[str, object]
         "installed_import_isolated": True,
     }
     write_json(output / "receipts" / f"installed-lifecycle-{label}.json", summary)
+    return summary
+
+
+def persist_codex_plugin_probe(output: Path, label: str, payload: dict[str, object]) -> dict[str, object]:
+    if payload.get("passed") is not True:
+        raise RuntimeError(f"{label} installed Codex plugin probe failed")
+    write_json(output / "private-receipts" / "codex-plugin" / f"{label}.json", payload)
+    summary = {
+        "schema_version": payload.get("schema_version"),
+        "passed": True,
+        "live_codex_available": payload.get("live_codex_available"),
+        "installed_import_isolated": payload.get("installed_import_isolated"),
+        "lifecycle": payload.get("lifecycle"),
+        "discovery": payload.get("discovery"),
+        "mcp": payload.get("mcp"),
+        "migration": payload.get("migration"),
+        "performance": payload.get("performance"),
+        "deferred_reason": payload.get("deferred_reason"),
+    }
+    write_json(output / "receipts" / f"installed-codex-plugin-{label}.json", summary)
     return summary
 
 
@@ -311,6 +333,13 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             cwd=temp, env={**smoke_env, "PYTHONDONTWRITEBYTECODE": "1"},
         ))
         wheel_lifecycle_summary = persist_lifecycle_probe(output, "wheel", wheel_lifecycle)
+        wheel_codex_plugin = json.loads(run(
+            str(smoke_python), str(source / "scripts" / "installed_codex_plugin_probe.py"),
+            "--pcodex", str(smoke_bin / "pcodex"),
+            "--control-root", str(temp / "wheel-codex-plugin-control"),
+            cwd=temp, env={**smoke_env, "PYTHONDONTWRITEBYTECODE": "1"},
+        ))
+        wheel_codex_plugin_summary = persist_codex_plugin_probe(output, "wheel", wheel_codex_plugin)
         installed_contract = json.loads(run(
             str(smoke_python), "-c",
             "import json; from premode.product_contract import validate_installed_product_contract as v; print(json.dumps(v(),sort_keys=True))",
@@ -352,6 +381,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         sdist_smoke = "not_requested"
         sdist_no_write: dict[str, object] | str = "not_requested"
         sdist_lifecycle: dict[str, object] | str = "not_requested"
+        sdist_codex_plugin: dict[str, object] | str = "not_requested"
         if with_sdist:
             sdists = list(artifacts.glob("*.tar.gz"))
             if len(sdists) != 1:
@@ -389,9 +419,24 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
                 cwd=temp, env={**env, "PATH": str(sdist_bin) + os.pathsep + env.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
             ))
             sdist_lifecycle_summary = persist_lifecycle_probe(output, "sdist", sdist_lifecycle)
+            sdist_codex_plugin = json.loads(run(
+                str(sdist_python), str(source / "scripts" / "installed_codex_plugin_probe.py"),
+                "--pcodex", str(sdist_bin / "pcodex"),
+                "--control-root", str(temp / "sdist-codex-plugin-control"),
+                cwd=temp, env={**env, "PATH": str(sdist_bin) + os.pathsep + env.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+            ))
+            sdist_codex_plugin_summary = persist_codex_plugin_probe(output, "sdist", sdist_codex_plugin)
             run(str(sdist_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
             run(str(sdist_python), "-c", "import importlib.util; assert importlib.util.find_spec('premode') is None", cwd=temp)
             sdist_smoke = "passed"
+        write_json(output / "receipts" / "known-limitations.json", {
+            "final_holdout_executed": False,
+            "public_registry_published": False,
+            "live_codex_discovery_tested": bool(wheel_codex_plugin.get("live_codex_available")) and (
+                not with_sdist or bool(isinstance(sdist_codex_plugin, dict) and sdist_codex_plugin.get("live_codex_available"))
+            ),
+            "model_visible_skill_trigger_executed": False,
+        })
         write_json(output / "receipts" / "install-smoke.json", {
             "status": "passed", "offline": True, "source_import_absent": True,
             "default_strategy": probe, "commit": commit_sha,
@@ -406,6 +451,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             "sdist_no_write": sdist_no_write_summary if isinstance(sdist_no_write, dict) else sdist_no_write,
             "wheel_lifecycle": wheel_lifecycle_summary,
             "sdist_lifecycle": sdist_lifecycle_summary if isinstance(sdist_lifecycle, dict) else sdist_lifecycle,
+            "wheel_codex_plugin": wheel_codex_plugin_summary,
+            "sdist_codex_plugin": sdist_codex_plugin_summary if isinstance(sdist_codex_plugin, dict) else sdist_codex_plugin,
             "external_strategy_distribution_present": False,
         })
         run(str(smoke_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
