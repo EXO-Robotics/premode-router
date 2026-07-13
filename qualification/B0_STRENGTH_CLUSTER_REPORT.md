@@ -1,19 +1,27 @@
-# B0 strength clusters
+# B0 Strength Cluster Report
 
-## Reproducible quality and efficiency
+## Diverse public-repository corpus
 
-One irregular-navigation task completed 3/3 with B0 and 0/3 with STANDARD. Both arms produced validator-passing patches, but STANDARD exhausted its turn budget. Median B0 savings were 5,956 tokens, 5 requests, 3 reads, and 4 searches. This is a completion/termination win, not a patch-correctness difference.
+B0 retained several measurable strengths:
 
-## Preserved-quality efficiency
+- 30/35 objective successes in the initial panel.
+- 7/7 success in localized source repair.
+- 7/7 success in configuration/tooling repair.
+- 7/7 success in documentation-linked repair, one more than STANDARD.
+- 8/35 packets were quality-classified `CORRECT`; 7 of those tasks succeeded.
+- One repeated legacy documentation pair was consistently B0-positive while
+  STANDARD failed both repetitions.
+- All 35 B0 runs produced schema-valid native COMPLETE receipts after bounded
+  large-repository recovery.
 
-Ten tasks were classified as B0 efficiency wins. They spanned all six synthetic repository families and included configuration, duplicate-basename, localized repair, support dependency, cross-package, history/vendor control, and source-plus-test work.
+## Earlier synthetic development study
 
-Repeated examples showed median savings ranging from 1,220 to 6,561 tokens, with reductions of up to 5 requests and 6 reads. One history-control task remained an efficiency win despite B0 selecting and reading an archived alternative; it is not classified as history avoidance. These are development findings, not language-wide claims.
+One irregular-navigation task completed 3/3 with B0 and 0/3 with STANDARD,
+with lower median tokens, requests, reads, and searches. Ten tasks were
+classified as preserved-quality B0 efficiency wins across all six synthetic
+repository families. B0 abstained on 11 primary-panel tasks; both arms
+succeeded on 10 and failed on one, so the study supports exact untreated-input
+passthrough but not an abstention-quality win. There were no narrow-mode cells.
 
-## Abstention behavior
-
-B0 abstained on 11 primary-panel tasks. Both arms succeeded on 10 and failed on 1 after native reruns, giving identical aggregate task success because abstention preserved exact untreated input. Cost still varied, including one repeated STANDARD-efficiency cell. No task in this corpus preregistered abstention correctness as a quality requirement, so the study does not claim a confirmed abstention-quality win.
-
-## Boundaries
-
-There were no narrow-mode cells. The study therefore supports broad-mode exploration findings and exact abstention neutrality, but not narrow-mode effectiveness.
+These strengths do not offset the public-corpus aggregate token, search,
+path-precision, and success deficits. They do not justify release promotion.

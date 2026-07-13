@@ -29,6 +29,9 @@ SYSTEM_PROMPT = (
     "You are a coding agent operating in one repository fixture. Use only the "
     "provided tools. Inspect relevant files before modifying them, keep changes "
     "strictly scoped to the task, and run the requested validation after changes. "
+    "Use search_text for repository searches; do not request grep, find, or shell "
+    "commands. The only run_command value available is exactly `git diff --check`. "
+    "When no command validation is requested, verify by rereading the changed text. "
     "Never read outside the repository root. End every task by calling finish with "
     "a concise summary and validation status."
 )
@@ -76,7 +79,7 @@ TOOL_SCHEMAS = (
     ),
     _schema(
         "run_command",
-        "Run one allow-listed validation command without a shell.",
+        "Run exactly `git diff --check`; no other command or shell is available.",
         {"command": {"type": "string"}},
         ["command"],
     ),
@@ -231,7 +234,12 @@ class RepositoryTools:
                 if not path.is_dir():
                     raise NotADirectoryError(arguments.get("path"))
                 accessed_paths.append(path.relative_to(self.root).as_posix() or ".")
-                stdout = "\n".join(sorted(child.name + ("/" if child.is_dir() else "") for child in path.iterdir()))
+                stdout = "\n".join(sorted(
+                    child.name + ("/" if child.is_dir() else "")
+                    for child in path.iterdir()
+                    if child.name.casefold() not in {".git", ".premode", ".pcodex", ".codex", ".agents"}
+                    and not self._is_secret_component(child.name)
+                ))
             elif name == "read_file":
                 path = self._path(arguments.get("path"))
                 if not path.resolve(strict=True).is_file():
@@ -249,6 +257,8 @@ class RepositoryTools:
                 scanned_file_count = 0
                 for discovered in files:
                     relative_path = discovered.relative_to(self.root).as_posix()
+                    if any(self._is_secret_component(part) for part in Path(relative_path).parts):
+                        continue
                     path = self._path(relative_path)
                     try:
                         scanned_file_count += 1

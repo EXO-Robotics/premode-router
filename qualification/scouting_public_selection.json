@@ -1,0 +1,72 @@
+[
+  {
+    "repository_id": "repo-001",
+    "directory": "inih",
+    "source_type": "public_shallow_clone",
+    "license": "BSD-3-Clause",
+    "category": "small_conventional_c",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained because the repository is small and examples/tests add realistic ambiguity."
+  },
+  {
+    "repository_id": "repo-002",
+    "directory": "pip",
+    "source_type": "public_shallow_clone",
+    "license": "MIT",
+    "category": "medium_python",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained to preserve vendored-library negative controls and competing package/test structure."
+  },
+  {
+    "repository_id": "repo-003",
+    "directory": "preact",
+    "source_type": "public_shallow_clone",
+    "license": "MIT",
+    "category": "typescript_web",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained to preserve packages, tests, declarations, compatibility code, and tooling."
+  },
+  {
+    "repository_id": "repo-004",
+    "directory": "swift-argument-parser",
+    "source_type": "public_shallow_clone",
+    "license": "Apache-2.0-with-Swift-exception",
+    "category": "swift_package",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained because the Swift package has no external package dependencies and focused tests are valuable."
+  },
+  {
+    "repository_id": "repo-005",
+    "directory": "kubernetes",
+    "source_type": "public_shallow_clone",
+    "license": "Apache-2.0",
+    "category": "very_large_go_monorepo",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained because vendor, staging, tests, commands, packages, and hack tooling are required navigation and negative-control surfaces."
+  },
+  {
+    "repository_id": "repo-006",
+    "directory": "curl",
+    "source_type": "public_shallow_clone",
+    "license": "curl-permissive",
+    "category": "irregular_legacy_c",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained to preserve Autotools/CMake, duplicate basenames, documentation tooling, and legacy layout."
+  },
+  {
+    "repository_id": "repo-007",
+    "directory": "rfcs",
+    "source_type": "public_shallow_clone",
+    "license": "MIT-OR-Apache-2.0",
+    "category": "documentation_config_heavy",
+    "tasks": 5,
+    "sparse_spec": [],
+    "sparse_justification": "Full shallow checkout retained because the repository is compact and document/index ambiguity is the intended structure."
+  }
+]

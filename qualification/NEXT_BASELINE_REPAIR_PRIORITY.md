@@ -1,26 +1,20 @@
-# Next baseline repair priority
+# Next Baseline Repair Priority
 
-Selected class: `irrelevant_path_distracted_agent`
+No baseline repair is authorized by this workload.
 
-## Minimal future intervention
+The diverse public-repository corpus identifies path precision and required
+path recall as the first cluster to confirm: reduce broad unused recommendations
+without losing the ordinary files required by multi-file tasks. Evidence is
+477/488 supplied paths unused, required paths absent in 27/35 B0 cells, and
+cross-module B0 success of 4/7 versus STANDARD 6/7.
 
-Require independent structural evidence before adding a verification path. A file should not qualify solely because it is test-like or shares generic terms with the task.
+An earlier, separate synthetic study selected stricter verification-path
+qualification as a narrow repair candidate after three tasks across two
+layouts reproduced preserved-quality cost regressions. It also retained
+lower-authority duplicate exposure as a higher-severity single-task hypothesis.
+Those findings remain intact but are not treated as confirmation in the new
+public corpus.
 
-The boundary must remain narrow:
-
-- preserve independently qualified source-test, import, symbol, package, and task relations;
-- do not change candidate admissibility or hard denials;
-- do not expand packet budgets;
-- do not suppress required verification or support files;
-- do not use corpus-specific names, symbols, or paths;
-- preserve exact abstention passthrough.
-
-## Evidence threshold
-
-Three tasks across two repository layouts and three task classes reproduced preserved-quality cost regressions. B0 supplied unrelated verification files, the agent read them, and paired tokens/reads increased. The largest median increase was 11,188 tokens, 6 requests, and 4 reads. This clears the multi-task, material-cost, causal-confidence, and bounded-repair requirements.
-
-## Why the quality defect ranks separately
-
-Lower-authority duplicate exposure caused the only reproducible B0 quality regression, but confirmed harm occurred on one unique task. It is the highest-severity defect hypothesis, not an independently eligible repair priority under the workload's multi-task rule.
-
-Next workload: design one minimal verification-eligibility repair. Do not reopen broad candidate search.
+The next action is exactly: **continue full Qwen scouting** with preregistered
+confirmation of the stable positive/negative discordances and high-value
+incomplete-packet cells before opening an algorithm-change lane.

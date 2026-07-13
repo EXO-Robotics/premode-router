@@ -1,39 +1,38 @@
-# B0 failure clusters
+# B0 Failure Cluster Report
 
-## 1. Unrelated verification-path distraction
+## Diverse public-repository corpus
 
-Classification: `irrelevant_path_distracted_agent`
+The dominant measured cluster is broad-but-incomplete path guidance.
 
-- 3 unique tasks
-- 2 confirmed-harm repository layouts
-- 3 task classes
-- high causal confidence for read/token cost
+- B0 selected 488 paths across 35 cells.
+- Only 11 supplied paths were used by the agent; 477 were unused.
+- Required paths were absent 34 times across 27/35 B0 cells.
+- Packet quality was `INCOMPLETE` in 27/35 B0 cells and `CORRECT` in 8/35.
+- B0 produced 21 success-with-expansion outcomes versus zero for STANDARD.
+- B0 cross-module success was 4/7 versus STANDARD 6/7.
 
-Causal chain: B0 added a verification path without an independent source-test, import, symbol, or task relation; the agent read that path in repeated cells; and median paired cost increased. Both arms preserved validated quality in two tasks. The third had one B0 completion flip, which is not treated as a reproducible quality regression.
+This cluster is causal-priority evidence, not proof that every extra token or
+failure was packet-caused. Native receipts classified recommendation safety,
+packet quality, agent behavior, attribution, and outcome separately.
 
-This is the selected future repair priority because it clears the multi-task rule and has a narrow eligibility boundary.
+## Earlier synthetic development study
 
-## 2. Lower-authority duplicate exposure
+That separate study retained three clusters:
 
-Classification: `wrong_duplicate_authority`
+1. Unrelated verification-path distraction appeared in three tasks across two
+   layouts and three task classes, with high causal confidence for read/token
+   cost. It was the study's selected future repair priority.
+2. Lower-authority duplicate exposure produced one reproducible B0 regression:
+   B0 edited an unnecessary lower-authority duplicate while STANDARD edited
+   only the authoritative source. Related exposures without failure were not
+   counted as additional defects.
+3. Other excess exploration included one case where B0 supplied only the
+   correct path but the agent still searched and reread it; that case was
+   classified as model behavior rather than path-selection failure.
 
-- 1 confirmed defect task
-- 1 confirmed-harm repository layout; related non-defect exposures span 2 layouts
-- 1 reproducible task-quality regression
-- high causal confidence
+Two synthetic tasks failed in both arms through turn-budget exhaustion, and no
+stable B0-specific causal chain was assigned. The initial observer changed
+after that study's first panel, so all surviving initial cells were excluded
+and rerun; reconstructed receipts were not counted.
 
-Causal chain: B0 changed the model-visible file guidance, the guidance included both the authoritative source and a lower-authority duplicate, the agent read and edited both, and scope validation failed. STANDARD found and edited only the authoritative source in all three repetitions.
-
-Two related tasks exposed the same structural weakness without failing. Their agents read but did not mutate the unnecessary alternative. Those observations do not count as additional reproducible defects.
-
-## 3. Other excess exploration
-
-Four tasks were consistently cheaper under STANDARD. Three form the selected verification-distraction cluster. In the fourth, B0 supplied only the correct path and the agent nevertheless searched and reread it; that case is classified as model behavior, not a path-selection defect.
-
-## Non-algorithm failures
-
-Two tasks failed in both arms by exhausting the turn budget without mutation. One generation-related task failed 0/3 in both arms. No stable B0-specific causal chain was established for these failures.
-
-The most important inconclusive cost area is one exact-abstention task: both arms succeeded 3/3, STANDARD was cheaper by 2,553 median paired tokens, and the arm advantage reversed once. With identical model input, no routing mechanism can be assigned.
-
-The initial observer changed after the first panel. All 34 surviving initial arm cells were excluded and rerun; no reconstructed receipt remains counted. Compiler wall time was not captured.
+The study populations are not pooled, and no repair is implemented here.

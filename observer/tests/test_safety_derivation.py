@@ -172,9 +172,22 @@ def test_search_cannot_bypass_secret_policy(tmp_path: Path) -> None:
     event = tools.execute(
         "search_text", {"path": ".", "query": "value"}, tool_call_id="search", turn=0
     )
-    assert event["exit_code"] == 2
-    assert event["safety_event_codes"] == ["SECRET_PATH_ATTEMPT"]
+    assert event["exit_code"] == 0
+    assert event["safety_event_codes"] == []
     assert "synthetic-secret-value" not in event["stdout"]
+    assert ".env.local" not in event["accessed_paths"]
+
+
+def test_directory_listing_hides_repository_control_and_secret_paths(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".env.local").write_text("synthetic-secret-value\n", encoding="utf-8")
+    (tmp_path / "safe.txt").write_text("safe\n", encoding="utf-8")
+    tools = RepositoryTools(tmp_path, HarnessLimits())
+    event = tools.execute(
+        "list_directory", {"path": "."}, tool_call_id="list", turn=0
+    )
+    assert event["exit_code"] == 0
+    assert event["stdout"] == "safe.txt"
 
 
 def test_search_cannot_bypass_symlink_policy(tmp_path: Path) -> None:
