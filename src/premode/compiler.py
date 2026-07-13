@@ -19,6 +19,7 @@ from .ignore import IgnoreMatcher
 from .indexer import index_project, load_index
 from .inventory import InventoryMetrics, refresh_inventory_if_needed
 from .candidate_policy import admitted_paths
+from .packet_causality import build_packet_causality_trace
 from .log_scanner import scan_logs
 from .metrics import append_metric
 from .profiles import resolve_profile, ResourceCaps

@@ -1,0 +1,36 @@
+# This branch publishes only the content-free measurement core. Historical
+# experiment runners, generated reports, local runtime profiles, and raw
+# evidence remain intentionally excluded.
+*
+!.gitignore
+!pyproject.toml
+!docs/
+docs/*
+!docs/MEASUREMENT_DIFFERENTIAL.md
+!schemas/
+schemas/*
+!schemas/observer-receipt.v2.json
+!src/
+src/*
+!src/premode_observer/
+src/premode_observer/*
+!src/premode_observer/__init__.py
+!src/premode_observer/evidence_core.py
+!src/premode_observer/git_hardening.py
+!src/premode_observer/harness.py
+!src/premode_observer/measurement.py
+!src/premode_observer/reconstruction.py
+!src/premode_observer/safety.py
+!src/premode_observer/sqlite_core.py
+!src/premode_observer/storage_core.py
+!src/premode_observer/validation.py
+!src/premode_observer/validity.py
+!src/premode_observer/migrations/
+src/premode_observer/migrations/*
+!src/premode_observer/migrations/0001_initial.sql
+!src/premode_observer/migrations/0002_measurement_receipts.sql
+!tests/
+tests/*
+!tests/conftest.py
+!tests/test_measurement_differential.py
+!tests/test_safety_derivation.py

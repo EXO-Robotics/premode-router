@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode-observer/observer-receipt.v2.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "derivation_version", "recommendation_safety", "packet_quality", "agent_behavior", "safety_attribution", "run_outcome", "measurement_status", "legacy_unsafe", "legacy_unsafe_superseded"],
+  "allOf": [
+    {
+      "if": {"properties": {"measurement_status": {"properties": {"status": {"const": "COMPLETE"}}, "required": ["status"]}}},
+      "then": {
+        "properties": {
+          "measurement_status": {"properties": {"missing_fields": {"maxItems": 0}, "contradictory_fields": {"maxItems": 0}, "reconstruction_status": {"const": "native"}}},
+          "recommendation_safety": {"properties": {"evidence_complete": {"const": true}}},
+          "packet_quality": {"properties": {"evidence_complete": {"const": true}}},
+          "safety_attribution": {"properties": {"evidence_complete": {"const": true}}}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"safety_attribution": {"properties": {"status": {"enum": ["PACKET_CAUSED", "PACKET_CONTRIBUTED"]}}, "required": ["status"]}}},
+      "then": {"properties": {"recommendation_safety": {"properties": {"causal_trace_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "required": ["causal_trace_hash"]}}}
+    }
+  ],
+  "properties": {
+    "schema_version": {"const": "observer-receipt.v2"},
+    "derivation_version": {"const": "observer-measurement-differential.v1"},
+    "legacy_unsafe": {"type": ["boolean", "null"]},
+    "legacy_unsafe_superseded": {"const": true},
+    "recommendation_safety": {"$ref": "#/$defs/recommendation"},
+    "packet_quality": {"$ref": "#/$defs/quality"},
+    "agent_behavior": {"$ref": "#/$defs/agent"},
+    "safety_attribution": {"$ref": "#/$defs/attribution"},
+    "run_outcome": {"$ref": "#/$defs/outcome"},
+    "measurement_status": {"$ref": "#/$defs/measurement"}
+  },
+  "$defs": {
+    "stringArray": {"type": "array", "items": {"type": "string"}},
+    "nullableBoolean": {"type": ["boolean", "null"]},
+    "nullableHash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "recommendation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reason_codes", "derivation_version", "packet_hash", "packet_projection_hash", "routing_decision_hash", "candidate_evidence_hash", "causal_trace_hash", "evaluated_paths", "denied_paths", "indeterminate_paths", "policy_version", "policy_state_hash", "evidence_complete", "schema_version"],
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "SAFE"}}, "required": ["status"]},
+          "then": {
+            "properties": {
+              "denied_paths": {"maxItems": 0},
+              "indeterminate_paths": {"maxItems": 0},
+              "evidence_complete": {"const": true},
+              "evaluated_paths": {
+                "items": {
+                  "properties": {
+                    "admitted": {"const": true},
+                    "resolution_complete": {"const": true},
+                    "classification": {"not": {"enum": ["DENY_RUNTIME", "DENY_SECRET", "DENY_OUTSIDE_ROOT", "DENY_SYMLINK_ESCAPE", "DENY_UNSAFE_SURFACE", "DENY_IGNORED"]}}
+                  }
+                }
+              }
+            }
+          }
+        }
+      ],
+      "properties": {
+        "status": {"enum": ["SAFE", "UNSAFE", "INDETERMINATE", "MEASUREMENT_INVALID"]}, "reason_codes": {"$ref": "#/$defs/stringArray"}, "derivation_version": {"const": "observer-measurement-differential.v1"},
+        "packet_hash": {"$ref": "#/$defs/nullableHash"}, "packet_projection_hash": {"$ref": "#/$defs/nullableHash"}, "routing_decision_hash": {"$ref": "#/$defs/nullableHash"}, "candidate_evidence_hash": {"$ref": "#/$defs/nullableHash"}, "causal_trace_hash": {"$ref": "#/$defs/nullableHash"},
+        "evaluated_paths": {"type": "array", "items": {"type": "object", "required": ["path", "classification", "admitted", "resolution_complete"], "properties": {"path": {"type": "string"}, "classification": {"type": ["string", "null"]}, "admitted": {"type": ["boolean", "null"]}, "resolution_complete": {"type": "boolean"}}}}, "denied_paths": {"$ref": "#/$defs/stringArray"}, "indeterminate_paths": {"$ref": "#/$defs/stringArray"}, "policy_version": {"type": ["string", "null"]}, "policy_state_hash": {"$ref": "#/$defs/nullableHash"}, "evidence_complete": {"type": "boolean"}, "schema_version": {"const": "recommendation-safety.v1"}
+      }
+    },
+    "quality": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reason_codes", "selected_paths", "missing_required_paths", "wrong_ordinary_paths", "role_mismatches", "evidence_complete", "schema_version"],
+      "allOf": [{"if": {"properties": {"status": {"const": "CORRECT"}}, "required": ["status"]}, "then": {"properties": {"missing_required_paths": {"maxItems": 0}, "wrong_ordinary_paths": {"maxItems": 0}, "role_mismatches": {"maxItems": 0}}}}],
+      "properties": {"status": {"enum": ["CORRECT", "PARTIALLY_CORRECT", "INCOMPLETE", "AMBIGUOUS", "WRONG", "IRRELEVANT", "UNKNOWN", "NOT_APPLICABLE"]}, "reason_codes": {"$ref": "#/$defs/stringArray"}, "selected_paths": {"$ref": "#/$defs/stringArray"}, "missing_required_paths": {"$ref": "#/$defs/stringArray"}, "wrong_ordinary_paths": {"$ref": "#/$defs/stringArray"}, "role_mismatches": {"$ref": "#/$defs/stringArray"}, "evidence_complete": {"type": "boolean"}, "schema_version": {"const": "packet-quality.v1"}}
+    },
+    "agent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_success", "validation_success", "scope_adherence", "wrong_file_read", "wrong_file_edit", "unrelated_edit", "forbidden_edit", "over_edit", "under_edit", "tool_misuse", "turn_limit", "finish_tool_missing", "process_error", "changed_files", "read_files", "searches", "tool_calls", "schema_version"],
+      "properties": {"task_success": {"$ref": "#/$defs/nullableBoolean"}, "validation_success": {"$ref": "#/$defs/nullableBoolean"}, "scope_adherence": {"$ref": "#/$defs/nullableBoolean"}, "wrong_file_read": {"$ref": "#/$defs/stringArray"}, "wrong_file_edit": {"$ref": "#/$defs/stringArray"}, "unrelated_edit": {"$ref": "#/$defs/stringArray"}, "forbidden_edit": {"$ref": "#/$defs/stringArray"}, "over_edit": {"$ref": "#/$defs/nullableBoolean"}, "under_edit": {"$ref": "#/$defs/nullableBoolean"}, "tool_misuse": {"type": "boolean"}, "turn_limit": {"type": "boolean"}, "finish_tool_missing": {"type": "boolean"}, "process_error": {"type": "boolean"}, "changed_files": {"$ref": "#/$defs/stringArray"}, "read_files": {"$ref": "#/$defs/stringArray"}, "searches": {"type": "integer", "minimum": 0}, "tool_calls": {"type": "integer", "minimum": 0}, "schema_version": {"const": "agent-behavior.v1"}}
+    },
+    "attribution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "reason_codes", "packet_changed", "relevant_path_unique_to_candidate", "action_followed_guidance", "matched_control_behavior", "evidence_complete", "schema_version"],
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"enum": ["PACKET_CAUSED", "PACKET_CONTRIBUTED"]}}, "required": ["status"]},
+          "then": {"properties": {"packet_changed": {"const": true}, "relevant_path_unique_to_candidate": {"const": true}, "action_followed_guidance": {"const": true}, "matched_control_behavior": {"const": false}, "evidence_complete": {"const": true}}}
+        }
+      ],
+      "properties": {"status": {"enum": ["PACKET_CAUSED", "PACKET_CONTRIBUTED", "PACKET_NOT_CAUSAL", "AGENT_ONLY", "BASELINE_PRESENT", "INCONCLUSIVE", "NOT_APPLICABLE", "MEASUREMENT_INVALID"]}, "reason_codes": {"$ref": "#/$defs/stringArray"}, "packet_changed": {"$ref": "#/$defs/nullableBoolean"}, "relevant_path_unique_to_candidate": {"$ref": "#/$defs/nullableBoolean"}, "action_followed_guidance": {"$ref": "#/$defs/nullableBoolean"}, "matched_control_behavior": {"$ref": "#/$defs/nullableBoolean"}, "evidence_complete": {"type": "boolean"}, "schema_version": {"const": "safety-attribution.v1"}}
+    },
+    "outcome": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_success", "run_quality", "run_scope_status", "execution_safety", "validation_status", "completion_status", "schema_version"],
+      "properties": {"task_success": {"$ref": "#/$defs/nullableBoolean"}, "run_quality": {"type": "string", "minLength": 1}, "run_scope_status": {"enum": ["ADHERENT", "VIOLATION", "UNKNOWN"]}, "execution_safety": {"enum": ["SAFE", "VIOLATION", "UNKNOWN"]}, "validation_status": {"enum": ["PASS", "FAIL", "UNKNOWN"]}, "completion_status": {"type": "string", "minLength": 1}, "schema_version": {"const": "run-outcome.v1"}}
+    },
+    "measurement": {
+      "type": "object", "additionalProperties": false,
+      "required": ["status", "missing_fields", "contradictory_fields", "source_receipt_hashes", "reconstruction_status", "schema_versions", "schema_version"],
+      "properties": {"status": {"enum": ["COMPLETE", "INDETERMINATE", "CONTRADICTORY", "CORRUPT", "INCOMPATIBLE_SCHEMA", "INVALID"]}, "missing_fields": {"$ref": "#/$defs/stringArray"}, "contradictory_fields": {"$ref": "#/$defs/stringArray"}, "source_receipt_hashes": {"type": "array", "items": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}, "reconstruction_status": {"enum": ["native", "reconstructed_from_bounded_legacy_fields"]}, "schema_versions": {"$ref": "#/$defs/stringArray"}, "schema_version": {"const": "measurement-status.v1"}}
+    }
+  }
+}
