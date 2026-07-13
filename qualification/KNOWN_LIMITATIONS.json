@@ -1,0 +1,11 @@
+{
+  "schema_version": "b0.qualification.limitations.v1",
+  "classification": "experiment_blocked_infrastructure",
+  "limitations": [
+    "Gemma model weights and a compatible local runtime were unavailable.",
+    "OSS model weights and a compatible local runtime were unavailable.",
+    "The safe reusable corpus contained 12 synthetic duplicate fixtures rather than 80-100 tasks across 8-10 repositories.",
+    "No co-residency, concurrency, calibration, or main-panel run was performed.",
+    "A prior sealed corpus was exposed during inventory and is excluded from all future use in this study."
+  ]
+}
