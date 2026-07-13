@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -20,7 +21,20 @@ from .codex_exec import CodexOptions, build_codex_invocation, run_codex
 from .compiler import compile_prompt
 from .cache_manifest import read_cache_manifest, write_cache_manifest
 from .install_manifest import read_install_manifest
-from .managed_state import ManagedStateError, apply_uninstall, plan_uninstall
+from .managed_state import (
+    DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+    ManagedStateError,
+    PRODUCT_INSTALL_MARKER_RELATIVE_PATH,
+    apply_repair,
+    apply_uninstall,
+    install_managed_file,
+    lifecycle_status,
+    plan_repair,
+    plan_uninstall,
+    product_expected_content,
+    product_install_marker_content,
+    record_reinstall_validation,
+)
 from .inventory import load_inventory, refresh_inventory_if_needed, summarize_inventory
 from .lockfile import read_lockfile, sha256_text, update_lockfile_from_resolver
 from .topology import refresh_topology_if_needed, summarize_topology
@@ -305,6 +319,69 @@ def write_repo_config(cwd: Path, *, enabled: bool) -> Path:
         encoding="utf-8",
     )
     return path
+
+
+def _create_repo_config_if_absent(repo_root: Path, content: bytes) -> dict[str, Any]:
+    """Create the user-owned default config without following or replacing a leaf."""
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    root_fd = os.open(repo_root, flags)
+    config_fd: int | None = None
+    temporary_name = f".config.toml.{os.getpid()}.tmp"
+    temporary_created = False
+    try:
+        try:
+            config_fd = os.open(".pcodex", flags, dir_fd=root_fd)
+        except FileNotFoundError:
+            os.mkdir(".pcodex", 0o700, dir_fd=root_fd)
+            config_fd = os.open(".pcodex", flags, dir_fd=root_fd)
+        try:
+            existing = os.stat("config.toml", dir_fd=config_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            if not stat.S_ISREG(existing.st_mode) or existing.st_nlink != 1:
+                return {"created": False, "reason": "alternate_filesystem_object_preserved"}
+            return {"created": False, "reason": "preexisting_config_preserved"}
+        descriptor = os.open(
+            temporary_name,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=config_fd,
+        )
+        temporary_created = True
+        try:
+            with os.fdopen(os.dup(descriptor), "wb") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+        finally:
+            os.close(descriptor)
+        try:
+            os.link(
+                temporary_name,
+                "config.toml",
+                src_dir_fd=config_fd,
+                dst_dir_fd=config_fd,
+                follow_symlinks=False,
+            )
+        except FileExistsError:
+            return {"created": False, "reason": "concurrent_config_preserved"}
+        os.unlink(temporary_name, dir_fd=config_fd)
+        temporary_created = False
+        try:
+            os.fsync(config_fd)
+        except OSError:
+            pass
+        return {"created": True, "reason": "created"}
+    finally:
+        if temporary_created and config_fd is not None:
+            try:
+                os.unlink(temporary_name, dir_fd=config_fd)
+            except FileNotFoundError:
+                pass
+        if config_fd is not None:
+            os.close(config_fd)
+        os.close(root_fd)
 
 
 def _command_available(name: str) -> bool:
@@ -599,6 +676,7 @@ def paste_safe_receipt(
         }
     first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
     install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
+    lifecycle = payload.get("lifecycle") if isinstance(payload.get("lifecycle"), dict) else {}
     advisory = advisory_summary(
         repo_root,
         command=command,
@@ -647,8 +725,15 @@ def paste_safe_receipt(
             "topology_node_count": topology.get("node_count"),
             "full_walk_performed": bool(inventory.get("full_walk_performed")) or False,
         },
-        "readiness": first_run.get("readiness") or first_run_summary({"enabled": bool(mode_payload.get("lcc_on")), "inventory": inventory, "topology": topology}).get("readiness"),
-        "next_action": advisory["next_action"],
+        "readiness": lifecycle.get("readiness") or first_run.get("readiness") or first_run_summary({"enabled": bool(mode_payload.get("lcc_on")), "inventory": inventory, "topology": topology}).get("readiness"),
+        "lifecycle": {
+            "schema_version": lifecycle.get("schema_version"),
+            "state": lifecycle.get("state"),
+            "readiness": lifecycle.get("readiness"),
+            "recommended_action": lifecycle.get("recommended_action"),
+            "exit_code": lifecycle.get("exit_code"),
+        },
+        "next_action": lifecycle.get("recommended_action") or advisory["next_action"],
         "caveats": ["read_only_inspection_only", "missing_or_stale_state_not_repaired"],
         "unsupported_unproven": [
             "native_installed_codex_auto_interception",
@@ -1185,6 +1270,11 @@ def doctor(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
     cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
     enabled = str(state.get("effective_mode") or state.get("configured_mode") or state.get("mode")) != "off"
     first_run = first_run_summary({"enabled": enabled, "inventory": inventory, "topology": topology})
+    lifecycle = lifecycle_status(
+        repo_root,
+        repo_root / DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+        expected_content=product_expected_content(),
+    )
     payload = {
         "status": "ok",
         "repo_root": str(repo_root),
@@ -1227,6 +1317,7 @@ def doctor(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
         "generated_state_paths": generated_state_path_status(repo_root, inspect_git_ignore=not advisory),
         "install": _manifest_summary(),
         "first_run": first_run,
+        "lifecycle": lifecycle,
         "native_codex_integration": {
             "slash_commands": "not_native",
             "installed_schema_discovery": "not_proven",
@@ -1261,12 +1352,14 @@ def format_doctor(payload: dict[str, Any]) -> str:
     generated_paths = payload.get("generated_state_paths") if isinstance(payload.get("generated_state_paths"), dict) else {}
     first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
     install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
+    lifecycle = payload.get("lifecycle") if isinstance(payload.get("lifecycle"), dict) else {}
     ignored_count = sum(1 for item in generated_paths.values() if isinstance(item, dict) and item.get("git_ignored"))
     lines = [
+        f"Lifecycle: {lifecycle.get('readiness') or 'unknown'} ({lifecycle.get('state') or 'unknown'})",
+        f"Lifecycle next action: {lifecycle.get('recommended_action') or 'pcodex status --advisory'}",
         "pCodex doctor",
         f"Repo root: {payload.get('repo_root')}",
         f"Readiness: {first_run.get('readiness') or 'unknown'}",
-        f"Next action: {first_run.get('next_action') or 'pcodex status'}",
         f"Install provenance: {install.get('provenance_status') or 'unknown'}",
         f"Configured mode: {payload.get('configured_mode')}",
         f"Effective mode: {payload.get('effective_mode')}",
@@ -1530,6 +1623,11 @@ def status(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
             "topology": topology,
         }
     )
+    lifecycle = lifecycle_status(
+        repo_root,
+        repo_root / DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+        expected_content=product_expected_content(),
+    )
     payload = {
         "schema_version": "pcodex.status.v1",
         "enabled": bool(state.get("enabled")),
@@ -1570,6 +1668,7 @@ def status(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
         "state_schema_version": "pcodex.state.v1",
         "install": _manifest_summary(),
         "first_run": first_run,
+        "lifecycle": lifecycle,
         "codex_cli": codex_cli,
         "codex_config": codex_config,
         "tuning_profile": tuning.get("profile"),
@@ -1731,6 +1830,18 @@ def format_cleanup(payload: dict[str, Any]) -> str:
     )
 
 
+def format_install(payload: dict[str, Any]) -> str:
+    lifecycle = payload.get("lifecycle_after") or payload.get("lifecycle_before") or {}
+    return "\n".join(
+        [
+            f"pCodex install: {payload.get('status')}",
+            f"Writes performed: {'yes' if payload.get('writes_performed') else 'no'}",
+            f"Lifecycle: {lifecycle.get('readiness') or 'unknown'} ({lifecycle.get('state') or 'unknown'})",
+            f"Next action: {lifecycle.get('recommended_action') or ('pcodex install --apply' if payload.get('status') == 'dry_run' else 'pcodex status --advisory')}",
+        ]
+    )
+
+
 def _format_mcp_status(mcp_result: dict[str, Any]) -> str:
     status_value = str(mcp_result.get("status") or "unknown")
     scope = str(mcp_result.get("config_scope") or "none")
@@ -1793,18 +1904,64 @@ def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     path = _repo_config_path(repo_root)
+    receipt_path = repo_root / DEFAULT_INSTALL_STATE_RELATIVE_PATH
+    lifecycle_before = lifecycle_status(repo_root, receipt_path, expected_content=product_expected_content())
     result = {
         "status": "dry_run" if dry_run else "installed",
         "repo_root": str(repo_root),
         "config_path": str(path),
-        "would_write": not path.exists(),
-        "doctor": doctor(cwd, advisory=dry_run),
+        "managed_path": PRODUCT_INSTALL_MARKER_RELATIVE_PATH,
+        "state_receipt": DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+        "would_write": (not path.exists() and not path.is_symlink() and not path.parent.is_symlink()) or lifecycle_before.get("state") != "healthy_installation",
+        "lifecycle_before": lifecycle_before,
+        "doctor": doctor(cwd, advisory=True),
     }
-    if not dry_run and not path.exists():
-        write_repo_config(cwd, enabled=False)
-        result["written"] = True
-    else:
+    if dry_run:
         result["written"] = False
+        result["writes_performed"] = False
+        return result
+    if lifecycle_before.get("readiness") == "BLOCKED":
+        result["status"] = "blocked_conflict"
+        result["written"] = False
+        result["writes_performed"] = False
+        result["lifecycle_after"] = lifecycle_before
+        return result
+    operation_type = "reinstall" if lifecycle_before.get("state") in {
+        "complete_uninstall", "repairable_incomplete_installation",
+    } else "setup"
+    managed_result = install_managed_file(
+        repo_root,
+        PRODUCT_INSTALL_MARKER_RELATIVE_PATH,
+        product_install_marker_content(),
+        receipt_path=receipt_path,
+        operation_type=operation_type,
+        sensitivity="public_safe",
+    )
+    result["managed_install"] = managed_result
+    if managed_result.get("status") == "conflict":
+        result["status"] = "blocked_conflict"
+        result["written"] = False
+        result["writes_performed"] = False
+        result["lifecycle_after"] = lifecycle_status(repo_root, receipt_path, expected_content=product_expected_content())
+        return result
+    validation = record_reinstall_validation(repo_root, receipt_path)
+    result["reinstall_validation"] = validation
+    config_content = (
+        "[pcodex]\n"
+        "enabled = false\n"
+        f'algorithm = "{PCODEX_PACKET_STRATEGY}"\n'
+    ).encode("utf-8")
+    config_result = _create_repo_config_if_absent(repo_root, config_content)
+    result["config_install"] = config_result
+    result["written"] = bool(config_result["created"])
+    result["writes_performed"] = bool(
+        managed_result.get("writes_performed")
+        or validation.get("writes_performed")
+        or result["written"]
+    )
+    result["lifecycle_after"] = lifecycle_status(repo_root, receipt_path, expected_content=product_expected_content())
+    if result["lifecycle_after"].get("readiness") != "READY":
+        result["status"] = "blocked_conflict"
     return result
 
 
@@ -1865,6 +2022,7 @@ def format_status(payload: dict[str, Any]) -> str:
     codex_config = payload.get("codex_config") if isinstance(payload.get("codex_config"), dict) else {}
     first_run = payload.get("first_run") if isinstance(payload.get("first_run"), dict) else {}
     install = payload.get("install") if isinstance(payload.get("install"), dict) else {}
+    lifecycle = payload.get("lifecycle") if isinstance(payload.get("lifecycle"), dict) else {}
     fallback_text = "active"
     if not fallback.get("active"):
         fallback_text = "none"
@@ -1885,8 +2043,9 @@ def format_status(payload: dict[str, Any]) -> str:
         codex_cli_text = f"available ({codex_cli.get('version') or 'version unknown'})"
     lines = [
         f"pCodex: {'on' if payload.get('enabled') else 'off'}",
+        f"Lifecycle: {lifecycle.get('readiness') or 'unknown'} ({lifecycle.get('state') or 'unknown'})",
+        f"Lifecycle next action: {lifecycle.get('recommended_action') or 'pcodex status --advisory'}",
         f"Readiness: {first_run.get('readiness') or 'unknown'}",
-        f"Next action: {first_run.get('next_action') or 'pcodex doctor'}",
         f"Install provenance: {install.get('provenance_status') or 'unknown'}",
         f"Configured mode: {payload.get('configured_mode')}",
         f"Effective mode: {payload.get('effective_mode')}",
@@ -1936,12 +2095,14 @@ def format_advisory_receipt(payload: dict[str, Any], *, title: str = "pCodex adv
     missing = advisory.get("missing_or_stale") if isinstance(advisory.get("missing_or_stale"), list) else []
     would_write = advisory.get("would_write") if isinstance(advisory.get("would_write"), list) else []
     would_refresh = advisory.get("would_refresh") if isinstance(advisory.get("would_refresh"), list) else []
+    lifecycle = payload.get("lifecycle") if isinstance(payload.get("lifecycle"), dict) else {}
     return "\n".join(
         [
             title,
             "Advisory mode: enabled",
             "Writes performed: no",
             f"Readiness: {payload.get('readiness') or 'unknown'}",
+            f"Lifecycle state: {lifecycle.get('state') or 'unknown'}",
             f"Missing/stale state: {', '.join(missing) if missing else 'none'}",
             f"Would refresh without advisory: {', '.join(would_refresh) if would_refresh else 'none'}",
             f"Would write without advisory: {', '.join(would_write) if would_write else 'none'}",
@@ -1949,7 +2110,7 @@ def format_advisory_receipt(payload: dict[str, Any], *, title: str = "pCodex adv
             f"Cache manifest: {cache_manifest.get('status') or 'unknown'}",
             f"Inventory: {inventory.get('state') or 'unknown'}, {inventory.get('file_count') or 0} files",
             f"Topology: {topology.get('state') or 'unknown'}, {topology.get('node_count') or 0} nodes",
-            f"Next action: {advisory.get('next_action') or payload.get('next_action') or 'none'}",
+            f"Next action: {lifecycle.get('recommended_action') or payload.get('next_action') or 'none'}",
             "Receipt is paste-safe: no prompts, source bodies, snippets, secrets, packet text, path lists, environment values, or command logs.",
         ]
     )
@@ -2481,7 +2642,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{setup,status,run,review,off,cleanup,uninstall,doctor}",
+        metavar="{install,setup,status,doctor,repair,uninstall,run,review,off,cleanup}",
     )
     doctor_parser = sub.add_parser("doctor", help="Check local pCodex readiness.")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
@@ -2507,8 +2668,18 @@ def _parser() -> argparse.ArgumentParser:
     uninstall_parser.add_argument("--operation-receipt", default=None, help=argparse.SUPPRESS)
     uninstall_parser.add_argument("--json", action="store_true", help="Print machine-readable uninstall result.")
     uninstall_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
+    repair_parser = sub.add_parser("repair", help="Preview or restore only receipt-proven pCodex state.")
+    repair_mode = repair_parser.add_mutually_exclusive_group()
+    repair_mode.add_argument("--dry-run", action="store_true", help="Read state and preview safe repairs without writing.")
+    repair_mode.add_argument("--yes", action="store_true", help="Apply only receipt-proven repairs with known expected content.")
+    repair_parser.add_argument("--state-receipt", default=None, help="Install-state receipt. Defaults to .premode/install-state.json.")
+    repair_parser.add_argument("--managed-root", default=None, help="Managed root bound to the receipt. Defaults to the repository root.")
+    repair_parser.add_argument("--operation-receipt", default=None, help=argparse.SUPPRESS)
+    repair_parser.add_argument("--json", action="store_true", help="Print machine-readable repair result.")
+    repair_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
+    install_parser.add_argument("--json", action="store_true", help="Print machine-readable install result.")
     install_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     status_parser = sub.add_parser("status", help="Show the current local mode and readiness.")
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable pCodex mode state.")
@@ -2579,6 +2750,44 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _lifecycle_preview_receipt(plan: dict[str, Any], operation_type: str) -> dict[str, Any]:
+    canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
+    planned_keys = (
+        ("will_create", "will_restore", "will_replace_owned")
+        if operation_type == "repair_preview"
+        else ("will_remove", "will_restore")
+    )
+    planned = [
+        Path(str(item.get("path") or "unknown")).name
+        for key in planned_keys
+        for item in (plan.get(key) or [])
+        if isinstance(item, dict)
+    ]
+    preserved_keys = (
+        ("will_preserve_modified", "will_preserve_unrelated")
+        if operation_type == "repair_preview"
+        else ("will_preserve",)
+    )
+    return {
+        "schema_version": "pcodex.lifecycle-operation-public.v1",
+        "product_version": __version__,
+        "operation_id": sha256_text(f"{operation_type}:{canonical}")[:32],
+        "operation_type": operation_type,
+        "started_at": None,
+        "completed_at": None,
+        "repository_or_installation_identity": plan.get("managed_root_hash"),
+        "authority_receipt_hash": plan.get("authority_receipt_hash"),
+        "planned_actions": planned,
+        "completed_actions": [],
+        "preserved_items": sum(len(plan.get(key) or []) for key in preserved_keys),
+        "conflicts": len(plan.get("conflict") or []),
+        "manual_actions": len(plan.get("requires_manual_action") or []),
+        "result": "preview",
+        "failure_stage": None,
+        "rollback_or_recovery_status": "not_applicable",
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
@@ -2633,6 +2842,42 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(format_cleanup(payload))
         return 0
+    if args.command == "repair":
+        if not args.dry_run and not args.yes:
+            print(
+                json.dumps({"status": "error", "error": "pcodex repair requires --dry-run or --yes", "codex_launch": "not_executed"}, indent=2, sort_keys=True),
+                file=sys.stderr,
+            )
+            return 2
+        managed_root = Path(args.managed_root).expanduser() if args.managed_root else repo_root
+        receipt_path = Path(args.state_receipt).expanduser() if args.state_receipt else managed_root / DEFAULT_INSTALL_STATE_RELATIVE_PATH
+        try:
+            payload = (
+                plan_repair(managed_root, receipt_path, expected_content=product_expected_content())
+                if args.dry_run
+                else apply_repair(
+                    managed_root,
+                    receipt_path,
+                    expected_content=product_expected_content(),
+                    operation_receipt_path=Path(args.operation_receipt).expanduser() if args.operation_receipt else None,
+                )
+            )
+        except (ManagedStateError, OSError) as exc:
+            print(json.dumps({"status": "error", "error": str(exc), "codex_launch": "not_executed"}, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        if args.dry_run:
+            payload["preview_receipt"] = _lifecycle_preview_receipt(payload, "repair_preview")
+            payload["status"] = "preview"
+        payload["dry_run"] = bool(args.dry_run)
+        payload["applied"] = bool(args.yes and payload.get("applied", False))
+        payload["codex_launch"] = "not_executed"
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(f"pCodex repair {payload['status']}:")
+            for key in ("will_create", "will_restore", "will_replace_owned", "will_preserve_modified", "will_preserve_unrelated", "conflict", "not_found", "unknown_owner", "unsupported_registration", "requires_manual_action", "already_healthy"):
+                print(f"- {key}: {len(payload.get(key) or [])}")
+        return 0 if args.dry_run or payload.get("applied") or payload.get("status") in {"already_healthy", "complete_uninstall"} else 2
     if args.command == "uninstall":
         if not args.dry_run and not args.yes:
             print(
@@ -2655,7 +2900,9 @@ def main(argv: list[str] | None = None) -> int:
         except (ManagedStateError, OSError) as exc:
             print(json.dumps({"status": "error", "error": str(exc), "codex_launch": "not_executed"}, indent=2, sort_keys=True), file=sys.stderr)
             return 2
-        payload["status"] = "preview" if args.dry_run else payload.get("status") or payload.get("operation", {}).get("status", "applied")
+        if args.dry_run:
+            payload["preview_receipt"] = _lifecycle_preview_receipt(payload, "uninstall_preview")
+        payload["status"] = "preview" if args.dry_run else payload.get("status") or payload.get("operation", {}).get("result", "applied")
         payload["dry_run"] = bool(args.dry_run)
         payload["applied"] = bool(args.yes and payload.get("applied", False))
         payload["codex_launch"] = "not_executed"
@@ -2663,12 +2910,16 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(f"pCodex uninstall {payload['status']}:")
-            for key in ("will_remove", "will_restore", "will_preserve", "conflict", "not_found", "unknown_owner", "requires_manual_action"):
+            for key in ("will_remove", "will_restore", "will_preserve", "conflict", "not_found", "already_absent", "unknown_owner", "unsupported_registration", "requires_manual_action"):
                 print(f"- {key}: {len(payload.get(key) or [])}")
-        return 0 if args.dry_run or payload.get("applied") or payload.get("status") == "no_changes" else 2
+        return 0 if args.dry_run or payload.get("applied") or payload.get("status") in {"no_changes", "complete_uninstall"} else 2
     if args.command == "install":
-        print(json.dumps(install(repo_root, dry_run=not args.apply), indent=2, sort_keys=True))
-        return 0
+        payload = install(repo_root, dry_run=not args.apply)
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(format_install(payload))
+        return 0 if payload.get("status") != "blocked_conflict" else 2
     if args.command == "status":
         payload = status(repo_root, advisory=args.advisory)
         if args.json:

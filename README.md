@@ -24,6 +24,8 @@ Beta package version: `0.3.0b1`.
 The primary workflow is deliberately narrow:
 
 ```bash
+pcodex install
+pcodex install --apply
 pcodex setup
 pcodex status
 pcodex run --dry-run "Fix the failing test"
@@ -31,7 +33,10 @@ pcodex run "Fix the failing test"
 pcodex review --since-compile
 pcodex off
 pcodex cleanup --local-state --dry-run
+pcodex repair --dry-run
+pcodex repair --yes
 pcodex uninstall --dry-run
+pcodex uninstall --yes
 ```
 
 Optional maintenance:
@@ -60,7 +65,7 @@ Generated pCodex skills resolve the executable with `.agents/skills/pcodex/bin/r
 
 `pcodex cleanup --local-state --dry-run` previews bounded cleanup of known generated repo-local pCodex state. `pcodex cleanup --local-state --yes` applies only that bounded cleanup. Unknown pCodex subcommands fail closed and do not launch Codex.
 
-`pcodex uninstall --dry-run` is a literal read-only preview over the versioned managed-state receipt. `pcodex uninstall --yes` removes only receipt-proven, unmodified files and preserves missing, unknown, preexisting, unrelated, or user-modified state. Plugin marketplace/MCP registration removal remains deferred until exact registration authority is established.
+`pcodex install` is a literal read-only preview; `pcodex install --apply` creates a deterministic product-owned lifecycle marker and its versioned authority receipt while leaving repository config user-owned. `pcodex repair --dry-run` is a literal read-only plan. `pcodex repair --yes` restores only missing receipt-proven state whose expected product bytes match the installed hash. `pcodex uninstall --dry-run` is the corresponding read-only removal preview; `pcodex uninstall --yes` removes only receipt-proven, unmodified, single-link regular files. Modified, unknown, preexisting, unrelated, symlink, hard-link, and unsupported registration state is preserved or blocked. Plugin marketplace/MCP registration removal remains deferred until exact registration authority is established.
 
 Terminal `pcodex` commands remain the primary supported control plane. A custom `/pcodex` slash command is not supported or claimed. MCP is optional and explicit: `pcodex integrate codex --write --with-mcp` writes only repo-local scaffold files and does not register MCP globally or mutate `~/.codex/config.toml`. Dry-run and setup/integration preview commands do not launch live Codex tasks.
 

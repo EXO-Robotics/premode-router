@@ -21,6 +21,8 @@ OpenClaw is advanced and experimental in `0.3.0b1`; it is not production-support
 The normal public commands are:
 
 ```text
+pcodex install
+pcodex install --apply
 pcodex setup
 pcodex status
 pcodex run --dry-run "<task>"
@@ -30,12 +32,14 @@ pcodex review --since-compile
 pcodex off
 pcodex cleanup --local-state --dry-run
 pcodex cleanup --local-state --yes
+pcodex repair --dry-run
+pcodex repair --yes
 pcodex uninstall --dry-run
 pcodex uninstall --yes
 premode review-patch --since-compile
 ```
 
-`cleanup --local-state` is the legacy bounded cleanup surface for known repo-local generated state. `uninstall` is the receipt-driven lifecycle foundation: preview is a pure read and apply removes only state whose ownership and installed hash are proven. It is not a broad directory cleaner.
+`pcodex install` previews the repository-local installation; `pcodex install --apply` creates the deterministic product-owned lifecycle marker and its authority receipt, while preserving the existing explicit user-config behavior. `cleanup --local-state` is the legacy bounded cleanup surface for known repo-local generated state. `repair` and `uninstall` are receipt-driven lifecycle surfaces: previews are pure reads, repair restores only missing known content with exact authority, and uninstall removes only state whose ownership and installed hash are proven. Neither command is a broad directory repairer or cleaner.
 
 `first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, `integrate codex`, MCP, plugin initialization, benchmarks, stress tools, labs, hooks, and tuning internals are advanced, internal, or research surfaces as classified in `docs/PUBLIC_SURFACES.md` and `premode.product.json`.
 
@@ -61,13 +65,21 @@ Compilation may read repository metadata and eligible files within ignore, sensi
 
 Normal commands do not mutate global Codex configuration. Integration writes require explicit state-changing commands. The authoritative state inventory is `premode.product.json`; `docs/PUBLIC_SURFACES.md` is its human-readable map.
 
-Two existing lifecycle receipts have complementary, non-overlapping authority. The current source installer continues to own `install_manifest.json`, which binds and validates the isolated source-install root and is consumed by `scripts/install_pcodex_from_source.sh --uninstall`. The `pcodex.install-state.v1` receipt is the per-file authority for managed repo/Codex integration state and drives `pcodex uninstall`. Neither supersedes the other. Managed receipts contain ownership metadata and hashes, not raw prompts or model packets. Receipt and target writes are atomic, versioned, and permission-conscious. A receipt is written only after the target operation succeeds; a failed receipt write rolls back a newly created managed file. Unknown future receipt schemas are never downgraded.
+Two install authorities have complementary, non-overlapping scope. The current source installer continues to own `install_manifest.json`, which binds and validates the isolated source-install root and is consumed by `scripts/install_pcodex_from_source.sh --uninstall`. The `pcodex.install-state.v1` receipt is the per-file authority for managed repository/Codex integration state and drives `pcodex repair` and `pcodex uninstall`. Neither supersedes the other. The supported public lifecycle item is `.premode/pcodex-install.json`, whose exact deterministic content is part of product authority. `.pcodex/config.toml` remains user-owned and is preserved by repair and uninstall. Managed receipts contain ownership metadata and hashes, not raw prompts or model packets. Receipt and target writes are atomic, versioned, and permission-conscious. A receipt is written only after the target operation succeeds; a failed receipt write rolls back a newly created managed file. Unknown future receipt schemas are never downgraded.
 
 An item may be automatically removed only when pCodex proves ownership, the current hash still matches the installed hash or an explicitly safe generated variant, removal is bounded to the managed root, and the state-changing action was approved. User-modified files and unrelated configuration entries are preserved. Missing, corrupt, future-schema, path-escape, symlink, or unknown-owner state fails closed with a conflict or manual-action report.
 
-Uninstall preview reports `will_remove`, `will_restore`, `will_preserve`, `conflict`, `not_found`, `unknown_owner`, and `requires_manual_action`. Preview does not create state, refresh caches, record telemetry, update timestamps, create packet or temporary files, mutate receipts, change Codex configuration, or launch Codex/OpenClaw.
+Repair preview reports `will_create`, `will_restore`, `will_replace_owned`, `will_preserve_modified`, `will_preserve_unrelated`, `conflict`, `not_found`, `unknown_owner`, `unsupported_registration`, `requires_manual_action`, and `already_healthy`. Uninstall preview reports `will_remove`, `will_restore`, `will_preserve`, `conflict`, `not_found`, `already_absent`, `unknown_owner`, `unsupported_registration`, and `requires_manual_action`. Preview does not create state, refresh caches, record telemetry, update timestamps, create packet or temporary files, mutate receipts, change Codex configuration, or launch Codex/OpenClaw.
 
-The beta executor can currently remove regular files created through the managed-state API when the receipt, separate ownership marker, owner, safe managed-root binding, and installed hash all match. Preexisting identical files are preserved. Removal of the current isolated source-install root remains under its existing manifest-validated installer command; `pcodex uninstall` does not duplicate that broad-root responsibility. Plugin marketplace/MCP entry removal, partial installs without receipts, and OpenClaw/research state are intentionally deferred.
+Repair can restore a missing individually receipt-declared file only when authoritative product content hashes to the recorded installed hash. A missing ownership marker can be recreated only at the canonical receipt location when an extant exact generated item and a strict reinstall-validation receipt independently bind the same ownership ID and exact current authority-receipt hash; corrupt, stale, missing-proof, or mismatched markers fail closed. Modified files, hard links, symlinks, directories, unreadable state, unknown owners, unknown schemas, unsupported registrations, experimental state, and unknown content are preserved or blocked.
+
+The uninstall executor can remove regular single-link files created through the managed-state API when the receipt, separate ownership marker, owner, safe managed-root binding, and installed hash all match. It uses descriptor-relative quarantine and validates identity/content before deletion. Its v2 operation receipt is an intentional-absence tombstone only while its authority hash matches the exact current install-state receipt; reinstall replaces that authority receipt, so stale uninstall evidence cannot suppress repair. Preexisting identical and user-modified files are preserved. Removal of the current isolated source-install root remains under its existing manifest-validated installer command; `pcodex uninstall` does not duplicate that broad-root responsibility. Plugin marketplace/MCP entry removal, partial installs without receipts, and OpenClaw/research state are intentionally deferred.
+
+Crash recovery is bounded in this beta. Caught exceptions restore verified bytes before returning. A process death can leave an ownership- and receipt-hash-bound uninstall quarantine journal with per-item target mappings; status reports `interrupted_uninstall`, and later uninstall attempts fail closed without deleting or trusting that staging. Automatic crash resume is not supported: preserve the journal and inspect it manually. Repair uses atomic leaf commits and rolls back caught exceptions, but arbitrary power-loss journaling is not claimed.
+
+The release-qualified evidence backend is macOS. There, replacement of an existing owned lifecycle receipt uses an atomic filesystem swap followed by validation of the displaced receipt and atomic swap-back on mismatch. Other platforms retain descriptor-relative validation but are not claimed to close the same final-component concurrent-swap window until separately qualified.
+
+Status and doctor expose `READY`, `NEEDS_ACTION`, or `BLOCKED`, one recommended action, and the lifecycle exit-code meaning (`0`, `1`, or `2`) in versioned JSON. Their established command exit remains informational for compatibility. Advisory forms are literal no-write and never repair automatically.
 
 ## Explicitly unsupported claims
 
@@ -80,6 +92,7 @@ The beta does not promise universal task coverage, universal token or cost savin
 - Ranking seam: `docs/ALGORITHM_INTEGRATION_INTERFACE.md`, `src/premode/production_ranking.py`, and its JSON schema.
 - Canonical packet: `src/premode/core_packet.py` plus characterization tests.
 - Install-state receipt: `src/premode/managed_state.py` and `schemas/pcodex.install-state.schema.json`.
+- Repair/uninstall plans and operation receipts: `src/premode/managed_state.py` and `schemas/pcodex.*-plan.schema.json`, `schemas/pcodex.*-operation.schema.json`.
 - First run: `docs/FIRST_RUN.md`.
 - Claims: `docs/CLAIMS_AND_LIMITATIONS.md`.
 - Version: root `pyproject.toml`, mirrored by `src/premode/__init__.py` and checked by tests.

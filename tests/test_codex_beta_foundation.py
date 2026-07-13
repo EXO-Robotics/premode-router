@@ -303,17 +303,14 @@ def test_missing_corrupt_and_future_receipts_fail_closed(tmp_path: Path, kind: s
 def test_atomic_receipt_failure_rolls_back_new_file(tmp_path: Path, monkeypatch: Any) -> None:
     root = tmp_path / "receipt-failure" / "pcodex-state"
     receipt = root / "receipt.json"
-    real_replace = os.replace
-    calls = 0
+    real_write = managed_state._atomic_write_managed_json
 
-    def fail_second_replace(source: str | bytes | os.PathLike[str] | os.PathLike[bytes], destination: str | bytes | os.PathLike[str] | os.PathLike[bytes]) -> None:
-        nonlocal calls
-        calls += 1
-        if calls == 2:
+    def fail_receipt(managed_root: Path, owned_path: str, payload: dict[str, Any], **kwargs: Any) -> Path:
+        if payload.get("schema_version") == managed_state.INSTALL_STATE_SCHEMA_VERSION:
             raise OSError("simulated interrupted receipt replacement")
-        real_replace(source, destination)
+        return real_write(managed_root, owned_path, payload, **kwargs)
 
-    monkeypatch.setattr(os, "replace", fail_second_replace)
+    monkeypatch.setattr(managed_state, "_atomic_write_managed_json", fail_receipt)
     with pytest.raises(OSError, match="interrupted"):
         install_managed_file(root, "owned/file.txt", b"content", receipt_path=receipt)
 
@@ -381,7 +378,7 @@ def test_operation_receipt_collision_preserves_target(tmp_path: Path) -> None:
     install_managed_file(root, "owned.txt", b"owned", receipt_path=receipt)
     unrelated = root / "unrelated.json"
     unrelated.write_text("user content", encoding="utf-8")
-    with pytest.raises(ManagedStateError, match="unrelated state"):
+    with pytest.raises(ManagedStateError, match="custom uninstall operation receipts are unsupported"):
         apply_uninstall(root, receipt, operation_receipt_path=unrelated)
     assert (root / "owned.txt").read_bytes() == b"owned"
     assert unrelated.read_text(encoding="utf-8") == "user content"
@@ -402,7 +399,7 @@ def test_marker_pins_receipt_path_and_operation_receipt_ownership(tmp_path: Path
         "schema_version": managed_state.UNINSTALL_OPERATION_SCHEMA_VERSION,
         "managed_root_hash": sha256_bytes(str(root.resolve()).encode("utf-8")),
     }), encoding="utf-8")
-    with pytest.raises(ManagedStateError, match="unrelated state"):
+    with pytest.raises(ManagedStateError, match="custom uninstall operation receipts are unsupported"):
         apply_uninstall(root, receipt, operation_receipt_path=unrelated)
     assert (root / "owned.txt").read_bytes() == b"owned"
 
@@ -474,14 +471,14 @@ def test_operation_receipt_failure_restores_removed_target(tmp_path: Path, monke
     receipt = root / "receipt.json"
     target = root / "owned.txt"
     install_managed_file(root, "owned.txt", b"owned", receipt_path=receipt)
-    real_write = managed_state._atomic_write_json
+    real_write = managed_state._atomic_write_managed_json
 
-    def fail_operation(path: Path, payload: dict[str, Any]) -> None:
+    def fail_operation(managed_root: Path, owned_path: str, payload: dict[str, Any], **kwargs: Any) -> Path:
         if payload.get("schema_version") == managed_state.UNINSTALL_OPERATION_SCHEMA_VERSION:
             raise OSError("simulated operation receipt failure")
-        real_write(path, payload)
+        return real_write(managed_root, owned_path, payload, **kwargs)
 
-    monkeypatch.setattr(managed_state, "_atomic_write_json", fail_operation)
+    monkeypatch.setattr(managed_state, "_atomic_write_managed_json", fail_operation)
     with pytest.raises(OSError, match="operation receipt failure"):
         apply_uninstall(root, receipt)
     assert target.read_bytes() == b"owned"
@@ -523,11 +520,10 @@ def test_post_replace_directory_fsync_failure_keeps_uninstall_consistent(tmp_pat
         real_fsync(fd)
 
     monkeypatch.setattr(os, "fsync", fail_directory_fsync)
-    applied = apply_uninstall(root, receipt)
-    assert applied["status"] == "applied"
-    assert not target.exists()
-    operation = Path(applied["operation_receipt"])
-    assert json.loads(operation.read_text(encoding="utf-8"))["status"] == "applied"
+    with pytest.raises(OSError, match="directory fsync unsupported"):
+        apply_uninstall(root, receipt)
+    assert target.read_bytes() == b"owned"
+    assert not (root / ".premode" / "uninstall-operation.json").exists()
 
 
 def test_unknown_receipt_owner_blocks_all_removal(tmp_path: Path) -> None:

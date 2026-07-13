@@ -91,6 +91,7 @@ def test_advisory_status_and_doctor_leave_adversarial_state_unchanged(
         ["run", "Inspect src/app.py exactly", "--dry-run", "--json"],
         ["integrate", "codex", "--dry-run", "--json"],
         ["uninstall", "--dry-run", "--json"],
+        ["repair", "--dry-run", "--json"],
         ["cleanup", "--local-state", "--dry-run", "--json"],
         ["install"],
         ["first-run", "--advisory", "--json"],
@@ -115,6 +116,27 @@ def test_every_advertised_pcodex_preview_is_literal_no_write(
     )
     assert verification["value"][0] == 0, verification["value"][1]
     assert verification["passed"], verification["comparison"]["changes"]
+    assert not marker.exists()
+
+
+def test_repair_preview_for_damaged_installed_state_is_strict_literal_no_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _repo(tmp_path, "damaged installed repository β")
+    home, temp, marker = _controlled_environment(tmp_path, monkeypatch)
+    assert pcodex.install(repo, dry_run=False)["lifecycle_after"]["readiness"] == "READY"
+    marker.unlink(missing_ok=True)
+    (repo / ".premode" / "pcodex-install.json").unlink()
+    roots = [GovernedRoot("repo", repo), GovernedRoot("home", home), GovernedRoot("temp", temp)]
+    verification = verify_no_write(
+        lambda: _execute(["repair", "--dry-run", "--json", "--repo-root", str(repo)]),
+        roots=roots,
+        monitor_processes=False,
+        monitor_filesystem=True,
+    )
+    assert verification["passed"], verification["comparison"]["changes"]
+    assert verification["value"][0] == 0
     assert not marker.exists()
 
 

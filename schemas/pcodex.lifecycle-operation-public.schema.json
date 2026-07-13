@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.lifecycle-operation-public.schema.json",
+  "title": "pCodex sanitized lifecycle operation receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_version", "operation_id", "operation_type", "started_at", "completed_at", "repository_or_installation_identity", "authority_receipt_hash", "planned_actions", "completed_actions", "preserved_items", "conflicts", "manual_actions", "result", "failure_stage", "rollback_or_recovery_status"],
+  "properties": {
+    "schema_version": {"const": "pcodex.lifecycle-operation-public.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "operation_id": {"type": "string", "minLength": 1},
+    "operation_type": {"enum": ["repair_preview", "repair_apply", "uninstall_preview", "uninstall_apply", "reinstall_validation"]},
+    "started_at": {"type": ["string", "null"]},
+    "completed_at": {"type": ["string", "null"]},
+    "repository_or_installation_identity": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "authority_receipt_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+    "planned_actions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "completed_actions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "preserved_items": {"type": "integer", "minimum": 0},
+    "conflicts": {"type": "integer", "minimum": 0},
+    "manual_actions": {"type": "integer", "minimum": 0},
+    "result": {"type": "string", "minLength": 1},
+    "failure_stage": {"type": ["string", "null"]},
+    "rollback_or_recovery_status": {"type": "string", "minLength": 1}
+  }
+}

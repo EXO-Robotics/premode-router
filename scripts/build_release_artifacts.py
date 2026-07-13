@@ -173,6 +173,23 @@ def persist_no_write_probe(output: Path, label: str, payload: dict[str, object])
     return summary
 
 
+def persist_lifecycle_probe(output: Path, label: str, payload: dict[str, object]) -> dict[str, object]:
+    if payload.get("passed") is not True:
+        raise RuntimeError(f"{label} installed lifecycle probe failed")
+    write_json(output / "private-receipts" / "lifecycle" / f"{label}.json", payload)
+    summary = {
+        "schema_version": payload.get("schema_version"),
+        "passed": payload.get("passed"),
+        "full_cycle": payload.get("full_cycle"),
+        "modified_cycle": payload.get("modified_cycle"),
+        "receipts": payload.get("receipts"),
+        "performance": payload.get("performance"),
+        "installed_import_isolated": True,
+    }
+    write_json(output / "receipts" / f"installed-lifecycle-{label}.json", summary)
+    return summary
+
+
 def write_tester_bundle(source: Path, output: Path, artifacts: Path) -> Path:
     bundle = output / "pcodex-private-tester-bundle.zip"
     entries: list[tuple[Path, str]] = []
@@ -287,6 +304,13 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         wheel_no_write_summary = persist_no_write_probe(output, "wheel", wheel_no_write)
         if not wheel_no_write.get("passed"):
             raise RuntimeError("installed wheel no-write probe failed after evidence persistence")
+        wheel_lifecycle = json.loads(run(
+            str(smoke_python), str(source / "scripts" / "installed_lifecycle_probe.py"),
+            "--pcodex", str(smoke_bin / "pcodex"),
+            "--control-root", str(temp / "wheel-lifecycle-control"),
+            cwd=temp, env={**smoke_env, "PYTHONDONTWRITEBYTECODE": "1"},
+        ))
+        wheel_lifecycle_summary = persist_lifecycle_probe(output, "wheel", wheel_lifecycle)
         installed_contract = json.loads(run(
             str(smoke_python), "-c",
             "import json; from premode.product_contract import validate_installed_product_contract as v; print(json.dumps(v(),sort_keys=True))",
@@ -327,6 +351,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
 
         sdist_smoke = "not_requested"
         sdist_no_write: dict[str, object] | str = "not_requested"
+        sdist_lifecycle: dict[str, object] | str = "not_requested"
         if with_sdist:
             sdists = list(artifacts.glob("*.tar.gz"))
             if len(sdists) != 1:
@@ -357,6 +382,13 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             sdist_no_write_summary = persist_no_write_probe(output, "sdist", sdist_no_write)
             if not sdist_no_write.get("passed"):
                 raise RuntimeError("installed sdist no-write probe failed after evidence persistence")
+            sdist_lifecycle = json.loads(run(
+                str(sdist_python), str(source / "scripts" / "installed_lifecycle_probe.py"),
+                "--pcodex", str(sdist_bin / "pcodex"),
+                "--control-root", str(temp / "sdist-lifecycle-control"),
+                cwd=temp, env={**env, "PATH": str(sdist_bin) + os.pathsep + env.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+            ))
+            sdist_lifecycle_summary = persist_lifecycle_probe(output, "sdist", sdist_lifecycle)
             run(str(sdist_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
             run(str(sdist_python), "-c", "import importlib.util; assert importlib.util.find_spec('premode') is None", cwd=temp)
             sdist_smoke = "passed"
@@ -372,6 +404,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             "sdist_smoke": sdist_smoke,
             "wheel_no_write": wheel_no_write_summary,
             "sdist_no_write": sdist_no_write_summary if isinstance(sdist_no_write, dict) else sdist_no_write,
+            "wheel_lifecycle": wheel_lifecycle_summary,
+            "sdist_lifecycle": sdist_lifecycle_summary if isinstance(sdist_lifecycle, dict) else sdist_lifecycle,
             "external_strategy_distribution_present": False,
         })
         run(str(smoke_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)

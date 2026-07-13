@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.uninstall-plan.schema.json",
+  "title": "pCodex read-only uninstall plan",
+  "type": "object",
+  "required": ["schema_version", "product_version", "managed_root_hash", "receipt_status", "writes_performed", "will_remove", "will_restore", "will_preserve", "conflict", "not_found", "already_absent", "unknown_owner", "unsupported_registration", "requires_manual_action"],
+  "properties": {
+    "schema_version": {"const": "pcodex.uninstall-plan.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "managed_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "receipt_status": {"enum": ["missing", "loaded", "corrupt", "invalid", "unknown_schema"]},
+    "writes_performed": {"const": false},
+    "will_remove": {"$ref": "#/$defs/actions"},
+    "will_restore": {"$ref": "#/$defs/actions"},
+    "will_preserve": {"$ref": "#/$defs/actions"},
+    "conflict": {"$ref": "#/$defs/actions"},
+    "not_found": {"$ref": "#/$defs/actions"},
+    "already_absent": {"$ref": "#/$defs/actions"},
+    "unknown_owner": {"$ref": "#/$defs/actions"},
+    "unsupported_registration": {"$ref": "#/$defs/actions"},
+    "requires_manual_action": {"$ref": "#/$defs/actions"}
+  },
+  "$defs": {
+    "actions": {"type": "array", "items": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string", "minLength": 1}}}}
+  }
+}

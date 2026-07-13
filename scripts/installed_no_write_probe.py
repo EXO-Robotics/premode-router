@@ -49,9 +49,26 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
     }
     roots = governed_roots_from_product(repository, home=home, temp_root=temp_root, environ=env)
     premode_cli = pcodex.with_name("premode")
+    damaged_repository = control_root / "damaged-installation"
+    damaged_repository.mkdir(parents=True, exist_ok=True)
+    (damaged_repository / ".git").mkdir()
+    install_result = subprocess.run(
+        [str(pcodex), "install", "--apply", "--json", "--repo-root", str(damaged_repository)],
+        cwd=damaged_repository,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    if install_result.returncode != 0:
+        raise RuntimeError(f"could not prepare damaged installed fixture: {install_result.stderr}")
+    (damaged_repository / ".premode" / "pcodex-install.json").unlink()
+    damaged_roots = governed_roots_from_product(damaged_repository, home=home, temp_root=temp_root, environ=env)
     commands = {
         "status_advisory": [str(pcodex), "status", "--advisory", "--json", "--repo-root", str(repository)],
         "doctor_advisory": [str(pcodex), "doctor", "--advisory", "--json", "--repo-root", str(repository)],
+        "repair_preview": [str(pcodex), "repair", "--dry-run", "--json", "--repo-root", str(damaged_repository)],
         "uninstall_preview": [str(pcodex), "uninstall", "--dry-run", "--json", "--repo-root", str(repository)],
         "run_dry_run": [str(pcodex), "run", "Installed exact task", "--dry-run", "--json", "--repo", str(repository)],
         "integrate_codex_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--json", "--repo-root", str(repository)],
@@ -66,9 +83,11 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
     public_receipts: dict[str, object] = {}
     private_receipts: dict[str, object] = {}
     for name, command in commands.items():
+        command_repository = damaged_repository if name == "repair_preview" else repository
+        command_roots = damaged_roots if name == "repair_preview" else roots
         verification = verify_no_write(
-            lambda command=command: _run(command, cwd=repository, env=env),
-            roots=roots,
+            lambda command=command, command_repository=command_repository: _run(command, cwd=command_repository, env=env),
+            roots=command_roots,
             monitor_processes=True,
             monitor_filesystem=True,
         )
@@ -122,7 +141,7 @@ def main() -> int:
     args = parser.parse_args()
     result = probe(pcodex=args.pcodex.resolve(), repository=args.repository.resolve(), control_root=args.control_root.resolve(), commit_sha=args.commit_sha, timestamp=args.timestamp)
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 0
+    return 0 if result.get("passed") is True else 1
 
 
 if __name__ == "__main__":

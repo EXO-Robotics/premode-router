@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.repair-plan.schema.json",
+  "title": "pCodex read-only repair plan",
+  "type": "object",
+  "required": ["schema_version", "product_version", "managed_root_hash", "receipt_status", "writes_performed", "will_create", "will_restore", "will_replace_owned", "will_preserve_modified", "will_preserve_unrelated", "conflict", "not_found", "unknown_owner", "unsupported_registration", "requires_manual_action", "already_healthy", "intentionally_uninstalled"],
+  "properties": {
+    "schema_version": {"const": "pcodex.repair-plan.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "managed_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "receipt_status": {"enum": ["missing", "loaded", "corrupt", "invalid", "unknown_schema"]},
+    "writes_performed": {"const": false},
+    "will_create": {"$ref": "#/$defs/actions"},
+    "will_restore": {"$ref": "#/$defs/actions"},
+    "will_replace_owned": {"$ref": "#/$defs/actions"},
+    "will_preserve_modified": {"$ref": "#/$defs/actions"},
+    "will_preserve_unrelated": {"$ref": "#/$defs/actions"},
+    "conflict": {"$ref": "#/$defs/actions"},
+    "not_found": {"$ref": "#/$defs/actions"},
+    "unknown_owner": {"$ref": "#/$defs/actions"},
+    "unsupported_registration": {"$ref": "#/$defs/actions"},
+    "requires_manual_action": {"$ref": "#/$defs/actions"},
+    "already_healthy": {"$ref": "#/$defs/actions"},
+    "intentionally_uninstalled": {"$ref": "#/$defs/actions"}
+  },
+  "$defs": {
+    "actions": {"type": "array", "items": {"type": "object", "required": ["path"], "properties": {"path": {"type": "string", "minLength": 1}}}}
+  }
+}

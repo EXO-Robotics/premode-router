@@ -20,6 +20,7 @@
     "tags_are_not_automatic": true
   },
   "public_commands": [
+    "pcodex install",
     "pcodex setup",
     "pcodex status",
     "pcodex run",
@@ -27,6 +28,7 @@
     "pcodex review",
     "pcodex off",
     "pcodex cleanup",
+    "pcodex repair",
     "pcodex uninstall",
     "premode review-patch"
   ],
@@ -96,7 +98,7 @@
     {"surface": "premode production package", "classification": "public_core", "kind": "package"},
     {"surface": "canonical_core_v1 packet renderer", "classification": "public_core", "kind": "renderer"},
     {"surface": "ProductionRankingProviderV1", "classification": "public_core", "kind": "provider_interface"},
-    {"surface": "pcodex setup/status/run/doctor/review/off/cleanup/uninstall", "classification": "public_codex", "kind": "commands"},
+    {"surface": "pcodex install/setup/status/run/doctor/review/off/cleanup/repair/uninstall", "classification": "public_codex", "kind": "commands"},
     {"surface": "plugins/pcodex skills", "classification": "public_codex", "kind": "codex_plugin_assets"},
     {"surface": "pcodex first-run/on/tuned/tune/ui/compile/integrate", "classification": "advanced", "kind": "commands"},
     {"surface": "pcodex MCP server", "classification": "advanced", "kind": "integration"},
@@ -132,10 +134,19 @@
       "surface": "managed install-state receipt", "location": ".premode/install-state.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful managed setup, repair, migration, or reinstall", "read_behavior": "read-only preview and ownership proof", "write_behavior": "atomic after target success", "sensitivity": "private", "schema_version": "pcodex.install-state.v1", "cleanup_policy": "retain as ownership evidence", "repair_policy": "never downgrade future schema", "uninstall_policy": "drives bounded planner and executor", "conflict_policy": "missing, corrupt, or unknown fails closed", "user_modification_policy": "preserve and require manual action"
     },
     {
-      "surface": "managed-state ownership marker", "location": ".premode/managed-state-owner.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "first successful managed install", "read_behavior": "bind the managed root and authoritative install-state receipt", "write_behavior": "atomic creation with private permissions", "sensitivity": "private", "schema_version": "pcodex.managed-state-owner.v1", "cleanup_policy": "retain as lifecycle authority", "repair_policy": "missing or mismatched marker requires manual action", "uninstall_policy": "never remove while managed receipts remain", "conflict_policy": "fail closed", "user_modification_policy": "preserve and block automatic mutation"
+      "surface": "managed-state ownership marker", "location": ".premode/managed-state-owner.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "first successful managed install", "read_behavior": "bind the managed root and authoritative install-state receipt", "write_behavior": "atomic creation with private permissions", "sensitivity": "private", "schema_version": "pcodex.managed-state-owner.v1", "cleanup_policy": "retain as lifecycle authority", "repair_policy": "recreate only when a canonical receipt plus an extant exact generated item independently prove authority; mismatches require manual action", "uninstall_policy": "never remove while managed receipts remain", "conflict_policy": "fail closed", "user_modification_policy": "preserve and block automatic mutation"
     },
     {
-      "surface": "uninstall operation receipt", "location": ".premode/uninstall-operation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful bounded uninstall apply", "read_behavior": "audit completed removals and preserved conflicts", "write_behavior": "atomic only after quarantined bytes are removed", "sensitivity": "private", "schema_version": "pcodex.uninstall-operation.v1", "cleanup_policy": "retain as lifecycle evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership", "uninstall_policy": "not a deletion authority by itself", "conflict_policy": "unrelated or malformed output blocks mutation", "user_modification_policy": "preserve and require a different output path"
+      "surface": "uninstall operation receipt", "location": ".premode/uninstall-operation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful bounded uninstall apply", "read_behavior": "audit completed removals and act as an intentional-absence tombstone only while bound to the exact current authority receipt hash", "write_behavior": "atomic only after quarantined bytes are removed", "sensitivity": "private", "schema_version": "pcodex.uninstall-operation.v2", "cleanup_policy": "retain as lifecycle evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership; v1 remains readable for overwrite compatibility but is not a tombstone", "uninstall_policy": "not a deletion authority by itself", "conflict_policy": "unrelated or malformed output blocks mutation", "user_modification_policy": "preserve and require a different output path"
+    },
+    {
+      "surface": "repair operation receipt", "location": ".premode/repair-operation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful receipt-bound repair apply", "read_behavior": "audit completed restorations and preserved conflicts", "write_behavior": "atomic only after repaired state and install-state receipt commit", "sensitivity": "private", "schema_version": "pcodex.repair-operation.v1", "cleanup_policy": "retain as lifecycle evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership", "uninstall_policy": "not a deletion authority", "conflict_policy": "unrelated or malformed output blocks mutation", "user_modification_policy": "preserve and require a different output path"
+    },
+    {
+      "surface": "reinstall validation receipt", "location": ".premode/reinstall-validation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful install or reinstall validation", "read_behavior": "bind exact healthy managed items to the current install-state authority hash", "write_behavior": "atomic after managed-state validation", "sensitivity": "private", "schema_version": "pcodex.reinstall-validation.v1", "cleanup_policy": "retain as lifecycle and bounded marker-recovery evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership", "uninstall_policy": "not deletion authority by itself", "conflict_policy": "unrelated or malformed output blocks validation", "user_modification_policy": "preserve and require manual action"
+    },
+    {
+      "surface": "managed install marker", "location": ".premode/pcodex-install.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit pcodex install --apply", "read_behavior": "verify deterministic product-owned lifecycle content", "write_behavior": "private staged atomic replacement only with receipt authority", "sensitivity": "public_safe", "schema_version": "pcodex.managed-install.v1", "cleanup_policy": "remove only when receipt-proven and unmodified", "repair_policy": "restore missing exact expected content only", "uninstall_policy": "receipt-bound removal with hash recheck and quarantine", "conflict_policy": "preserve modified or alternate filesystem objects", "user_modification_policy": "preserve and require manual action"
     },
     {
       "surface": "uninstall quarantine", "location": ".premode/uninstall-quarantine-<operation-id>/", "classification": "internal", "owner": "pcodex", "creation_trigger": "bounded uninstall apply after preview", "read_behavior": "validate renamed files through no-follow directory descriptors", "write_behavior": "private transient directory with descriptor-relative rename and unlink", "sensitivity": "matches target", "schema_version": "none", "cleanup_policy": "remove before the applied operation receipt is committed", "repair_policy": "restore the current item immediately on validation or receipt failure", "uninstall_policy": "never scan or delete unrelated quarantine-like names", "conflict_policy": "fail closed", "user_modification_policy": "restore or preserve"

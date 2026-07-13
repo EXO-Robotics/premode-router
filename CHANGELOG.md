@@ -5,6 +5,8 @@
 - Reconciled the Codex-first private-beta product contract and public/state ownership inventory.
 - Added the versioned `ProductionRankingProviderV1` product seam without changing incumbent ranking behavior.
 - Added atomic managed install-state receipts and receipt-driven bounded uninstall preview/apply foundations.
+- Completed public receipt-bound repair preview/apply, lifecycle status/doctor reporting, uninstall tombstones, safe reinstall, and user-modification preservation.
+- Added strict repair-preview no-write coverage plus isolated wheel/sdist lifecycle probes and lifecycle operation receipt schemas.
 - Kept OpenClaw advanced/experimental and preserved the post-beta 90/100 roadmap gates.
 
 ## v0.2.6.24

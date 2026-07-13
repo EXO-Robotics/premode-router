@@ -7,7 +7,7 @@
 | Classification | Active surfaces |
 | --- | --- |
 | `public_core` | `premode` production package, `canonical_core_v1`, `ProductionRankingProviderV1` |
-| `public_codex` | public pCodex commands, receipt-driven uninstall foundation, repo-local pCodex skills/plugin assets |
+| `public_codex` | public pCodex commands, receipt-driven install/repair/uninstall lifecycle, repo-local pCodex skills/plugin assets |
 | `advanced` | first-run/on/tuned/tune/ui/compile/integrate, MCP, plugin initialization, OpenClaw repository profile |
 | `experimental` | OpenClaw execution-integration work |
 | `research` | observer/Qwen evidence, labs, live-token harnesses, experimental candidates |
@@ -19,7 +19,7 @@
 
 Every stateful entry records owner, creation trigger, read/write behavior, sensitivity, schema, cleanup, repair, uninstall, conflict, and user-modification policy in `premode.product.json`.
 
-Production-owned repo-local state includes generated `.premode` packets, receipts, indexes, mode/tuning metadata, and the managed install-state receipt when created by a state-changing operation. The current isolated source install separately retains `pcodex.install_manifest.v1` as its install-root provenance/ownership authority and uses the source installer's validated `--uninstall`; it is not deprecated or replaced by the per-file receipt. Repo/user `.pcodex` configuration is preserved unless a valid receipt proves exact product ownership. Codex plugin files may be owned per file, but unrelated marketplace entries, unrelated MCP servers, global Codex configuration, and user-modified files are never removed by name-based scanning.
+Production-owned repo-local state includes generated `.premode` packets, receipts, indexes, mode/tuning metadata, the deterministic `.premode/pcodex-install.json` lifecycle marker, and the managed install-state receipt when created by a state-changing operation. The current isolated source install separately retains `pcodex.install_manifest.v1` as its install-root provenance/ownership authority and uses the source installer's validated `--uninstall`; it is not deprecated or replaced by the per-file receipt. Repo/user `.pcodex` configuration is user-owned and preserved by lifecycle repair/uninstall. Codex plugin files may be owned per file, but unrelated marketplace entries, unrelated MCP servers, global Codex configuration, and user-modified files are never removed by name-based scanning.
 
 The following are explicitly not production-owned:
 
@@ -40,7 +40,11 @@ State-changing integrations share five lifecycle meanings:
 
 Literal advisory/preview/dry-run guarantees, the complete command classification, snapshot policy, and evidence limitations are maintained in `docs/NO_WRITE_CONTRACT.md` and registered by the manifest's `no_write_authority` object.
 
-`pcodex uninstall --dry-run` is the public preview. `pcodex uninstall --yes` is the bounded executor. The current executor removes receipt-proven regular files created by pCodex and emits a versioned operation receipt. A separate root/receipt ownership marker and descriptor-relative transient quarantine prevent copied receipts, broad-root deletion, symlink redirection, and pathname replacement races from becoming removal authority. Plugin-registration surgery remains deferred until the canonical plugin workload establishes exact registration authority.
+`pcodex install` previews and `pcodex install --apply` establishes the per-file lifecycle authority plus a reinstall-validation receipt bound to the exact authority hash. `pcodex repair --dry-run` is literal no-write; `pcodex repair --yes` restores only a missing receipt-proven generated item whose authoritative product bytes match the installed hash. A missing ownership marker additionally requires the current reinstall-validation proof. Modified or alternate filesystem objects are preserved. Repair uses no-follow directory descriptors, private staging, no-replace commit for missing leaves, file fsync, atomic authority replacement, best-effort parent fsync, and rollback if receipt completion fails.
+
+`pcodex uninstall --dry-run` is the public removal preview. `pcodex uninstall --yes` is the bounded executor. It removes receipt-proven regular single-link files created by pCodex and emits a versioned operation receipt. A separate root/receipt ownership marker and descriptor-relative transient quarantine prevent copied receipts, broad-root deletion, symlink redirection, hard-link removal, and pathname replacement races from becoming removal authority. The uninstall receipt is an intentional-absence tombstone only while it remains bound to the exact current authority receipt hash; reinstall invalidates that tombstone by committing a new receipt. Plugin-registration surgery remains deferred until the canonical plugin workload establishes exact registration authority.
+
+Status and doctor report a versioned lifecycle state with `READY`, `NEEDS_ACTION`, or `BLOCKED`, one recommended action, and numeric lifecycle exit-code meaning. They do not repair. Compatibility command exits remain informational; state-changing repair and uninstall return failure on blocked apply.
 
 ## Sensitivity
 

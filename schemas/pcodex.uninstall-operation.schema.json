@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.uninstall-operation.schema.json",
+  "title": "pCodex private uninstall operation receipt",
+  "type": "object",
+  "required": ["schema_version", "product_version", "operation_id", "operation_type", "started_at", "completed_at", "managed_root_hash", "ownership_id", "install_state_receipt", "operation_receipt", "authority_receipt_hash", "planned_actions", "completed_actions", "preserved_items", "conflicts", "not_found", "unknown_owner", "unsupported_registration", "manual_actions", "result", "status", "failure_stage", "rollback_or_recovery_status"],
+  "properties": {
+    "schema_version": {"const": "pcodex.uninstall-operation.v2"},
+    "operation_type": {"const": "uninstall_apply"},
+    "product_version": {"type": "string", "minLength": 1},
+    "operation_id": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "completed_at": {"type": "string", "minLength": 1},
+    "managed_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "ownership_id": {"type": "string", "minLength": 1},
+    "install_state_receipt": {"type": "string", "minLength": 1},
+    "operation_receipt": {"type": "string", "minLength": 1},
+    "authority_receipt_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "planned_actions": {"type": "array"},
+    "completed_actions": {"type": "array"},
+    "preserved_items": {"type": "array"},
+    "conflicts": {"type": "array"},
+    "not_found": {"type": "array"},
+    "unknown_owner": {"type": "array"},
+    "unsupported_registration": {"type": "array"},
+    "manual_actions": {"type": "array"},
+    "result": {"type": "string", "minLength": 1},
+    "status": {"type": "string", "minLength": 1},
+    "failure_stage": {"type": ["string", "null"]},
+    "rollback_or_recovery_status": {"type": "string", "minLength": 1}
+  }
+}
