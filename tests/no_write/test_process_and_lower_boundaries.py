@@ -18,6 +18,7 @@ def test_forbidden_process_classification_is_exact() -> None:
     assert classify_process("/usr/bin/node /tmp/codex.js") == "codex"
     assert classify_process("/usr/bin/python -m premode.pcodex_mcp_server") == "mcp"
     assert classify_process("/usr/bin/python -m my_mcp_server") == "mcp"
+    assert classify_process("/usr/bin/python /venv/bin/pcodex integrate codex --dry-run") is None
     assert classify_process("/venv/bin/premode codex Exact-task --dry-run") is None
     assert classify_process("/venv/bin/pcodex integrate codex --dry-run") is None
     assert classify_process("/usr/bin/git status") is None

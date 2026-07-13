@@ -498,9 +498,25 @@ def classify_process(command: str, executable_path: str | None = None) -> str | 
     candidates = [Path(executable_path).name.lower()] if executable_path else []
     first = Path(tokens[0]).name.lower() if tokens else ""
     candidates.append(first)
-    wrappers = {"sh", "bash", "zsh", "fish", "env", "python", "python3", "node", "npx", "bun", "ruby"}
-    if first in wrappers:
-        candidates.extend(Path(token).name.lower() for token in tokens[1:] if token and not token.startswith("-") and "=" not in token)
+    python_wrappers = {"python", "python3", "python3.11", "python3.12", "python3.13"}
+    script_wrappers = {"sh", "bash", "zsh", "fish", "node", "npx", "bun", "ruby"}
+    if first in python_wrappers:
+        if "-m" in tokens:
+            module_index = tokens.index("-m") + 1
+            if module_index < len(tokens):
+                candidates.append(tokens[module_index].lower())
+        elif "-c" not in tokens:
+            target = next((token for token in tokens[1:] if token and not token.startswith("-")), None)
+            if target:
+                candidates.append(Path(target).name.lower())
+    elif first in script_wrappers:
+        target = next((token for token in tokens[1:] if token and not token.startswith("-")), None)
+        if target:
+            candidates.append(Path(target).name.lower())
+    elif first == "env":
+        target = next((token for token in tokens[1:] if token and not token.startswith("-") and "=" not in token), None)
+        if target:
+            candidates.append(Path(target).name.lower())
     normalized: list[str] = []
     for executable in candidates:
         name = re.sub(r"\.(?:c?js|mjs|py)$", "", executable)
