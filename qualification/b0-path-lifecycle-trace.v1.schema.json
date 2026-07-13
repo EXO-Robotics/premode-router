@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "b0-path-lifecycle-trace.v1",
+  "type": "object",
+  "required": ["schema_version", "source", "metrics", "required_path_traces", "unused_path_admission"],
+  "properties": {
+    "schema_version": {"const": "b0-path-lifecycle-forensics.v1"},
+    "source": {"type": "object", "required": ["run_count", "arm"]},
+    "metrics": {"type": "object", "required": ["tasks", "required_paths", "supplied_paths", "supplied_unused_paths"]},
+    "required_path_traces": {"type": "array"},
+    "unused_path_admission": {"type": "array"}
+  },
+  "additionalProperties": true
+}
