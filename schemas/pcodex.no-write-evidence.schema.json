@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode/schemas/pcodex.no-write-evidence.schema.json",
+  "title": "pCodex literal no-write evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "commit_sha",
+    "command",
+    "arguments",
+    "scenario_id",
+    "governed_roots",
+    "before_snapshot_hash",
+    "after_snapshot_hash",
+    "filesystem_unchanged",
+    "external_config_unchanged",
+    "temporary_state_unchanged",
+    "forbidden_processes_launched",
+    "network_attempted_if_measurable",
+    "result",
+    "exceptions",
+    "platform",
+    "python_version",
+    "timestamp",
+    "snapshot_complete",
+    "process_observation",
+    "filesystem_observation",
+    "transient_filesystem_events",
+    "coverage_complete"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.no-write-evidence.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "command": {"type": "string", "pattern": "^(?:[a-z0-9_.-]+|opaque:[0-9a-f]{12})$"},
+    "arguments": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?:opaque:[0-9a-f]{12}|--(?:advisory|apply|dry-run|json|local-marketplace|local-state|no-mcp|no-record|no-save|repo|repo-root|skip-tune|yes)(?:=opaque:[0-9a-f]{12})?)$"
+      }
+    },
+    "scenario_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+    "governed_roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root_id", "category", "exists"],
+        "properties": {
+          "root_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+          "category": {"enum": ["repository", "managed_state", "user_state", "integration_state", "package_state", "external_config", "cache", "temporary_state"]},
+          "exists": {"type": "boolean"}
+        }
+      }
+    },
+    "before_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "after_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "filesystem_unchanged": {"type": "boolean"},
+    "external_config_unchanged": {"type": "boolean"},
+    "temporary_state_unchanged": {"type": "boolean"},
+    "forbidden_processes_launched": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["classification", "survived", "process_id"],
+        "properties": {
+          "classification": {"enum": ["codex", "openclaw", "mcp", "local_model", "background_worker"]},
+          "survived": {"type": "boolean"},
+          "process_id": {"type": "string", "pattern": "^opaque:[0-9a-f]{12}$"}
+        }
+      }
+    },
+    "network_attempted_if_measurable": {"enum": [true, false, "not_measured"]},
+    "result": {"enum": ["pass", "fail"]},
+    "exceptions": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"}},
+    "platform": {"type": "string", "pattern": "^[A-Za-z0-9_.() -]{1,160}$"},
+    "python_version": {"type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(?:[A-Za-z0-9_.+-]*)$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "snapshot_complete": {"type": "boolean"},
+    "process_observation": {"enum": ["complete", "unavailable", "disabled", "unknown"]},
+    "filesystem_observation": {"enum": ["complete", "unavailable", "disabled", "unknown"]},
+    "transient_filesystem_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root_id", "path_id", "flags"],
+        "properties": {
+          "root_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+          "path_id": {"type": "string", "pattern": "^opaque:[0-9a-f]{12}$"},
+          "flags": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "coverage_complete": {"type": "boolean"}
+  }
+}

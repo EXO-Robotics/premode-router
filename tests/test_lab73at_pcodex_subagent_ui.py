@@ -125,7 +125,8 @@ def test_enabled_dry_run_includes_child_env_propagation(
     assert result["child_env"]["PCODEX_ENABLED"] == "1"
     assert result["child_env"]["PCODEX_ALGORITHM"] == "literal_symbol"
     assert result["child_env"]["PCODEX_PACKET_STRATEGY"] == "literal_symbol"
-    assert result["packet_path"]
+    assert result["packet_path"] is None
+    assert result["packet_materialization"] == "in_memory_only"
 
 
 def test_disabled_dry_run_does_not_compile_packet(repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

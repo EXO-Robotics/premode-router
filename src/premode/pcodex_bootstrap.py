@@ -347,7 +347,7 @@ def _git_check_ignored(repo_root: Path, relative_path: str) -> bool:
     return completed.returncode == 0
 
 
-def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
+def generated_state_path_status(repo_root: Path, *, inspect_git_ignore: bool = True) -> dict[str, Any]:
     paths = [
         ".premode/pcodex_state.json",
         ".premode/lcc.lock.json",
@@ -363,7 +363,8 @@ def generated_state_path_status(repo_root: Path) -> dict[str, Any]:
     return {
         path: {
             "exists": (repo_root / path).exists(),
-            "git_ignored": _git_check_ignored(repo_root, path),
+            "git_ignored": _git_check_ignored(repo_root, path) if inspect_git_ignore else None,
+            "git_ignore_check": "executed" if inspect_git_ignore else "suppressed_advisory",
         }
         for path in paths
     }
@@ -692,9 +693,9 @@ def first_run_receipt(cwd: Path | None = None, *, advisory: bool = False) -> dic
     enabled = effective_mode != "off" and state.get("effective_state") != EFFECTIVE_OFF_RAW
     lockfile = read_lockfile(repo_root)
     cache_manifest = read_cache_manifest(repo_root)
-    inventory = summarize_inventory(repo_root)
-    topology = summarize_topology(repo_root)
-    generated_state = generated_state_path_status(repo_root)
+    inventory = summarize_inventory(repo_root, inspect_repository=not advisory)
+    topology = summarize_topology(repo_root, inspect_repository=not advisory)
+    generated_state = generated_state_path_status(repo_root, inspect_git_ignore=not advisory)
     install = _manifest_summary()
     receipt: dict[str, Any] = {
         "schema_version": "pcodex.first_run_receipt.v1",
@@ -831,7 +832,7 @@ def codex_cli_version_warning(version: str | None) -> str | None:
     return None
 
 
-def inspect_codex_cli() -> dict[str, Any]:
+def inspect_codex_cli(*, execute_version: bool = True) -> dict[str, Any]:
     if not _command_available("codex"):
         return {
             "available": False,
@@ -846,6 +847,14 @@ def inspect_codex_cli() -> dict[str, Any]:
             "version": None,
             "path": None,
             "version_warning": "Codex CLI is not available on PATH; install or fix Codex before pCodex real runs.",
+        }
+    if not execute_version:
+        return {
+            "available": True,
+            "version": None,
+            "path": path,
+            "version_warning": "Codex version execution suppressed by literal advisory policy.",
+            "version_check": "suppressed_advisory",
         }
     try:
         completed = subprocess.run(
@@ -1002,6 +1011,14 @@ def _compile_runner_accepts_tuning(compile_runner: Any) -> bool:
     )
 
 
+def _compile_runner_accepts_write_policy(compile_runner: Any) -> bool:
+    try:
+        signature = inspect.signature(compile_runner)
+    except (TypeError, ValueError):
+        return False
+    return "write_policy" in signature.parameters
+
+
 def run_compile_runner(
     compile_runner: Any,
     repo_root: Path,
@@ -1009,10 +1026,16 @@ def run_compile_runner(
     profile: str | None,
     *,
     tuning_profile: str | None = None,
+    write_policy: WritePolicy | str | None = None,
 ) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {}
     if tuning_profile and _compile_runner_accepts_tuning(compile_runner):
-        return compile_runner(repo_root, prompt, profile, tuning_profile=tuning_profile)
-    return compile_runner(repo_root, prompt, profile)
+        kwargs["tuning_profile"] = tuning_profile
+    if write_policy is not None:
+        if not _compile_runner_accepts_write_policy(compile_runner):
+            raise TypeError("no-write compile runners must accept an explicit write_policy")
+        kwargs["write_policy"] = write_policy
+    return compile_runner(repo_root, prompt, profile, **kwargs)
 
 
 def compile_pcodex_packet(
@@ -1151,13 +1174,13 @@ def doctor(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
-    codex_cli = inspect_codex_cli()
+    codex_cli = inspect_codex_cli(execute_version=not advisory)
     codex_config = inspect_codex_config()
     state = resolve_effective_mode(repo_root)
     lockfile = read_lockfile(repo_root)
     cache_manifest = read_cache_manifest(repo_root)
-    inventory = summarize_inventory(repo_root)
-    topology = summarize_topology(repo_root)
+    inventory = summarize_inventory(repo_root, inspect_repository=not advisory)
+    topology = summarize_topology(repo_root, inspect_repository=not advisory)
     tuning = state.get("tuning") if isinstance(state.get("tuning"), dict) else {}
     cache_payload = cache_manifest.get("payload") if isinstance(cache_manifest.get("payload"), dict) else {}
     enabled = str(state.get("effective_mode") or state.get("configured_mode") or state.get("mode")) != "off"
@@ -1201,7 +1224,7 @@ def doctor(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
         "stale_reason": state.get("stale_reason"),
         "mcp": {"status": "unknown", "config_scope": "unknown"},
         "savings": {"available": False, "reason": "not_enough_data"},
-        "generated_state_paths": generated_state_path_status(repo_root),
+        "generated_state_paths": generated_state_path_status(repo_root, inspect_git_ignore=not advisory),
         "install": _manifest_summary(),
         "first_run": first_run,
         "native_codex_integration": {
@@ -1466,7 +1489,7 @@ def status(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
     cwd = Path.cwd() if cwd is None else cwd
     repo_root = _repo_root(cwd)
     config = resolve_config(cwd)
-    codex_cli = inspect_codex_cli()
+    codex_cli = inspect_codex_cli(execute_version=not advisory)
     codex_config = inspect_codex_config()
     state = resolve_effective_mode(repo_root)
     configured_mode = str(state.get("configured_mode") or state.get("mode") or "on")
@@ -1498,8 +1521,8 @@ def status(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
         except Exception as exc:  # lockfile must not make status unusable
             lockfile = {"status": "error", "path": ".premode/lcc.lock.json", "valid": False, "error": f"{type(exc).__name__}: {exc}"}
     cache_manifest = read_cache_manifest(repo_root)
-    inventory = summarize_inventory(repo_root)
-    topology = summarize_topology(repo_root)
+    inventory = summarize_inventory(repo_root, inspect_repository=not advisory)
+    topology = summarize_topology(repo_root, inspect_repository=not advisory)
     first_run = first_run_summary(
         {
             "enabled": effective_mode != "off",
@@ -1775,7 +1798,7 @@ def install(cwd: Path | None = None, *, dry_run: bool = False) -> dict[str, Any]
         "repo_root": str(repo_root),
         "config_path": str(path),
         "would_write": not path.exists(),
-        "doctor": doctor(cwd),
+        "doctor": doctor(cwd, advisory=dry_run),
     }
     if not dry_run and not path.exists():
         write_repo_config(cwd, enabled=False)
@@ -2182,7 +2205,7 @@ def pcodex_ui_payload(repo_root: Path) -> dict[str, Any]:
     tuning = mode_state.get("tuning") if isinstance(mode_state.get("tuning"), dict) else {}
     fallback = mode_state.get("fallback") if isinstance(mode_state.get("fallback"), dict) else {}
     telemetry = mode_state.get("telemetry") if isinstance(mode_state.get("telemetry"), dict) else {}
-    codex_cli = inspect_codex_cli()
+    codex_cli = inspect_codex_cli(execute_version=False)
     mcp_file = repo_root / "plugins" / "pcodex" / ".mcp.json"
     if not mcp_file.exists():
         warnings.append("Repo-local pCodex plugin MCP scaffold is not installed.")
@@ -2298,8 +2321,9 @@ def run_dry_run(
             configured_mode=mode,
             effective_mode="safe_passthrough",
             fallback_reason=mode_state.get("safe_passthrough_reason") or "safe_passthrough",
+            policy=ADVISORY,
         )
-        lockfile = update_lockfile_from_resolver(repo_root, mode_state)
+        lockfile = update_lockfile_from_resolver(repo_root, mode_state, policy=ADVISORY)
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
         return {
             **base,
@@ -2315,16 +2339,14 @@ def run_dry_run(
     if effective_mode != "off":
         runner = compile_runner or compile_pcodex_packet
         try:
-            if runner is compile_pcodex_packet:
-                compiled = run_compile_runner(
-                    runner,
-                    repo_root,
-                    prompt,
-                    profile,
-                    tuning_profile=tuning_profile,
-                )
-            else:
-                compiled = run_compile_runner(runner, repo_root, prompt, profile, tuning_profile=tuning_profile)
+            compiled = run_compile_runner(
+                runner,
+                repo_root,
+                prompt,
+                profile,
+                tuning_profile=tuning_profile,
+                write_policy=ADVISORY,
+            )
         except Exception as exc:
             if mode == "tuned":
                 raise
@@ -2339,8 +2361,9 @@ def run_dry_run(
                 configured_mode=mode,
                 effective_mode="safe_passthrough",
                 fallback_reason=f"compile_failed:{type(exc).__name__}",
+                policy=ADVISORY,
             )
-            lockfile = update_lockfile_from_resolver(repo_root, fallback_state)
+            lockfile = update_lockfile_from_resolver(repo_root, fallback_state, policy=ADVISORY)
             invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
             return {
                 **base,
@@ -2357,7 +2380,7 @@ def run_dry_run(
                 "safe_passthrough_reason": f"compile_failed:{type(exc).__name__}",
             }
         if "cache_manifest" not in compiled:
-            cache_manifest = write_cache_manifest(repo_root, mode_state, compiled)
+            cache_manifest = write_cache_manifest(repo_root, mode_state, compiled, policy=ADVISORY)
             compiled["cache_manifest"] = {key: value for key, value in cache_manifest.items() if key != "payload"}
             compiled["lockfile"] = update_lockfile_from_resolver(
                 repo_root,
@@ -2365,9 +2388,10 @@ def run_dry_run(
                 cache_prefix_hash=cache_manifest.get("payload", {}).get("static_prefix_hash")
                 if isinstance(cache_manifest.get("payload"), dict)
                 else None,
+                policy=ADVISORY,
             )
-        telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, fallback_reason=fallback_reason)
-        packet_path = _write_temp_packet(compiled["packet"])
+        telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, fallback_reason=fallback_reason, policy=ADVISORY)
+        packet_path = None
         final_prompt = compose_final_prompt(prompt, compiled["packet"])
         invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
         return {
@@ -2376,6 +2400,7 @@ def run_dry_run(
             "premode_command": compiled["premode_command"],
             "codex_command": invocation.args,
             "packet_path": packet_path,
+            "packet_materialization": "in_memory_only",
             "final_prompt_preview": redact_text(final_prompt),
             "packet_sha256": compiled["packet_sha256"],
             "route": compiled["route"],
@@ -2391,7 +2416,7 @@ def run_dry_run(
             "compile_degraded": bool(compiled.get("compile_degraded")),
             "compile_degraded_reason": compiled.get("compile_degraded_reason"),
         }
-    telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode)
+    telemetry = record_runtime_telemetry(repo_root, configured_mode=mode, effective_mode=effective_mode, policy=ADVISORY)
     invocation = build_codex_invocation(repo_root, CodexOptions(dry_run=True))
     return {
         **base,
@@ -2400,7 +2425,7 @@ def run_dry_run(
         "packet_path": None,
         "final_prompt_preview": redact_text(prompt),
         "telemetry": telemetry.get("telemetry"),
-        "lockfile": {key: value for key, value in update_lockfile_from_resolver(repo_root, mode_state).items() if key != "payload"},
+        "lockfile": {key: value for key, value in update_lockfile_from_resolver(repo_root, mode_state, policy=ADVISORY).items() if key != "payload"},
     }
 
 
@@ -2484,6 +2509,7 @@ def _parser() -> argparse.ArgumentParser:
     uninstall_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     install_parser = sub.add_parser("install")
     install_parser.add_argument("--apply", action="store_true", help="Write repo-local pCodex config. Default is dry-run.")
+    install_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     status_parser = sub.add_parser("status", help="Show the current local mode and readiness.")
     status_parser.add_argument("--json", action="store_true", help="Print machine-readable pCodex mode state.")
     status_parser.add_argument("--advisory", action="store_true", help="Read-only, no-write, paste-safe advisory receipt.")

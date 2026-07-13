@@ -132,6 +132,7 @@ def _run_git(repo_root: Path, args: list[str], metrics: InventoryMetrics | None 
             stderr=subprocess.PIPE,
             check=False,
             timeout=10,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
         )
     except (OSError, subprocess.TimeoutExpired, TypeError) as exc:
         return False, b"", f"{type(exc).__name__}: {exc}"
@@ -492,10 +493,19 @@ def refresh_inventory_if_needed(repo_root: Path | str, policy: WritePolicy | str
     return result
 
 
-def summarize_inventory(repo_root: Path | str, inventory: dict[str, Any] | None = None) -> dict[str, Any]:
+def summarize_inventory(repo_root: Path | str, inventory: dict[str, Any] | None = None, *, inspect_repository: bool = True) -> dict[str, Any]:
     root = Path(repo_root)
     payload = load_inventory(root) if inventory is None else inventory
-    freshness = inventory_is_fresh(root, payload)
+    if inspect_repository:
+        freshness = inventory_is_fresh(root, payload)
+    elif payload is None:
+        freshness = "missing"
+    elif not isinstance(payload, dict) or payload.get("schema_version") != INVENTORY_SCHEMA_VERSION:
+        freshness = "invalid"
+    elif payload.get("lcc_version") != __version__ or payload.get("repo_root_hash") != _sha256_text(str(root.resolve())):
+        freshness = "stale_schema_changed"
+    else:
+        freshness = "unverified_advisory"
     source = None
     file_count = 0
     fallback_reason = None

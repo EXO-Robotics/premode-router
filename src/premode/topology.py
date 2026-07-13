@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import subprocess
 import tempfile
@@ -182,6 +183,7 @@ def _git_text(repo_root: Path, args: list[str]) -> str | None:
             check=False,
             text=True,
             timeout=10,
+            env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
         )
     except (OSError, subprocess.TimeoutExpired, TypeError):
         return None
@@ -580,10 +582,19 @@ def refresh_topology_if_needed(
     return build_topology(root, inventory=inventory, write=policy_name != "no_write")
 
 
-def summarize_topology(repo_root: Path | str, topology: dict[str, Any] | None = None) -> dict[str, Any]:
+def summarize_topology(repo_root: Path | str, topology: dict[str, Any] | None = None, *, inspect_repository: bool = True) -> dict[str, Any]:
     root = Path(repo_root)
     payload = load_topology(root) if topology is None else topology
-    freshness = topology_is_fresh(root, payload)
+    if inspect_repository:
+        freshness = topology_is_fresh(root, payload)
+    elif payload is None:
+        freshness = "missing"
+    elif not isinstance(payload, dict) or payload.get("schema_version") != TOPOLOGY_SCHEMA_VERSION:
+        freshness = "invalid"
+    elif payload.get("lcc_version") != __version__ or payload.get("repo_root_hash") != _repo_root_hash(root):
+        freshness = "stale_schema_changed"
+    else:
+        freshness = "unverified_advisory"
     nodes = payload.get("nodes") if isinstance(payload, dict) else []
     default_policy = payload.get("default_node_policy") if isinstance(payload, dict) else {}
     return {

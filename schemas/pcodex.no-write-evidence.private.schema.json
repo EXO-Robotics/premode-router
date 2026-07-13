@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode/schemas/pcodex.no-write-evidence.private.schema.json",
+  "title": "pCodex private literal no-write evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_version", "commit_sha", "command", "arguments",
+    "scenario_id", "governed_roots", "before_snapshot_hash", "after_snapshot_hash",
+    "filesystem_unchanged", "external_config_unchanged", "temporary_state_unchanged",
+    "forbidden_processes_launched", "network_attempted_if_measurable", "result",
+    "exceptions", "snapshot_complete", "process_observation", "filesystem_observation",
+    "coverage_complete", "transient_filesystem_events", "platform", "python_version",
+    "timestamp", "detailed_changes", "governed_root_paths"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.no-write-evidence.private.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "command": {"type": "string", "minLength": 1},
+    "arguments": {"type": "array", "items": {"type": "string"}},
+    "scenario_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+    "governed_roots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root_id", "category", "exists"],
+        "properties": {
+          "root_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+          "category": {"enum": ["repository", "managed_state", "user_state", "integration_state", "package_state", "external_config", "cache", "temporary_state"]},
+          "exists": {"type": "boolean"}
+        }
+      }
+    },
+    "before_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "after_snapshot_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "filesystem_unchanged": {"type": "boolean"},
+    "external_config_unchanged": {"type": "boolean"},
+    "temporary_state_unchanged": {"type": "boolean"},
+    "forbidden_processes_launched": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["pid", "ppid", "start_time", "executable_path", "command", "classification", "survived"],
+        "properties": {
+          "pid": {"type": "integer", "minimum": 1},
+          "ppid": {"type": "integer", "minimum": 0},
+          "start_time": {"type": ["string", "integer"]},
+          "executable_path": {"type": ["string", "null"]},
+          "command": {"type": "string"},
+          "classification": {"enum": ["codex", "openclaw", "mcp", "local_model", "background_worker"]},
+          "survived": {"type": "boolean"}
+        }
+      }
+    },
+    "network_attempted_if_measurable": {"enum": [true, false, "not_measured"]},
+    "result": {"enum": ["pass", "fail"]},
+    "exceptions": {"type": "array", "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"}},
+    "snapshot_complete": {"type": "boolean"},
+    "process_observation": {"enum": ["complete", "unavailable", "disabled", "unknown"]},
+    "filesystem_observation": {"enum": ["complete", "unavailable", "disabled", "unknown"]},
+    "coverage_complete": {"type": "boolean"},
+    "transient_filesystem_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root_id", "path", "flags"],
+        "properties": {
+          "root_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+$"},
+          "path": {"type": "string"},
+          "flags": {"type": "integer", "minimum": 0}
+        }
+      }
+    },
+    "platform": {"type": "string"},
+    "python_version": {"type": "string"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "detailed_changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["root_id", "path", "change"],
+        "properties": {
+          "root_id": {"type": "string"},
+          "path": {"type": "string"},
+          "change": {"enum": ["created", "deleted", "modified"]}
+        }
+      }
+    },
+    "governed_root_paths": {
+      "type": "object"
+    }
+  }
+}

@@ -6,7 +6,7 @@ import subprocess
 import zipfile
 
 from scripts.check_public_hygiene import scan
-from scripts.build_release_artifacts import validate_archive_content, validate_names
+from scripts.build_release_artifacts import validate_archive_content, validate_names, validate_sdist_names
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +34,16 @@ def test_release_allowlist_is_default_deny_for_wheels() -> None:
     assert "premode/lab73*.py" in policy["wheel_prohibited_globs"]
     assert "/private/tmp/" in policy["content_prohibited_patterns"]
     assert "premode/compiler.py" in policy["wheel_allowed_members"]
+    assert "premode/no_write.py" in policy["wheel_allowed_members"]
     assert validate_names(["premode/private_dump.py"], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True) == ["unexpected_wheel_member:premode/private_dump.py"]
+
+
+def test_release_allowlist_is_default_deny_for_sdist_source_members() -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    prefix = "premode_router-0.3.0b1/"
+    assert validate_sdist_names([prefix + "src/premode/no_write.py"], policy) == []
+    assert validate_sdist_names([prefix + "src/app.py"], policy) == ["unexpected_sdist_member:src/app.py"]
+    assert validate_sdist_names([prefix + "src/premode/private_dump.py"], policy) == ["unexpected_sdist_member:src/premode/private_dump.py"]
 
 
 def test_source_distribution_prunes_test_and_release_script_trees() -> None:

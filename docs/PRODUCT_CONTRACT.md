@@ -55,6 +55,8 @@ The canonical packet remains version `v5`, variant `tool_assisted_anchors_intern
 
 ## Read, write, and privacy boundary
 
+The literal meanings of advisory, preview, dry-run, and apply are defined in `docs/NO_WRITE_CONTRACT.md` and registered by `premode.product.json`. Advertised advisory, preview, and dry-run operations pass the typed `ADVISORY` policy through shared state boundaries. They do not write repository, user, integration, cache, receipt, telemetry, log, or temporary state and do not execute Codex, OpenClaw, or MCP. Missing, stale, corrupt, partial, and unknown-future state is reported without repair, refresh, or migration.
+
 Compilation may read repository metadata and eligible files within ignore, sensitivity, and task-root boundaries. pCodex may read repo-local configuration/state and the installed Codex executable's capabilities. It must not treat ignored secrets as model-facing context.
 
 Normal commands do not mutate global Codex configuration. Integration writes require explicit state-changing commands. The authoritative state inventory is `premode.product.json`; `docs/PUBLIC_SURFACES.md` is its human-readable map.

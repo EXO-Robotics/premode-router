@@ -135,9 +135,8 @@ def test_invalid_state_uses_safe_passthrough_without_compile(tmp_path: Path, mon
     assert result["effective_state"] == EFFECTIVE_SAFE_PASSTHROUGH
     assert result["transform_applied"] is False
     assert result["final_prompt_preview"].startswith("Hypothetical <redacted>")
-    lock_text = (repo / ".premode" / "lcc.lock.json").read_text(encoding="utf-8")
-    assert "SECRET_LCC_PROMPT_NEVER_STORE" not in lock_text
-    assert read_lockfile(repo)["payload"]["effective_state"] == EFFECTIVE_SAFE_PASSTHROUGH
+    assert not (repo / ".premode" / "lcc.lock.json").exists()
+    assert path.read_text(encoding="utf-8") == "{not-json"
 
 
 def test_general_on_compile_failure_degrades_to_safe_passthrough_but_tuned_is_strict(
@@ -148,7 +147,7 @@ def test_general_on_compile_failure_degrades_to_safe_passthrough_but_tuned_is_st
     _isolated_home(monkeypatch, tmp_path)
     pcodex.set_enabled(repo, True)
 
-    def broken_compile(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+    def broken_compile(*_args: Any, write_policy: Any, **_kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("synthetic compile failure")
 
     general = pcodex.run_dry_run(repo, RAW_PROMPT, compile_runner=broken_compile)
@@ -162,20 +161,18 @@ def test_general_on_compile_failure_degrades_to_safe_passthrough_but_tuned_is_st
         pcodex.run_dry_run(repo, RAW_PROMPT, compile_runner=broken_compile)
 
 
-def test_lockfile_and_cache_manifest_are_content_free_json(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dry_run_suppresses_lockfile_and_cache_manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _repo(tmp_path)
     _isolated_home(monkeypatch, tmp_path)
     pcodex.set_enabled(repo, True)
+    lock_before = (repo / ".premode" / "lcc.lock.json").read_bytes()
 
     result = pcodex.run_dry_run(repo, SECRET_PROMPT)
 
-    assert result["cache_manifest"]["valid"] is True
-    assert result["lockfile"]["valid"] is True
-    for relative in [".premode/lcc.lock.json", ".premode/out/cache_manifest.json"]:
-        text = (repo / relative).read_text(encoding="utf-8")
-        json.loads(text)
-        assert "SECRET_LCC_PROMPT_NEVER_STORE" not in text
-        assert "def login_user" not in text
+    assert result["cache_manifest"]["status"] == "skipped_no_write"
+    assert result["lockfile"]["status"] == "skipped_no_write"
+    assert (repo / ".premode" / "lcc.lock.json").read_bytes() == lock_before
+    assert not (repo / ".premode" / "out" / "cache_manifest.json").exists()
 
 
 def test_cache_manifest_prefix_stability_and_profile_cache_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

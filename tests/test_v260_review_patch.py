@@ -281,13 +281,11 @@ def test_cli_review_patch_json_output(monkeypatch, capsys, repo):
     assert payload["review_kind"] == "patch_review"
 
 
-def test_pcodex_saves_packet_for_review(repo):
+def test_pcodex_dry_run_does_not_save_packet_for_review(repo):
     _prepare(repo)
     dry = run_codex(repo, "Fix src/app.py", None, CodexOptions(dry_run=True))
-    assert dry["saved_artifacts"]
-    packet_json = json.loads((repo / ".premode" / "out" / "last_packet.json").read_text(encoding="utf-8"))
-    assert "review_contract" in packet_json
-    assert packet_json["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
+    assert dry["saved_artifacts"] is None
+    assert not (repo / ".premode" / "out" / "last_packet.json").exists()
 
 
 def test_packet_v3_contains_review_contract(repo):

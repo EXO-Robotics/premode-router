@@ -38,6 +38,8 @@ State-changing integrations share five lifecycle meanings:
 - `repair`: restore only proven-owned, unmodified state; unknown state fails closed;
 - `uninstall`: remove or restore only receipt-proven state, preserving all conflicts.
 
+Literal advisory/preview/dry-run guarantees, the complete command classification, snapshot policy, and evidence limitations are maintained in `docs/NO_WRITE_CONTRACT.md` and registered by the manifest's `no_write_authority` object.
+
 `pcodex uninstall --dry-run` is the public preview. `pcodex uninstall --yes` is the bounded executor. The current executor removes receipt-proven regular files created by pCodex and emits a versioned operation receipt. A separate root/receipt ownership marker and descriptor-relative transient quarantine prevent copied receipts, broad-root deletion, symlink redirection, and pathname replacement races from becoming removal authority. Plugin-registration surgery remains deferred until the canonical plugin workload establishes exact registration authority.
 
 ## Sensitivity

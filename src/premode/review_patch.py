@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import json
+import os
 import re
 import subprocess
 from dataclasses import dataclass
@@ -81,7 +82,7 @@ class ChangedFile:
 
 
 def _run_git(repo_root: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, check=False)
+    return subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, check=False, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
 
 
 def _is_git_repo(repo_root: Path) -> bool:

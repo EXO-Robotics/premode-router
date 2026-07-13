@@ -531,8 +531,8 @@ def main(argv: list[str] | None = None) -> int:
             packet_variant=args.packet_variant,
             packet_strategy=args.packet_strategy,
             context_only=args.context_only,
-            save=not args.no_save,
-            record=not args.no_save,
+            save=not args.no_save and not args.dry_run,
+            record=not args.no_save and not args.dry_run,
             canonical_core_packet=True,
         )
         result = run_codex(launch_repo, args.prompt, args.profile, opts)

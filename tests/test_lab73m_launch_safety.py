@@ -120,7 +120,7 @@ def test_external_payload_blocks_private_paths_only_when_policy_forbids_path_dis
     assert "private_repo_paths_forbidden" in manifest["block_reasons"]
 
 
-def test_codex_dry_run_writes_external_payload_manifest(monkeypatch, repo: Path) -> None:
+def test_codex_dry_run_does_not_write_external_payload_manifest(monkeypatch, repo: Path) -> None:
     init_project(repo)
     index_project(repo, "lite")
     caps = codex_capabilities_from_help(CODEX_HELP)
@@ -128,13 +128,8 @@ def test_codex_dry_run_writes_external_payload_manifest(monkeypatch, repo: Path)
 
     dry = run_codex(repo, "Fix src/App.swift", "lite", CodexOptions(dry_run=True))
 
-    manifest_path = Path(dry["external_payload_manifest"])
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest_path.name == "external_payload_manifest.json"
-    assert Path(manifest["final_stdin_path"]).name == "external_payload_stdin.txt"
-    assert manifest["launch_allowed"] is True
-    assert manifest["final_stdin_sha256"] == dry["compiled_packet_sha256"]
-    assert manifest["final_stdin_bytes"] > 0
+    assert dry["external_payload_manifest"] is None
+    assert not (repo / ".premode" / "out" / "external_payload_manifest.json").exists()
 
 
 def test_cli_codex_repo_flag_passes_literal_repo_to_launch_path(monkeypatch, repo: Path) -> None:

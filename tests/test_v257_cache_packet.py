@@ -99,13 +99,12 @@ def test_codex_default_uses_repo_map_cache_v3_and_saves(repo):
     assert settings["cache_optimized"] is True
     assert settings["packet_version"] == "PREMODE_COMPILED_PACKET_V3"
     assert dry["command"][-1] == "-"
-    assert dry["saved_artifacts"]
-    assert (repo / ".premode" / "out" / "last_packet.md").exists()
+    assert dry["saved_artifacts"] is None
+    assert not (repo / ".premode" / "out" / "last_packet.md").exists()
 
 
 def test_codex_no_repo_map_opt_out(repo):
     _prepare(repo)
     dry = run_codex(repo, "Fix worker", "lite", CodexOptions(dry_run=True, use_repo_map=False))
     assert dry["compile_settings"]["use_repo_map"] is False
-    repo_map = json.loads((repo / ".premode" / "out" / "last_repo_map_summary.json").read_text(encoding="utf-8"))
-    assert repo_map["status"] == "repo_map_not_enabled_or_unavailable"
+    assert not (repo / ".premode" / "out" / "last_repo_map_summary.json").exists()

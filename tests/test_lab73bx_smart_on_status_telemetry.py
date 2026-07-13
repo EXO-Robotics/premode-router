@@ -117,8 +117,9 @@ def _runner(calls: list[dict[str, Any]]):
         profile: str | None,
         *,
         tuning_profile: str | None = None,
+        write_policy: Any | None = None,
     ) -> dict[str, Any]:
-        calls.append({"prompt": prompt, "profile": profile, "tuning_profile": tuning_profile})
+        calls.append({"prompt": prompt, "profile": profile, "tuning_profile": tuning_profile, "write_policy": write_policy})
         command = ["premode", "compile", prompt, "--repo", str(project_root), "--plugin", "literal_symbol"]
         if tuning_profile:
             command.extend(["--tuning", tuning_profile])
@@ -202,8 +203,11 @@ def test_smart_on_invalid_profile_resolves_general_and_records_fallback(
     assert "SECRET_PROMPT_NEVER_STORE" not in state_text
     assert "login_user" not in state_text
     state = json.loads(state_text)
-    assert state["telemetry"]["fallback_count"] == 1
-    assert state["fallback"]["last_reason"] == "tuning_profile_invalid"
+    # Literal dry-run authority does not record runtime telemetry, even when
+    # read-only mode resolution observes an existing fallback.
+    assert "telemetry" not in state
+    assert "fallback" not in state
+    assert result["fallback"]["last_reason"] == "tuning_profile_invalid"
 
 
 def test_mode_tuned_remains_strict_for_invalid_profile(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

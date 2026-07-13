@@ -3794,7 +3794,7 @@ def select_context(
     packet_mode = "tiny" if eligible_readable_tokens <= int(caps.hard_packet_token_budget) and not high_risk_traits else ("deep" if caps.name == "pro" else "standard")
     commands = load_commands(repo_root, project_detection, record=record_artifacts)
     rules_memory = read_rules_and_memory(repo_root)
-    git_state = scan_git_state(repo_root, caps.max_git_diff_bytes)
+    git_state = scan_git_state(repo_root, caps.max_git_diff_bytes, include_diff=record_artifacts)
     # Resolve prompt path mentions before log scanning so explicit log references can opt in to root-error extraction.
     mentioned_paths_for_log_gate = _extract_mentioned_paths(raw_prompt, entries)
     prompt_forbidden_paths = _extract_prompt_forbidden_paths(raw_prompt, entries)
@@ -6896,7 +6896,7 @@ def build_compiled_packet(
 
 def _git_capture(repo_root: Path, args: list[str]) -> tuple[bool, str]:
     try:
-        cp = subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, timeout=5, check=False)
+        cp = subprocess.run(["git", *args], cwd=repo_root, text=True, capture_output=True, timeout=5, check=False, env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"})
     except Exception as exc:
         return False, str(exc)
     return cp.returncode == 0, (cp.stdout or cp.stderr or "").strip()

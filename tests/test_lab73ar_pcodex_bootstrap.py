@@ -173,7 +173,7 @@ def test_pcodex_run_dry_run_does_not_launch_live_codex(
     assert result["packet_path"] is None
 
 
-def test_enabled_dry_run_includes_premode_packet_path(
+def test_enabled_dry_run_keeps_packet_in_memory(
     repo: Path,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -185,8 +185,8 @@ def test_enabled_dry_run_includes_premode_packet_path(
 
     result = pcodex.run_dry_run(repo, "Update build_config completion behavior in src/app.py.")
 
-    assert result["packet_path"]
-    assert Path(result["packet_path"]).exists()
+    assert result["packet_path"] is None
+    assert result["packet_materialization"] == "in_memory_only"
     assert result["route"] == "plugin_alias"
 
 

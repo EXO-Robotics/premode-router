@@ -112,6 +112,7 @@ def _runner(calls: list[dict[str, Any]]):
         profile: str | None,
         *,
         tuning_profile: str | None = None,
+        write_policy: Any | None = None,
     ) -> dict[str, Any]:
         calls.append(
             {
@@ -119,6 +120,7 @@ def _runner(calls: list[dict[str, Any]]):
                 "prompt": prompt,
                 "profile": profile,
                 "tuning_profile": tuning_profile,
+                "write_policy": write_policy,
             }
         )
         command = ["premode", "compile", prompt, "--repo", str(project_root), "--plugin", "literal_symbol"]

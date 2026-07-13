@@ -114,7 +114,16 @@ def build_codex_invocation(
     options: CodexOptions,
     capabilities: dict[str, Any] | None = None,
 ) -> CodexInvocation:
-    detected = capabilities if capabilities is not None else detect_codex_capabilities()
+    if capabilities is not None:
+        detected = capabilities
+    elif options.dry_run:
+        detected = codex_capabilities_from_help(
+            "",
+            help_available=False,
+            help_error="capability execution suppressed by literal dry-run policy",
+        )
+    else:
+        detected = detect_codex_capabilities()
     supports = detected.get("supports", {})
     warnings: list[str] = []
     if not detected.get("help_available", False):
@@ -242,6 +251,11 @@ def run_codex(
     options: CodexOptions | None = None,
 ) -> dict[str, Any]:
     options = options or CodexOptions()
+    # Dry-run is an authority boundary, not merely a presentation choice.  A
+    # caller cannot opt back into artifacts, receipts, metrics, or capability
+    # probe subprocesses while also requesting dry-run.
+    effective_save = bool(options.save and not options.dry_run)
+    effective_record = bool(options.record and not options.dry_run)
     effective_profile = resource_profile or "lite"
     compiled = compile_prompt(
         repo_root,
@@ -252,9 +266,9 @@ def run_codex(
         packet_version=options.packet_version,
         packet_variant=options.packet_variant,
         packet_strategy=options.packet_strategy,
-        save=options.save,
+        save=effective_save,
         context_only=options.context_only,
-        record_artifacts=options.record,
+        record_artifacts=effective_record,
         tuning_profile=options.tuning_profile,
         canonical_core_packet=options.canonical_core_packet,
     )
@@ -263,7 +277,7 @@ def run_codex(
     if packet == raw_prompt and production_ranking.get("routing_mode") != "abstain":
         raise AssertionError("Compiled packet must not equal raw prompt.")
     external_payload = None
-    if options.record:
+    if effective_record:
         external_payload = write_external_payload_manifest(
             repo=repo_root,
             packet=packet,
@@ -299,9 +313,9 @@ def run_codex(
                 "use_repo_map": options.use_repo_map,
                 "cache_optimized": options.cache_optimized,
                 "packet_version": compiled.get("packet_version"),
-                "save": options.save,
+                "save": effective_save,
                 "context_only": options.context_only,
-                "record": options.record,
+                "record": effective_record,
                 "tuning_profile": options.tuning_profile,
             },
             "saved_artifacts": compiled.get("saved_artifacts"),
@@ -310,9 +324,6 @@ def run_codex(
         }
         if options.show_raw:
             output["raw_prompt"] = raw_prompt
-        if options.record:
-            write_audit(repo_root, "codex_dry_run", sha256_text(raw_prompt), command_record)
-            append_metric(repo_root, {"event": "codex_dry_run", "raw_prompt_sha256": sha256_text(raw_prompt), "estimated_input_bytes": len(packet.encode()), "actual_usage": None})
         return output
 
     if external_payload and not external_payload["manifest"]["launch_allowed"]:

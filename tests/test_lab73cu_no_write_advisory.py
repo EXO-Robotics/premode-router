@@ -176,8 +176,8 @@ def test_advisory_reports_stale_inventory_topology_without_refreshing(tmp_path: 
     payload = json.loads(capsys.readouterr().out)
 
     _assert_no_repo_change(repo, before)
-    assert payload["state"]["inventory"]["state"] == "stale_head_changed"
-    assert payload["state"]["topology"]["state"] == "stale_head_changed"
+    assert payload["state"]["inventory"]["state"] == "unverified_advisory"
+    assert payload["state"]["topology"]["state"] == "unverified_advisory"
     assert {"inventory", "topology"}.issubset(set(payload["advisory"]["would_refresh"]))
     assert {"inventory", "topology"}.issubset(set(payload["advisory"]["would_write"]))
 
@@ -227,7 +227,7 @@ def test_normal_mode_still_writes_expected_state(tmp_path: Path, monkeypatch: An
     assert (repo / ".premode" / "pcodex_state.json").exists()
     assert (repo / ".premode" / "inventory" / "files.json").exists()
     assert (repo / ".premode" / "topology" / "repo_topology.json").exists()
-    assert (repo / ".premode" / "out" / "cache_manifest.json").exists()
+    assert not (repo / ".premode" / "out" / "cache_manifest.json").exists()
 
 
 def test_no_record_compile_and_v5_literal_symbol_packet_remain_stable(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:

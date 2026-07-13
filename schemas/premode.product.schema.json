@@ -8,7 +8,7 @@
     "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
     "supported_runtime", "version_source", "production_package", "phase_boundary",
     "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
-    "production_ranking_authority", "canonical_packet_authority", "install_state_authority",
+    "production_ranking_authority", "canonical_packet_authority", "install_state_authority", "no_write_authority",
     "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
   ],
   "properties": {
@@ -80,6 +80,24 @@
         "authority_relationship": {"type": "string", "minLength": 1},
         "preview_is_read_only": {"const": true},
         "unknown_schemas_fail_closed": {"const": true},
+        "raw_prompts_or_packets_stored": {"const": false}
+      }
+    },
+    "no_write_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "schema", "private_schema_version", "private_schema", "contract", "write_policy", "literal_operations", "apply_requires_explicit_authority", "missing_corrupt_or_future_state_is_not_repaired", "agent_launch_allowed", "temporary_packet_allowed", "raw_prompts_or_packets_stored"],
+      "properties": {
+        "schema_version": {"const": "pcodex.no-write-evidence.v1"},
+        "schema": {"const": "schemas/pcodex.no-write-evidence.schema.json"},
+        "private_schema_version": {"const": "pcodex.no-write-evidence.private.v1"},
+        "private_schema": {"const": "schemas/pcodex.no-write-evidence.private.schema.json"},
+        "contract": {"const": "docs/NO_WRITE_CONTRACT.md"},
+        "write_policy": {"const": "advisory"},
+        "literal_operations": {"type": "array", "items": {"enum": ["advisory", "preview", "dry-run"]}, "minItems": 3, "uniqueItems": true},
+        "apply_requires_explicit_authority": {"const": true},
+        "missing_corrupt_or_future_state_is_not_repaired": {"const": true},
+        "agent_launch_allowed": {"const": false},
+        "temporary_packet_allowed": {"const": false},
         "raw_prompts_or_packets_stored": {"const": false}
       }
     },

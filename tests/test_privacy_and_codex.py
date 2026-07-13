@@ -37,10 +37,9 @@ def test_secret_sentinel_privacy_dry_run(repo):
     assert dry["command"][-1] == "-"
     assert SENTINEL_PROMPT not in dry["command"]
     audit_text = "\n".join(p.read_text(encoding="utf-8") for p in (repo / ".premode" / "audit").glob("*.json"))
-    metrics_text = (repo / ".premode" / "metrics" / "usage_ledger.jsonl").read_text(encoding="utf-8")
     assert "SECRET_SENTINEL_RAW_PROMPT_12345" not in audit_text
-    assert "SECRET_SENTINEL_RAW_PROMPT_12345" not in metrics_text
-    assert "raw_prompt_sha256" in audit_text
+    assert audit_text == ""
+    assert not (repo / ".premode" / "metrics" / "usage_ledger.jsonl").exists()
 
 
 def test_compile_packet_preserves_canonical_prompt(repo):

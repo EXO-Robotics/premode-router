@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 import hashlib
 import gzip
 from fnmatch import fnmatch
@@ -69,6 +70,32 @@ def validate_names(names: list[str], *, allowed_prefixes: list[str], policy: dic
     return failures
 
 
+def validate_sdist_names(names: list[str], policy: dict[str, object]) -> list[str]:
+    """Default-deny sdist members after stripping the generated archive root."""
+    relative_names = []
+    for name in names:
+        parts = PurePosixPath(name).parts
+        relative_names.append(PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else "")
+    allowed_members = {
+        "CHANGELOG.md", "LICENSE", "MANIFEST.in", "PKG-INFO", "README.md",
+        "premode.product.json", "pyproject.toml", "setup.cfg", "setup.py",
+        *(
+            "src/" + str(member)
+            for member in policy.get("wheel_allowed_members", [])
+            if str(member).startswith("premode/")
+        ),
+    }
+    allowed_globs = (
+        "docs/*.md", "docs/*.json", "docs/**/*.md", "docs/**/*.json",
+        "examples/*", "schemas/*.json", "src/premode_router.egg-info/*",
+    )
+    failures = validate_names(relative_names, allowed_prefixes=[], policy=policy)
+    for name in relative_names:
+        if not name or (name not in allowed_members and not any(fnmatch(name, pattern) for pattern in allowed_globs)):
+            failures.append(f"unexpected_sdist_member:{name or '<empty>'}")
+    return failures
+
+
 def validate_archive_content(path: Path, policy: dict[str, object]) -> list[str]:
     patterns = tuple(str(item).encode("utf-8") for item in policy.get("content_prohibited_patterns", []))
     allowed_signatures = {
@@ -127,6 +154,25 @@ def write_json(path: Path, payload: object) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
+def persist_no_write_probe(output: Path, label: str, payload: dict[str, object]) -> dict[str, object]:
+    if payload.get("receipts_validated") is not True:
+        raise RuntimeError(f"{label} installed no-write receipts were not schema-validated")
+    for name, receipt in dict(payload.get("public_receipts") or {}).items():
+        write_json(output / "receipts" / "no-write" / label / f"{name}.json", receipt)
+    for name, receipt in dict(payload.get("private_receipts") or {}).items():
+        write_json(output / "private-receipts" / "no-write" / label / f"{name}.json", receipt)
+    summary = {
+        "schema_version": payload.get("schema_version"),
+        "commands": payload.get("commands"),
+        "forbidden_agent_marker_created": payload.get("forbidden_agent_marker_created"),
+        "installed_import_isolated": True,
+        "receipts_validated": True,
+        "passed": payload.get("passed"),
+    }
+    write_json(output / "receipts" / f"installed-no-write-{label}.json", summary)
+    return summary
+
+
 def write_tester_bundle(source: Path, output: Path, artifacts: Path) -> Path:
     bundle = output / "pcodex-private-tester-bundle.zip"
     entries: list[tuple[Path, str]] = []
@@ -155,6 +201,7 @@ def normalize_gzip(path: Path) -> None:
 def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -> None:
     commit_sha = run("git", "rev-parse", f"{commit}^{{commit}}")
     epoch = run("git", "show", "-s", "--format=%ct", commit_sha)
+    evidence_timestamp = datetime.fromtimestamp(int(epoch), tz=timezone.utc).isoformat().replace("+00:00", "Z")
     policy = json.loads(ALLOWLIST.read_text(encoding="utf-8"))
     if output.exists() and any(output.iterdir()):
         raise RuntimeError(f"output directory must be empty: {output}")
@@ -173,7 +220,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
                 if path.is_file():
                     path.unlink()
         dist = temp / "dist"
-        env = {**os.environ, "SOURCE_DATE_EPOCH": epoch, "PYTHONHASHSEED": "0"}
+        env = {key: value for key, value in os.environ.items() if key not in {"PYTHONPATH", "PYTHONHOME"}}
+        env.update({"SOURCE_DATE_EPOCH": epoch, "PYTHONHASHSEED": "0", "PYTHONNOUSERSITE": "1"})
         run(
             python, "-m", "pip", "wheel", ".", "--no-deps", "--no-build-isolation",
             "--wheel-dir", str(dist), cwd=source, env=env,
@@ -191,6 +239,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             item_members = members(artifact)
             prefixes = policy["wheel_allowed_prefixes"] if artifact.suffix == ".whl" else []
             allowlist_failures.extend(validate_names(item_members, allowed_prefixes=list(prefixes), policy=policy, exact_wheel=artifact.suffix == ".whl"))
+            if artifact.name.endswith((".tar.gz", ".tgz")):
+                allowlist_failures.extend(validate_sdist_names(item_members, policy))
             allowlist_failures.extend(validate_archive_content(artifact, policy))
             inventory.append({"file": f"artifacts/{artifact.name}", "sha256": sha256(artifact), "size": artifact.stat().st_size, "members": item_members})
         report = {"schema_version": "pcodex.allowlist_report.v1", "commit": commit_sha, "passed": not allowlist_failures, "failures": allowlist_failures}
@@ -225,6 +275,18 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
         smoke_home.mkdir()
         smoke_env = {**env, "HOME": str(smoke_home), "PATH": str(smoke_bin) + os.pathsep + env.get("PATH", "")}
         run(str(smoke_bin / "pcodex"), "--help", cwd=temp, env=smoke_env)
+        wheel_no_write = json.loads(run(
+            str(smoke_python), str(source / "scripts" / "installed_no_write_probe.py"),
+            "--pcodex", str(smoke_bin / "pcodex"),
+            "--repository", str(fixture),
+            "--control-root", str(temp / "wheel-no-write-control"),
+            "--commit-sha", commit_sha,
+            "--timestamp", evidence_timestamp,
+            cwd=temp, env={**smoke_env, "PYTHONDONTWRITEBYTECODE": "1"},
+        ))
+        wheel_no_write_summary = persist_no_write_probe(output, "wheel", wheel_no_write)
+        if not wheel_no_write.get("passed"):
+            raise RuntimeError("installed wheel no-write probe failed after evidence persistence")
         installed_contract = json.loads(run(
             str(smoke_python), "-c",
             "import json; from premode.product_contract import validate_installed_product_contract as v; print(json.dumps(v(),sort_keys=True))",
@@ -264,6 +326,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             raise RuntimeError("installed uninstall preview mutated fixture state")
 
         sdist_smoke = "not_requested"
+        sdist_no_write: dict[str, object] | str = "not_requested"
         if with_sdist:
             sdists = list(artifacts.glob("*.tar.gz"))
             if len(sdists) != 1:
@@ -282,11 +345,23 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             run(str(sdist_python), "-c", "from premode.product_contract import validate_installed_product_contract as v; assert v()['status']=='valid'", cwd=temp)
             run(str(sdist_python), "-c", "from premode.production_ranking import PRODUCTION_RANKING_PROVIDER_VERSION as v; assert v=='production-ranking-provider.v1'", cwd=temp)
             run(str(sdist_bin / "pcodex"), "--help", cwd=temp)
+            sdist_no_write = json.loads(run(
+                str(sdist_python), str(source / "scripts" / "installed_no_write_probe.py"),
+                "--pcodex", str(sdist_bin / "pcodex"),
+                "--repository", str(fixture),
+                "--control-root", str(temp / "sdist-no-write-control"),
+                "--commit-sha", commit_sha,
+                "--timestamp", evidence_timestamp,
+                cwd=temp, env={**env, "PATH": str(sdist_bin) + os.pathsep + env.get("PATH", ""), "PYTHONDONTWRITEBYTECODE": "1"},
+            ))
+            sdist_no_write_summary = persist_no_write_probe(output, "sdist", sdist_no_write)
+            if not sdist_no_write.get("passed"):
+                raise RuntimeError("installed sdist no-write probe failed after evidence persistence")
             run(str(sdist_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
             run(str(sdist_python), "-c", "import importlib.util; assert importlib.util.find_spec('premode') is None", cwd=temp)
             sdist_smoke = "passed"
         write_json(output / "receipts" / "install-smoke.json", {
-            "status": "passed", "offline": True, "source_checkout_absent": True,
+            "status": "passed", "offline": True, "source_import_absent": True,
             "default_strategy": probe, "commit": commit_sha,
             "setup_status": setup_payload.get("setup_status"), "pcodex_status": status_payload.get("status"),
             "dry_run_codex_launch": dry_payload.get("codex_launch"), "selected_paths": selected,
@@ -295,6 +370,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = False) -
             "uninstall_preview_status": uninstall_preview.get("status"),
             "uninstall_preview_writes": uninstall_preview.get("writes_performed"),
             "sdist_smoke": sdist_smoke,
+            "wheel_no_write": wheel_no_write_summary,
+            "sdist_no_write": sdist_no_write_summary if isinstance(sdist_no_write, dict) else sdist_no_write,
             "external_strategy_distribution_present": False,
         })
         run(str(smoke_python), "-m", "pip", "uninstall", "-y", "premode-router", cwd=temp)
