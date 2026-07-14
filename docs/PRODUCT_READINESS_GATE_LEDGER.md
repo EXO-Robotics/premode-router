@@ -3,7 +3,7 @@
 Status date: 2026-07-14
 Campaign branch: `product/codex-beta-v1`
 Accepted campaign baseline: `88b459ca79ebd04149bb0719405656df2c904292`
-Current integrated milestone implementation: `f37a7f18cbceffaaeb53a409b8983a9df6cbda87`
+Current integrated milestone implementation: `5948e11248aa5ed9dc9f3d80c3961de5974aca39`
 
 The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate for an earlier failed gate.
 
@@ -26,7 +26,7 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 | G2-security | no-write receipts, containment, ownership, scanners | complete | macOS/Linux and Python 3.11-3.13 CI and Stage 2 clean-artifact proof pass | none | broader adversarial review continues | passed |
 | G3 — production Codex integration | canonical plugin lifecycle, bounded optional MCP, and Codex 0.143 discovery | complete | macOS/Linux wheel/sdist lifecycle, live discovery, workspace binding, protocol, containment, cancellation, shutdown, and sensitive-error checks pass | none | broader Codex versions are unsupported | passed |
 | G4 — production OpenClaw adapter | canonical lifecycle, bounded MCP tool, OpenClaw `2026.4.14`, and 10-fixture/20-task policy-conformance set at `0c268054` | complete | adapter lifecycle, installed-artifact, containment, protocol, and policy-conformance proof pass; real agent-outcome acceptance remains | real OpenClaw agent outcomes for patch quality, validation, exploration, and complete-task cost | state-changing operations require writer quiescence; broader OpenClaw versions unsupported | partial |
-| G5 — distribution and release engineering | successful workflows `29301111990`, `29302610473`, and `29311089717`; diagnostic workflow `29342622068`; reproducible wheel/sdist, SBOM, provenance, rollback, and first-run evidence kit | complete | local exact-commit qualification and all six remote test/artifact cells pass; downstream fan-in repair awaits a fresh exact-SHA run | the topology-corrective workflow must reach terminal success before this row can be promoted | Windows not supported | substantially_complete |
+| G5 — distribution and release engineering | successful workflows `29301111990`, `29302610473`, `29311089717`, and `29344888818`; diagnostic workflow `29342622068`; reproducible wheel/sdist, SBOM, provenance, rollback, and first-run evidence kit | complete | macOS/Linux × Python 3.11-3.13 tests, installed artifacts, reproducibility, canonical RC assembly, tool-install, and final evidence pass | none | Windows not supported | passed |
 | G6 — held-out product proof | protocol foundations only | not started | not started | frozen 10-repository/100-task corpus and case studies absent | external/model execution | not_started |
 
 ## Milestone receipts
@@ -86,7 +86,7 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Diagnostic remote evidence: workflow `29341698377` correctly failed because a synthetic study receipt hardcoded Python `3.11.15`; the validator detected the mismatch on other matrix runtimes. The corrective commit derives the value from the exact kit-bound interpreter using the validator's controlled invocation.
 - Diagnostic remote evidence: workflow `29342622068` passed all six test cells and all six wheel/sdist qualification cells, then correctly blocked promotion when the reproducibility job found zero receipts. Combining the qualification root and first-run kit in one uploaded artifact added an extra directory level that violated the established fan-in topology; release-candidate, tool-install, and final evidence jobs were skipped.
 - Fan-in repair: qualification evidence and first-run study kits now upload as separate, nonoverlapping artifact names. The `pcodex-*` download pattern therefore receives the original `<matrix-cell>/receipts` topology while every study kit remains retained independently for 14 days. A regression test freezes this boundary.
-- Fresh remote evidence: the topology-corrective commit requires a new exact-SHA workflow that reaches terminal success before G5 promotion.
+- Fresh remote evidence: workflow `29344888818` passed at the exact topology-corrective SHA, including all six test cells, all six artifact cells, reproducibility, release-candidate assembly, macOS/Linux tool-install, final qualification evidence, and release evidence. G5 is promoted by the dedicated receipt below.
 - Independent review: three read-only lanes ended at P0=0/P1=0 after fixes for transition serialization, true copied-CLI all-five execution, signed failed-install attempts, and cross-version runtime binding.
 - Supported claim: coordinators can conduct and record the frozen five-person first-run study from the copied kit without a source checkout; final aggregate verification is independently repeated from the exact clean candidate checkout.
 - Unsupported claim: that five humans have completed the study or that its activation thresholds have passed.
@@ -138,3 +138,18 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Remote evidence: workflow `29320312258` passed at the exact implementation commit across all six declared OS/Python cells and downstream release jobs.
 - Supported claim: pCodex has one installed-artifact-independent, reversible, contained production OpenClaw adapter for the declared runtime matrix.
 - Unsupported claim: G4 agent-outcome qualification, a promoted algorithm, reduced exploration, lower complete-task cost, or broader OpenClaw-version support.
+
+### G5 — Final Distribution and Release Qualification
+
+- Classification: passed.
+- Starting SHA: `f37a7f18cbceffaaeb53a409b8983a9df6cbda87`.
+- Topology-corrective SHA: `5948e11248aa5ed9dc9f3d80c3961de5974aca39`.
+- Corrective scope: the matrix qualification payload and first-run study kit are uploaded under separate, nonoverlapping artifact names. This preserves the established reproducibility/RC fan-in root while retaining all six study kits independently for 14 days.
+- Local tests: 1,626 collected, 1,620 passed, and 6 intentional platform/runtime skips; no failures or deselections. The focused workflow-topology, first-run, documentation, setup, first-run receipt, and literal no-write suites passed.
+- Clean local qualification: exact-commit wheel/sdist parity, package allowlist, installed lifecycle, literal no-write, Codex `0.143.0`, OpenClaw `2026.4.14`, upgrade/rollback, SBOM, provenance, and package removal passed outside the checkout.
+- Artifacts: wheel SHA-256 `4d5cb511bb7acb4a547c76902dcfb7a1b07c188dc52e04cdb64af9fa708125a5`; sdist SHA-256 `4dc8ea78bb2f9baea5de7130a63faf9d6b7659b683c7340bff141e2f3b0c7da3`; SBOM SHA-256 `23d4d1d8f18f1f00b73f925a52c32374ad1f8d6973f832aa1b3b44fef5aabae8`; provenance SHA-256 `f7f53917c3bd5ea7b202ecc46adb3beb1caafa692863f650ce16cccff682b0a0`; study-kit authority SHA-256 `8879f21bb7d338a1c52d3c8ed177fc28df0a755ed9ace2648c95803d06fe9f3f`; nonpublished RC archive SHA-256 `38d3a7a4e94c1a16aabe16a9a3cc9d0d62e3af9077c6f4cfba099cc5c1592d5d`.
+- Remote evidence: workflow `29344888818` completed successfully at the exact corrective SHA. Dependency review, static quality/security, full-history Gitleaks/TruffleHog, six OS/Python test cells, six clean-artifact cells, cross-matrix reproducibility, canonical RC assembly/rebuild, macOS/Linux tool-install, final qualification evidence, and release evidence all passed.
+- RC validation: version `0.3.0b1`, 6 matrix cells, 75 manifest files, exact wheel/sdist hashes, commit binding, archive validation, and `published=false` passed after downloading the CI artifact.
+- Independent review: the artifact-topology repair and ledger reconciliation ended at P0=0/P1=0. The reviewer confirmed no study-kit evidence loss and exact restoration of downstream receipt paths.
+- Supported claim: one nonpublished, reproducible pCodex `0.3.0b1` release candidate is qualified for macOS/Linux, Python 3.11-3.13, Codex `0.143.x`, and OpenClaw `2026.4.14` across the declared backend lifecycle.
+- Unsupported claim: Windows support, package/marketplace publication, broader Codex/OpenClaw versions, completed human activation evidence, G4 real-agent outcome qualification, or G6 held-out market proof.
