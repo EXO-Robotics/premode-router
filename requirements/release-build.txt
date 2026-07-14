@@ -1,4 +1,4 @@
 pip==26.1.2
 setuptools==83.0.0
 wheel==0.46.2
-jsonschema==4.25.0
+jsonschema==4.25.1
