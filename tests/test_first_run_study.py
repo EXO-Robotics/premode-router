@@ -407,6 +407,18 @@ def _receipt(
 ) -> dict[str, object]:
     kit = json.loads(kit_path.read_text(encoding="utf-8"))
     fixture = kit["fixtures"][index - 1]
+    runtime_python_version = subprocess.run(
+        [
+            kit["runtime_tools"]["python"]["path"],
+            "-c",
+            "import platform; print(platform.python_version())",
+        ],
+        env={"PATH": "/usr/bin:/bin", "LC_ALL": "C"},
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    ).stdout.strip()
     tester = f"tester-{index:08d}"
     repo = kit_path.parents[1] / f"tester-{index}"
     if index == 4:
@@ -647,7 +659,7 @@ def _receipt(
         "runtime": {
             "platform": "macos" if index % 2 else "linux",
             "architecture": "arm64",
-            "python_version": "3.11.15",
+            "python_version": runtime_python_version,
             "codex_version": "absent" if index == 1 else "0.143.0",
             "repository_root": str(repo),
         },
