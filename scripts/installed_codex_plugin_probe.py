@@ -193,17 +193,56 @@ def _classify_mcp_process_observations(
     forbidden = 0
     monitor_internal_count = 0
     server_record = records.get(server_pid, {})
-    server_command = str(server_record.get("command") or "")
     server_executable = str(server_record.get("executable_path") or "")
+
+    def same_executable(left: str, right: str) -> bool:
+        if not left or not right or not Path(left).is_absolute() or not Path(right).is_absolute():
+            return False
+        try:
+            left_stat = Path(left).stat()
+            right_stat = Path(right).stat()
+        except OSError:
+            return Path(left).resolve(strict=False) == Path(right).resolve(strict=False)
+        return (left_stat.st_dev, left_stat.st_ino) == (
+            right_stat.st_dev,
+            right_stat.st_ino,
+        )
 
     def multiprocessing_child_kind(record: dict[str, Any]) -> str | None:
         if int(record.get("ppid") or 0) != server_pid:
             return None
         command = str(record.get("command") or "")
         executable = str(record.get("executable_path") or "")
-        if not executable or executable != server_executable:
+        if not executable or not same_executable(executable, server_executable):
             return None
-        prefix = re.escape(server_executable) + r"(?: -(?:B|E|I|S))* -c "
+        argv = record.get("argv")
+        if isinstance(argv, list) and all(isinstance(value, str) for value in argv):
+            values = list(argv)
+            if not values or not same_executable(values[0], executable):
+                return None
+            offset = 1
+            while offset < len(values) and re.fullmatch(r"-(?:B|E|I|S)", values[offset]):
+                offset += 1
+            if offset + 1 >= len(values) or values[offset] != "-c":
+                return None
+            code = values[offset + 1]
+            trailing = values[offset + 2 :]
+            if re.fullmatch(
+                r"from multiprocessing\.spawn import spawn_main; "
+                r"spawn_main\(tracker_fd=\d+, pipe_handle=\d+\)",
+                code,
+            ) and trailing == ["--multiprocessing-fork"]:
+                return "worker"
+            if re.fullmatch(
+                r"from multiprocessing\.resource_tracker import main;main\(\d+\)",
+                code,
+            ) and not trailing:
+                return "resource_tracker"
+            return None
+        command_executable = command.partition(" ")[0]
+        if not same_executable(command_executable, executable):
+            return None
+        prefix = re.escape(command_executable) + r"(?: -(?:B|E|I|S))* -c "
         if re.fullmatch(
             prefix
             + r"from multiprocessing\.spawn import spawn_main; "
@@ -290,6 +329,8 @@ def _classify_mcp_process_observations(
                 "classification": classification,
                 "executable_name": Path(str(record.get("executable_path") or "")).name.strip("()"),
                 "survived": pid in monitor.after,
+                "command": command,
+                "executable_path": str(record.get("executable_path") or ""),
                 "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
             }
         )

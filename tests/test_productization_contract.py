@@ -653,6 +653,77 @@ def test_mcp_process_evidence_allows_only_exact_workers_and_readers() -> None:
     assert evidence["forbidden_count"] == 5
 
 
+def test_linux_mcp_process_evidence_accepts_only_inode_bound_spawn_argv(
+    tmp_path: Path,
+) -> None:
+    interpreter = Path(sys.executable).resolve()
+    venv_python = tmp_path / "venv/bin/python"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.symlink_to(interpreter)
+    root = {"pid": 1, "ppid": 0, "command": "probe", "executable_path": "/bin/probe"}
+    server = {
+        "pid": 2,
+        "ppid": 1,
+        "command": f"{venv_python} {tmp_path}/venv/bin/pcodex mcp-server",
+        "executable_path": str(interpreter),
+        "argv": [str(venv_python), f"{tmp_path}/venv/bin/pcodex", "mcp-server"],
+    }
+    spawn_code = (
+        "from multiprocessing.spawn import spawn_main; "
+        "spawn_main(tracker_fd=6, pipe_handle=8)"
+    )
+    tracker_code = "from multiprocessing.resource_tracker import main;main(5)"
+    records = [
+        server,
+        {
+            "pid": 3,
+            "ppid": 2,
+            "command": f"{venv_python} -B -c {spawn_code} --multiprocessing-fork",
+            "executable_path": str(interpreter),
+            "argv": [str(venv_python), "-B", "-c", spawn_code, "--multiprocessing-fork"],
+        },
+        {
+            "pid": 4,
+            "ppid": 2,
+            "command": f"{venv_python} -B -c {tracker_code}",
+            "executable_path": str(interpreter),
+            "argv": [str(venv_python), "-B", "-c", tracker_code],
+        },
+        {
+            "pid": 5,
+            "ppid": 2,
+            "command": f"{venv_python} -c {spawn_code} --multiprocessing-fork --extra",
+            "executable_path": str(interpreter),
+            "argv": [
+                str(venv_python),
+                "-c",
+                spawn_code,
+                "--multiprocessing-fork",
+                "--extra",
+            ],
+        },
+    ]
+    monitor = SimpleNamespace(
+        root_pid=1,
+        before={1: root},
+        observed={(item["pid"], str(item["pid"])): item for item in records},
+        after={},
+        observation_available=True,
+    )
+    evidence = _classify_mcp_process_observations(
+        monitor,
+        server_pid=2,
+        git_guard=Path("/guard/git"),
+        real_git=Path("/usr/bin/git"),
+        shell_authorities={Path("/bin/sh"): Path("/usr/bin/dash")},
+    )
+    classifications = [item["classification"] for item in evidence["observations"]]
+    assert "allowed_mcp_worker" in classifications
+    assert "allowed_mcp_resource_tracker" in classifications
+    assert classifications.count("unexpected_mcp_descendant") == 1
+    assert evidence["forbidden_count"] == 1
+
+
 def test_mcp_line_reader_preserves_lines_already_buffered_in_user_space() -> None:
     process = SimpleNamespace(
         stdout=io.StringIO('{"id": 1}\n{"id": 2}\n'),

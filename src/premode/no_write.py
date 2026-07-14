@@ -658,13 +658,19 @@ def _read_process_table() -> dict[int, dict[str, Any]]:
                 continue
             try:
                 raw = (item / "stat").read_text(encoding="utf-8", errors="replace")
-                command = (item / "cmdline").read_bytes().replace(b"\0", b" ").decode("utf-8", "replace").strip()
+                raw_command = (item / "cmdline").read_bytes()
+                argv = [
+                    value.decode("utf-8", "replace")
+                    for value in raw_command.split(b"\0")
+                    if value
+                ]
+                command = " ".join(argv)
                 suffix = raw[raw.rfind(")") + 2 :].split()
                 try:
                     executable_path = os.readlink(item / "exe")
                 except OSError:
                     executable_path = command.split()[0] if command else None
-                records[int(item.name)] = {"pid": int(item.name), "ppid": int(suffix[1]), "start_time": suffix[19], "executable_path": executable_path, "command": command}
+                records[int(item.name)] = {"pid": int(item.name), "ppid": int(suffix[1]), "start_time": suffix[19], "executable_path": executable_path, "command": command, "argv": argv}
             except (OSError, ValueError, IndexError):
                 continue
         return records
