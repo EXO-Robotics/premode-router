@@ -593,6 +593,49 @@ def test_config_symlink_cycle_fails_closed(tmp_path: Path) -> None:
         )
 
 
+def test_config_parent_symlink_cycle_fails_closed(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    home.mkdir()
+    first.symlink_to(second)
+    second.symlink_to(first)
+
+    with pytest.raises(OpenClawAuthorityError):
+        resolve_openclaw_config_authority(
+            environ={
+                "HOME": str(home),
+                "OPENCLAW_CONFIG_PATH": str(first / "openclaw.json"),
+            },
+            home=home,
+        )
+
+
+def test_acyclic_target_below_repeated_symlink_prefix_is_supported(
+    tmp_path: Path,
+) -> None:
+    home = tmp_path / "home"
+    actual = tmp_path / "actual"
+    prefix = tmp_path / "prefix"
+    home.mkdir()
+    actual.mkdir()
+    prefix.symlink_to(actual, target_is_directory=True)
+    target = prefix / "target.json"
+    target.write_text("{}\n", encoding="utf-8")
+    link = actual / "link.json"
+    link.symlink_to(target)
+
+    authority = resolve_openclaw_config_authority(
+        environ={
+            "HOME": str(home),
+            "OPENCLAW_CONFIG_PATH": str(prefix / "link.json"),
+        },
+        home=home,
+    )
+
+    assert actual / "target.json" in authority.config_target_candidates
+
+
 def test_live_openclaw_2026_4_14_runtime_dotenv_path_parity(tmp_path: Path) -> None:
     executable = shutil.which("openclaw")
     if executable is None and Path("/opt/homebrew/bin/openclaw").is_file():

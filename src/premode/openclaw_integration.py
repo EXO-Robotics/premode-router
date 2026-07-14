@@ -83,15 +83,68 @@ def _absolute(path: Path, *, cwd: Path) -> Path:
     return Path(os.path.abspath(os.fspath(candidate)))
 
 
+def _resolve_symlink_chain(path: Path, *, max_links: int = 64) -> Path:
+    """Resolve symlinks without relying on version-specific ``Path.resolve``.
+
+    Python 3.13 changed the non-strict cycle behavior of ``Path.resolve``.  The
+    OpenClaw authority boundary must fail closed consistently on every
+    supported Python, including when a symlinked parent contains the cycle.
+    Missing targets remain valid lexical targets so creation is still watched.
+    """
+
+    absolute = Path(os.path.abspath(os.fspath(path)))
+    anchor = Path(absolute.anchor)
+    pending = list(absolute.parts[1:])
+    resolved = anchor
+    seen_states: set[tuple[Path, tuple[str, ...]]] = set()
+    links_seen = 0
+
+    while pending:
+        component = pending.pop(0)
+        candidate = resolved / component
+        state = (candidate, tuple(pending))
+        if state in seen_states:
+            raise OpenClawAuthorityError(
+                "OpenClaw authority symlink target contains a cycle"
+            )
+        seen_states.add(state)
+        try:
+            info = candidate.lstat()
+        except FileNotFoundError:
+            return Path(os.path.abspath(os.fspath(candidate.joinpath(*pending))))
+        except OSError as exc:
+            raise OpenClawAuthorityError(
+                "cannot inspect OpenClaw authority symlink target"
+            ) from exc
+        if not stat.S_ISLNK(info.st_mode):
+            resolved = candidate
+            continue
+
+        links_seen += 1
+        if links_seen > max_links:
+            raise OpenClawAuthorityError(
+                "OpenClaw authority symlink target exceeds the safe resolution bound"
+            )
+        try:
+            raw_target = os.readlink(candidate)
+        except OSError as exc:
+            raise OpenClawAuthorityError(
+                "cannot read OpenClaw authority symlink target"
+            ) from exc
+        target = Path(raw_target)
+        if not target.is_absolute():
+            target = candidate.parent / target
+        target = Path(os.path.abspath(os.fspath(target)))
+        pending = [*target.parts[1:], *pending]
+        resolved = Path(target.anchor)
+
+    return resolved
+
+
 def _distinct_resolved_targets(paths: tuple[Path, ...]) -> tuple[Path, ...]:
     targets: list[Path] = []
     for path in paths:
-        try:
-            target = path.resolve(strict=False)
-        except (OSError, RuntimeError) as exc:
-            raise OpenClawAuthorityError(
-                "cannot resolve OpenClaw authority symlink target"
-            ) from exc
+        target = _resolve_symlink_chain(path)
         if target != path and target not in targets:
             targets.append(target)
     return tuple(targets)
@@ -117,12 +170,7 @@ def _nested_symlink_targets(
                 "cannot inspect OpenClaw state symlink authority"
             ) from exc
         if stat.S_ISLNK(info.st_mode):
-            try:
-                target = path.resolve(strict=False)
-            except (OSError, RuntimeError) as exc:
-                raise OpenClawAuthorityError(
-                    "cannot resolve OpenClaw state symlink authority"
-                ) from exc
+            target = _resolve_symlink_chain(path)
             if target not in targets:
                 targets.append(target)
                 pending.append(target)
