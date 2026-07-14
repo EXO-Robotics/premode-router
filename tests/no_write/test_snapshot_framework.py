@@ -64,7 +64,7 @@ def test_snapshot_detects_content_metadata_membership_and_missing_roots(tmp_path
 
 
 def test_snapshot_does_not_follow_symlinks_and_records_hardlinks_and_special_files() -> None:
-    with tempfile.TemporaryDirectory(prefix="pcnw-", dir="/private/tmp") as temporary:
+    with tempfile.TemporaryDirectory(prefix="pcnw-") as temporary:
         base = Path(temporary)
         root = base / "root"
         outside = base / "outside"

@@ -62,7 +62,12 @@ def _frontmatter(path: Path) -> dict[str, str]:
 
 def test_one_canonical_source_tree_and_valid_skills() -> None:
     root = canonical_source_root()
-    assert root == REPO_ROOT / "plugins" / "pcodex"
+    module_path = Path(codex_plugin.__file__).resolve()
+    if module_path.is_relative_to(REPO_ROOT):
+        assert root == REPO_ROOT / "plugins" / "pcodex"
+    else:
+        assert root.as_posix().endswith("/share/premode-router/plugins/pcodex")
+        assert root != REPO_ROOT / "plugins" / "pcodex"
     legacy_root = REPO_ROOT / ".agents" / "plugins" / "plugins" / "premode-router"
     assert not any(path.is_file() for path in legacy_root.rglob("*"))
     assert not any(path.is_file() for root in (REPO_ROOT / ".agents" / "skills").glob("pcodex*") for path in root.rglob("*"))
