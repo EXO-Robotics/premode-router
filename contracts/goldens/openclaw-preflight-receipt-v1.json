@@ -1,0 +1,18 @@
+{
+  "schema_version": "pcodex.openclaw-preflight-receipt.v1",
+  "receipt_id": "ocpr_7ee88230f26b092e770fe030413220dc25ab61b298fb99828429450568c80620",
+  "exact_task_sha256": "ce33e3dfd5550b551b7fe3ee9cb3d9334eff7ecdb40e8cfa0a87c2d2e2b98562",
+  "workspace_binding_id": "ocwb_0123456789abcdef0123456789abcdef",
+  "provider_version": "production-ranking-provider.v1",
+  "provider_decision_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "classification_policy_version": "pcodex.openclaw-authority-policy.v1",
+  "routing_mode": "narrow",
+  "path_count": 2,
+  "dangerous_zone_count": 2,
+  "validation_surface_count": 1,
+  "ordered_paths_sha256": "87a05b123d06867640f89ebae854fa5e4aba9694e070ffc8e370ed3ee1337893",
+  "dangerous_zones_sha256": "507d94e994009ad3f8cdf8bc4172bc8f4522221fe9333e7add006ad914d1291c",
+  "validation_surfaces_sha256": "dcc7636d53c1993c53e0e10f31ffe5935a2ecb408ed1622d867b6c1dc19b72c5",
+  "source_contract": "pcodex.openclaw-preflight.v1",
+  "sensitivity_classification": "private_metadata"
+}

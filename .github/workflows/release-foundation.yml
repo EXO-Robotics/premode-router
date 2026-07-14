@@ -16,6 +16,7 @@ env:
   PYTHONDONTWRITEBYTECODE: "1"
   TZ: UTC
   CODEX_VERSION: "0.143.0"
+  OPENCLAW_VERSION: "2026.4.14"
 
 jobs:
   test-matrix:
@@ -45,6 +46,12 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/codex-npm" "@openai/codex@$CODEX_VERSION"
           echo "$RUNNER_TEMP/codex-npm/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/codex-npm/bin/codex" --version | grep -F "$CODEX_VERSION"
+      - name: Install and verify OpenClaw runtime
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/openclaw-npm" "openclaw@$OPENCLAW_VERSION"
+          echo "$RUNNER_TEMP/openclaw-npm/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/openclaw-npm/bin/openclaw" --version | grep -F "$OPENCLAW_VERSION"
       - name: Compile production and qualification code
         run: python -m compileall -q -f src/premode scripts packages/premode-plugin-literal-symbol/src
       - name: Validate JSON and product manifests
@@ -111,6 +118,12 @@ jobs:
           npm install --global --prefix "$RUNNER_TEMP/codex-npm" "@openai/codex@$CODEX_VERSION"
           echo "$RUNNER_TEMP/codex-npm/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/codex-npm/bin/codex" --version | grep -F "$CODEX_VERSION"
+      - name: Install and verify OpenClaw runtime
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/openclaw-npm" "openclaw@$OPENCLAW_VERSION"
+          echo "$RUNNER_TEMP/openclaw-npm/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/openclaw-npm/bin/openclaw" --version | grep -F "$OPENCLAW_VERSION"
       - name: Build and qualify wheel and sdist outside checkout
         shell: bash
         run: |
@@ -137,6 +150,11 @@ jobs:
               "passed": True,
               "post_mutation_rollback": True,
               "unsupported_downgrade_fail_closed": True,
+          }
+          assert qualification["openclaw_adapter"] == {
+              "wheel": True,
+              "sdist": True,
+              "live_openclaw_version": "2026.4.14",
           }
           assert (root / "release/SBOM.cyclonedx.json").is_file()
           assert (root / "release/provenance.intoto.json").is_file()
@@ -165,9 +183,9 @@ jobs:
       - name: Lint and format qualification-critical Python
         run: |
           ruff check --select E9,F63,F7,F82 src/premode scripts tests
-          ruff format --check src/premode/algorithm_handoff.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
+          ruff format --check src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py scripts/installed_openclaw_adapter_probe.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
       - name: Type-check versioned product contracts
-        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py src/premode/algorithm_handoff.py
+        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py
       - name: Validate frozen production algorithm handoff
         run: PYTHONPATH=src python scripts/validate_algorithm_handoff.py
       - name: Run Python security analyzers
@@ -186,7 +204,12 @@ jobs:
             docs/MIGRATION.md docs/ROLLBACK.md docs/UNINSTALL.md \
             src/premode/no_write.py src/premode/managed_state.py \
             src/premode/cli.py src/premode/production_ranking.py \
+            src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py \
+            src/premode/openclaw_contracts.py src/premode/openclaw_integration.py \
+            src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py \
+            src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py \
             src/premode/algorithm_handoff.py scripts/validate_algorithm_handoff.py \
+            scripts/installed_openclaw_adapter_probe.py \
             release/algorithm-handoff.v1.json \
             > "$RUNNER_TEMP/detect-secrets.json"
           python -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/detect-secrets.json')); assert not d.get('results'), d.get('results')"

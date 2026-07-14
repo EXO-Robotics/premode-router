@@ -5,7 +5,7 @@
   "release_target": "0.3.0b1",
   "release_class": "Codex-first private technical beta",
   "status": "source-visible proprietary private beta; not production-ready",
-  "supported_runtime": "Codex CLI terminal workflow",
+  "supported_runtime": "Codex CLI and OpenClaw terminal workflows",
   "version_source": "src/premode/__init__.py::__version__ (pyproject and plugin versions derive from it)",
   "production_package": "premode-router",
   "phase_boundary": {
@@ -29,6 +29,7 @@
     ],
     "current_product_version": "0.3.0b1",
     "supported_codex_versions": ["0.143.x"],
+    "supported_openclaw_versions": ["2026.4.14"],
     "declared_legacy_product_versions": ["0.2.6.24"],
     "required_journeys": {
       "first_value": [
@@ -45,6 +46,16 @@
         "pcodex integrate codex --disable",
         "pcodex integrate codex --uninstall --dry-run",
         "pcodex integrate codex --uninstall"
+      ],
+      "openclaw_lifecycle": [
+        "pcodex integrate openclaw --dry-run",
+        "pcodex integrate openclaw --write",
+        "pcodex integrate openclaw --status",
+        "pcodex integrate openclaw --repair --dry-run",
+        "pcodex integrate openclaw --repair",
+        "pcodex integrate openclaw --disable",
+        "pcodex integrate openclaw --uninstall --dry-run",
+        "pcodex integrate openclaw --uninstall"
       ],
       "migration": [
         "pcodex integrate codex --dry-run --migrate --repo-root /path/to/repository",
@@ -86,6 +97,7 @@
     "pcodex compile",
     "pcodex mcp-server",
     "pcodex integrate codex",
+    "pcodex integrate openclaw",
     "pcodex plugin init",
     "premode compile",
     "premode benchmark",
@@ -172,6 +184,37 @@
       "unknown_versions": "fail_closed"
     }
   ],
+  "integration_contracts": {
+    "openclaw": [
+      {
+        "name": "OpenClawPreflightRequestV1",
+        "scope": "application_contract",
+        "python_authority": "premode.openclaw_contracts.OpenClawPreflightRequestV1",
+        "schema": "schemas/pcodex.openclaw-preflight-request.v1.schema.json",
+        "golden": "contracts/goldens/openclaw-preflight-request-v1.json",
+        "sensitivity": "sensitive_private",
+        "unknown_versions": "fail_closed"
+      },
+      {
+        "name": "OpenClawPreflightResultV1",
+        "scope": "application_contract",
+        "python_authority": "premode.openclaw_contracts.OpenClawPreflightResultV1",
+        "schema": "schemas/pcodex.openclaw-preflight-result.v1.schema.json",
+        "golden": "contracts/goldens/openclaw-preflight-result-v1.json",
+        "sensitivity": "sensitive_private",
+        "unknown_versions": "fail_closed"
+      },
+      {
+        "name": "OpenClawPreflightReceiptV1",
+        "scope": "application_contract",
+        "python_authority": "premode.openclaw_contracts.OpenClawPreflightReceiptV1",
+        "schema": "schemas/pcodex.openclaw-preflight-receipt.v1.schema.json",
+        "golden": "contracts/goldens/openclaw-preflight-receipt-v1.json",
+        "sensitivity": "content_free",
+        "unknown_versions": "fail_closed"
+      }
+    ]
+  },
   "install_state_authority": {
     "schema_version": "pcodex.install-state.v1",
     "schema": "schemas/pcodex.install-state.schema.json",
@@ -205,8 +248,8 @@
     {"surface": "plugins/pcodex skills", "classification": "public_codex", "kind": "codex_plugin_assets"},
     {"surface": "pcodex first-run/on/tuned/tune/ui/compile/integrate", "classification": "advanced", "kind": "commands"},
     {"surface": "pcodex MCP server", "classification": "advanced", "kind": "integration"},
-    {"surface": "OpenClaw repository profile", "classification": "advanced", "kind": "adapter"},
-    {"surface": "OpenClaw execution integration", "classification": "experimental", "kind": "adapter"},
+    {"surface": "OpenClaw repository profile", "classification": "advanced", "kind": "adapter_policy"},
+    {"surface": "pcodex integrate openclaw lifecycle and premode_preflight tool", "classification": "advanced", "kind": "production_adapter"},
     {"surface": "observer and Qwen evidence", "classification": "research", "kind": "evidence"},
     {"surface": "lab and live-token harnesses", "classification": "research", "kind": "harness"},
     {"surface": "current isolated source installer", "classification": "public_codex", "kind": "installer"},
@@ -297,20 +340,22 @@
       "surface": "observer and Qwen evidence", "location": "observer databases, runs, and experiment artifacts", "classification": "research", "owner": "research_lane", "creation_trigger": "algorithm-lane execution", "read_behavior": "not read by lifecycle foundation", "write_behavior": "never written by product lane", "sensitivity": "private", "schema_version": "research-specific", "cleanup_policy": "not product-owned", "repair_policy": "not product-owned", "uninstall_policy": "never remove", "conflict_policy": "exclude from product receipts", "user_modification_policy": "preserve"
     },
     {
-      "surface": "OpenClaw-related state", "location": "OpenClaw templates, fixtures, profiles, or external runtime state", "classification": "experimental", "owner": "external_or_research", "creation_trigger": "explicit experimental workflow", "read_behavior": "profile detection only in beta", "write_behavior": "no production lifecycle writes", "sensitivity": "private", "schema_version": "experimental", "cleanup_policy": "not product-owned unless a future receipt proves otherwise", "repair_policy": "deferred", "uninstall_policy": "never remove in 0.3.0b1", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
+      "surface": "OpenClaw MCP registration", "location": "$OPENCLAW_CONFIG_PATH or resolved OpenClaw config mcp.servers.pcodex", "classification": "advanced", "owner": "mixed with exact pcodex entry authority", "creation_trigger": "explicit pcodex integrate openclaw --write", "read_behavior": "local JSON5 structural inspection without launching OpenClaw", "write_behavior": "span-bounded atomic JSON5 edit of only the pcodex entry", "sensitivity": "private", "schema_version": "external JSON5 plus pcodex.openclaw-integration-state.v1", "cleanup_policy": "remove only the exact receipt-proven registration", "repair_policy": "restore only a missing receipt-proven registration", "uninstall_policy": "exact entry removal with hash and workspace authority checks", "conflict_policy": "malformed, future, modified, duplicate, or unknown-owner state fails closed", "user_modification_policy": "preserve"
+    },
+    {
+      "surface": "OpenClaw integration lifecycle authority", "location": ".pcodex/openclaw-integration-state.json and .pcodex/openclaw-integration-operation.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit OpenClaw integration apply", "read_behavior": "bind exact config entry, workspace identity, runtime version, and operation phase", "write_behavior": "private atomic versioned receipts", "sensitivity": "private_metadata", "schema_version": "pcodex.openclaw-integration-state.v1 and pcodex.openclaw-integration-operation.v1", "cleanup_policy": "remove only after exact lifecycle completion", "repair_policy": "recover deterministic receipt-proven interrupted operations or fail closed", "uninstall_policy": "remove exact owned state after registration cleanup", "conflict_policy": "unknown schema, changed workspace, changed config authority, or user modification blocks mutation", "user_modification_policy": "preserve and require manual action"
     }
   ],
   "integration_status": {
     "codex_cli": "supported_terminal_workflow",
     "codex_repo_assets": "canonical_receipt_bound_opt_in_with_native_registration",
     "mcp": "optional_workspace_bound_descriptor_and_registration_not_automatic",
-    "openclaw": "advanced_experimental_not_production_supported"
+    "openclaw": "production_adapter_openclaw_2026_4_14_receipt_bound"
   },
   "known_beta_debt": [
     "model-visible installed-skill trigger evidence beyond structural Codex discovery",
     "cross-platform expansion of literal no-write process and filesystem evidence",
     "broader packaging and platform matrix",
-    "production OpenClaw integration",
     "full held-out 10-repository 100-task evidence and three case studies"
   ]
 }

@@ -870,6 +870,70 @@ def persist_codex_plugin_probe(
     return summary
 
 
+def persist_openclaw_adapter_probe(
+    output: Path, label: str, payload: dict[str, object]
+) -> dict[str, object]:
+    source_root = ROOT / "src"
+    inserted = str(source_root) not in sys.path
+    if inserted:
+        sys.path.insert(0, str(source_root))
+    try:
+        from premode.product_contract import validate_payload_against_schema
+
+        private_schema = json.loads(
+            (
+                ROOT
+                / "schemas"
+                / "pcodex.installed-openclaw-adapter-probe.private.v1.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        public_schema = json.loads(
+            (
+                ROOT
+                / "schemas"
+                / "pcodex.installed-openclaw-adapter-probe.public.v1.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        public = payload.get("public_receipt")
+        if not isinstance(public, dict):
+            raise RuntimeError("OpenClaw adapter probe omitted its public receipt")
+        validate_payload_against_schema(payload, private_schema)
+        validate_payload_against_schema(public, public_schema)
+        shared_fields = (
+            "passed",
+            "installed_import_isolated",
+            "openclaw_version",
+            "no_write",
+            "lifecycle",
+            "mcp",
+            "schemas_validated",
+        )
+        if any(payload.get(field) != public.get(field) for field in shared_fields):
+            raise RuntimeError(
+                "OpenClaw public/private probe receipts disagree on shared evidence"
+            )
+        validation = public.get("schemas_validated")
+        if public.get("passed") is True and (
+            not isinstance(validation, dict)
+            or not all(value is True for value in validation.values())
+        ):
+            raise RuntimeError(
+                "passing OpenClaw probe receipt contains incomplete schema evidence"
+            )
+    finally:
+        if inserted:
+            sys.path.remove(str(source_root))
+    write_json(
+        output / "private-receipts" / "openclaw-adapter" / f"{label}.json",
+        payload,
+    )
+    write_json(
+        output / "receipts" / f"installed-openclaw-adapter-{label}.json",
+        public,
+    )
+    return public
+
+
 def write_release_evidence(
     output: Path,
     *,
@@ -990,6 +1054,17 @@ def write_release_evidence(
             "live_codex_version": dict(
                 install_smoke.get("wheel_codex_plugin") or {}
             ).get("codex_version"),
+        },
+        "openclaw_adapter": {
+            "wheel": dict(install_smoke.get("wheel_openclaw_adapter") or {}).get(
+                "passed"
+            ),
+            "sdist": dict(install_smoke.get("sdist_openclaw_adapter") or {}).get(
+                "passed"
+            ),
+            "live_openclaw_version": dict(
+                install_smoke.get("wheel_openclaw_adapter") or {}
+            ).get("openclaw_version"),
         },
         "sbom": "release/SBOM.cyclonedx.json",
         "provenance": "release/provenance.intoto.json",
@@ -1902,6 +1977,26 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
         require_probe_passed(
             "wheel Codex plugin", wheel_codex_plugin, wheel_codex_plugin_rc
         )
+        wheel_openclaw_adapter, wheel_openclaw_adapter_rc = run_json_probe(
+            str(smoke_python),
+            str(source / "scripts" / "installed_openclaw_adapter_probe.py"),
+            "--pcodex",
+            str(smoke_bin / "pcodex"),
+            "--control-root",
+            str(temp / "wheel-openclaw-adapter-control"),
+            output=output,
+            label="wheel-openclaw-adapter",
+            cwd=temp,
+            env={**smoke_env, "PYTHONDONTWRITEBYTECODE": "1"},
+        )
+        wheel_openclaw_adapter_summary = persist_openclaw_adapter_probe(
+            output, "wheel", wheel_openclaw_adapter
+        )
+        require_probe_passed(
+            "wheel OpenClaw adapter",
+            wheel_openclaw_adapter,
+            wheel_openclaw_adapter_rc,
+        )
         wheel_missing_codex, wheel_missing_codex_rc = run_json_probe(
             str(smoke_python),
             str(source / "scripts/installed_codex_plugin_probe.py"),
@@ -2062,6 +2157,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
         sdist_no_write: dict[str, object] | str = "not_requested"
         sdist_lifecycle: dict[str, object] | str = "not_requested"
         sdist_codex_plugin: dict[str, object] | str = "not_requested"
+        sdist_openclaw_adapter: dict[str, object] | str = "not_requested"
+        sdist_openclaw_adapter_summary: dict[str, object] | str = "not_requested"
         wheel_sdist_parity: dict[str, object] = {"passed": False}
         if with_sdist:
             sdists = list(artifacts.glob("*.tar.gz"))
@@ -2240,6 +2337,26 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             require_probe_passed(
                 "sdist Codex plugin", sdist_codex_plugin, sdist_codex_plugin_rc
             )
+            sdist_openclaw_adapter, sdist_openclaw_adapter_rc = run_json_probe(
+                str(sdist_python),
+                str(source / "scripts" / "installed_openclaw_adapter_probe.py"),
+                "--pcodex",
+                str(sdist_bin / "pcodex"),
+                "--control-root",
+                str(temp / "sdist-openclaw-adapter-control"),
+                output=output,
+                label="sdist-openclaw-adapter",
+                cwd=temp,
+                env=sdist_env,
+            )
+            sdist_openclaw_adapter_summary = persist_openclaw_adapter_probe(
+                output, "sdist", sdist_openclaw_adapter
+            )
+            require_probe_passed(
+                "sdist OpenClaw adapter",
+                sdist_openclaw_adapter,
+                sdist_openclaw_adapter_rc,
+            )
             sdist_missing_codex, sdist_missing_codex_rc = run_json_probe(
                 str(sdist_python),
                 str(source / "scripts/installed_codex_plugin_probe.py"),
@@ -2306,6 +2423,16 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
                         and sdist_codex_plugin.get("live_codex_available")
                     )
                 ),
+                "live_openclaw_discovery_tested": bool(
+                    wheel_openclaw_adapter.get("passed")
+                )
+                and (
+                    not with_sdist
+                    or bool(
+                        isinstance(sdist_openclaw_adapter, dict)
+                        and sdist_openclaw_adapter.get("passed")
+                    )
+                ),
                 "model_visible_skill_trigger_executed": False,
             },
         )
@@ -2339,6 +2466,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             "sdist_codex_plugin": sdist_codex_plugin_summary
             if isinstance(sdist_codex_plugin, dict)
             else sdist_codex_plugin,
+            "wheel_openclaw_adapter": wheel_openclaw_adapter_summary,
+            "sdist_openclaw_adapter": sdist_openclaw_adapter_summary,
             "wheel_missing_codex_plugin": wheel_missing_codex_summary,
             "sdist_missing_codex_plugin": sdist_missing_codex_summary,
             "upgrade_rollback": upgrade_qualification,

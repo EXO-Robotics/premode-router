@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.openclaw-preflight-receipt.v1.schema.json",
+  "title": "OpenClawPreflightReceiptV1",
+  "$comment": "Content-free private metadata. Raw tasks, paths, snippets, commands, configuration, timestamps, and experiment identities are prohibited by the closed field set.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "receipt_id",
+    "exact_task_sha256",
+    "workspace_binding_id",
+    "provider_version",
+    "provider_decision_sha256",
+    "classification_policy_version",
+    "routing_mode",
+    "path_count",
+    "dangerous_zone_count",
+    "validation_surface_count",
+    "ordered_paths_sha256",
+    "dangerous_zones_sha256",
+    "validation_surfaces_sha256",
+    "source_contract",
+    "sensitivity_classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.openclaw-preflight-receipt.v1"},
+    "receipt_id": {"type": "string", "pattern": "^ocpr_[0-9a-f]{64}$"},
+    "exact_task_sha256": {"$ref": "#/$defs/sha256"},
+    "workspace_binding_id": {
+      "type": "string",
+      "pattern": "^ocwb_[0-9a-f]{32}$"
+    },
+    "provider_version": {"const": "production-ranking-provider.v1"},
+    "provider_decision_sha256": {"$ref": "#/$defs/sha256"},
+    "classification_policy_version": {
+      "const": "pcodex.openclaw-authority-policy.v1"
+    },
+    "routing_mode": {"enum": ["narrow", "broad", "fallback", "abstain"]},
+    "path_count": {"type": "integer", "minimum": 0, "maximum": 20},
+    "dangerous_zone_count": {"type": "integer", "minimum": 0, "maximum": 32},
+    "validation_surface_count": {"type": "integer", "minimum": 0, "maximum": 12},
+    "ordered_paths_sha256": {"$ref": "#/$defs/sha256"},
+    "dangerous_zones_sha256": {"$ref": "#/$defs/sha256"},
+    "validation_surfaces_sha256": {"$ref": "#/$defs/sha256"},
+    "source_contract": {"const": "pcodex.openclaw-preflight.v1"},
+    "sensitivity_classification": {"const": "private_metadata"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

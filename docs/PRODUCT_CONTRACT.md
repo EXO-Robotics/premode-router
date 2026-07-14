@@ -12,9 +12,18 @@ pCodex is a context-selection and routing product. It is not a planner, local re
 
 Phase A is Codex-first `0.3.0b1` beta readiness. The supported runtime is the local Codex CLI terminal workflow. The production package is `premode-router`, requires Python 3.11 or newer, and is currently source-visible proprietary beta software. No package-registry publication, production readiness, or universal platform support is asserted.
 
-Phase B remains the post-beta program to the full 90/100 roadmap in `docs/ROADMAP_TO_90.md`. It still requires production OpenClaw integration, broader platform and lifecycle proof, a frozen 10-repository/100-task held-out corpus, reproducible public evidence, and three reproducible case studies. Phase A does not weaken or replace those gates.
+Phase B remains the post-beta program to the full 90/100 roadmap in `docs/ROADMAP_TO_90.md`. The production OpenClaw adapter is now implemented and qualified for OpenClaw `2026.4.14`; Phase B still requires the frozen 10-repository/100-task held-out corpus, reproducible public evidence, three reproducible case studies, and the remaining external first-run proof. Phase A does not weaken or replace those gates.
 
-OpenClaw is advanced and experimental in `0.3.0b1`; it is not production-supported. Existing profiles, templates, fixtures, and research remain available but do not constitute an OpenClaw execution integration.
+OpenClaw `2026.4.14` is a supported advanced integration in `0.3.0b1`. `pcodex integrate openclaw` owns one receipt-bound MCP registration and exposes the bounded `premode_preflight` tool. Existing observer profiles, templates, generated proof, and research harnesses remain non-authoritative and are not part of the production adapter.
+
+The application-contract authority for that adapter is exactly
+`OpenClawPreflightRequestV1`, `OpenClawPreflightResultV1`, and
+`OpenClawPreflightReceiptV1`, with typed models, JSON Schemas, and golden
+fixtures. MCP JSON-RPC and tool-call envelopes are the transport mapping onto
+those contracts, not duplicate product contracts. The frozen
+20-task/10-fixture set is adapter policy/conformance evidence only; agent task
+success, patch quality, complete-task economics, and final held-out claims
+remain G6 evidence requirements.
 
 ## Public and non-public surfaces
 
@@ -75,7 +84,7 @@ Repair preview reports `will_create`, `will_restore`, `will_replace_owned`, `wil
 
 Repair can restore a missing individually receipt-declared file only when authoritative product content hashes to the recorded installed hash. A missing ownership marker can be recreated only at the canonical receipt location when an extant exact generated item and a strict reinstall-validation receipt independently bind the same ownership ID and exact current authority-receipt hash; corrupt, stale, missing-proof, or mismatched markers fail closed. Modified files, hard links, symlinks, directories, unreadable state, unknown owners, unknown schemas, unsupported registrations, experimental state, and unknown content are preserved or blocked.
 
-The uninstall executor can remove regular single-link files created through the managed-state API when the receipt, separate ownership marker, owner, safe managed-root binding, and installed hash all match. It uses descriptor-relative quarantine and validates identity/content before deletion. Its v2 operation receipt is an intentional-absence tombstone only while its authority hash matches the exact current install-state receipt; reinstall replaces that authority receipt, so stale uninstall evidence cannot suppress repair. Preexisting identical and user-modified files are preserved. Removal of the current isolated source-install root remains under its existing manifest-validated installer command; `pcodex uninstall` does not duplicate that broad-root responsibility. The canonical Codex integration separately removes exact receipt-proven plugin, marketplace, and explicitly authorized MCP registrations; partial installs without receipts and OpenClaw/research state remain deferred.
+The uninstall executor can remove regular single-link files created through the managed-state API when the receipt, separate ownership marker, owner, safe managed-root binding, and installed hash all match. It uses descriptor-relative quarantine and validates identity/content before deletion. Its v2 operation receipt is an intentional-absence tombstone only while its authority hash matches the exact current install-state receipt; reinstall replaces that authority receipt, so stale uninstall evidence cannot suppress repair. Preexisting identical and user-modified files are preserved. Removal of the current isolated source-install root remains under its existing manifest-validated installer command; `pcodex uninstall` does not duplicate that broad-root responsibility. The canonical Codex integration separately removes exact receipt-proven plugin, marketplace, and explicitly authorized MCP registrations. The OpenClaw integration separately removes its exact receipt-proven JSON5 registration and lifecycle receipts. Partial installs without receipts and research state remain deferred.
 
 Crash recovery is bounded in this beta. Caught exceptions restore verified bytes before returning. A process death can leave an ownership- and receipt-hash-bound uninstall quarantine journal with per-item target mappings; status reports `interrupted_uninstall`, and later uninstall attempts fail closed without deleting or trusting that staging. Automatic crash resume is not supported: preserve the journal and inspect it manually. Repair uses atomic leaf commits and rolls back caught exceptions, but arbitrary power-loss journaling is not claimed.
 
@@ -85,7 +94,7 @@ Status and doctor expose `READY`, `NEEDS_ACTION`, or `BLOCKED`, one recommended 
 
 ## Explicitly unsupported claims
 
-The beta does not promise universal task coverage, universal token or cost savings, improved patch quality across repositories, autonomous planning, production OpenClaw support, hosted-agent interception, automatic MCP invocation, automatic global configuration, public package availability, or hidden ranking behavior not backed by the algorithm lane.
+The beta does not promise universal task coverage, universal token or cost savings, improved patch quality across repositories, autonomous planning, OpenClaw versions other than `2026.4.14`, hosted-agent interception, automatic MCP invocation, automatic global configuration, public package availability, or hidden ranking behavior not backed by the algorithm lane.
 
 ## Authority map
 

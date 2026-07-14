@@ -86,6 +86,36 @@ Only exact accepted historical fingerprints may be removed. Modified, unknown, o
 
 MCP remains disabled unless `--with-mcp` is explicitly supplied. MCP preview does not write configuration or launch a server. Registration lifecycle proof does not imply complete protocol, containment, cancellation, or production-server qualification.
 
+## OpenClaw adapter
+
+OpenClaw integration supports exactly `2026.4.14`. Begin with no-write status and preview:
+
+```console
+openclaw --version
+pcodex integrate openclaw --status --json
+pcodex integrate openclaw --dry-run --json
+```
+
+`NEEDS_ACTION` covers an absent, disabled, or receipt-proven missing registration. `BLOCKED` covers an unsupported version, malformed/future receipt, changed workspace identity, changed configuration authority, modified registration, or unknown existing `pcodex` entry. Do not edit `.pcodex/openclaw-integration-state.json` or delete the JSON5 entry manually. Use repair only after its preview:
+
+```console
+pcodex integrate openclaw --repair --dry-run --json
+pcodex integrate openclaw --repair --json
+```
+
+Unrelated MCP registrations and JSON5 formatting are preserved. OpenClaw config validation remains available independently:
+
+Before an OpenClaw state-changing lifecycle command, stop OpenClaw and any
+other process writing the selected JSON5 configuration. Concurrent pathname
+or observed content changes fail closed with recovery staging; writes made
+after the final observation through an independently retained descriptor are
+outside the beta's portable crash-consistency guarantee.
+
+```console
+openclaw config validate --json
+openclaw mcp show pcodex --json
+```
+
 ## Installed-artifact no-write evidence
 
 Qualification fails closed when filesystem or process observation is unavailable. On macOS, `process_observation=unavailable` usually means the environment denied bounded process-table observation. Rerun the same builder in a controlled environment that permits process monitoring; do not disable monitoring or remove governed roots.
@@ -105,4 +135,4 @@ Do not delete `.premode`, `.pcodex`, plugin, marketplace, Codex configuration, o
 
 ## Unsupported expectations
 
-Automatic agent interception, public marketplace publication, production OpenClaw integration, universal savings, Windows, and arbitrary power-loss recovery are not supported claims.
+Automatic agent interception, public marketplace publication, OpenClaw versions other than `2026.4.14`, universal savings, Windows, and arbitrary power-loss recovery are not supported claims.

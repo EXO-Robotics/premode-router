@@ -8,17 +8,20 @@ configuration payload.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import re
+import shutil
 import stat
-from typing import Mapping
+from typing import Any, Mapping
 
 
 OPENCLAW_CONFIG_FILENAME = "openclaw.json"
 OPENCLAW_LEGACY_CONFIG_FILENAME = "clawdbot.json"
 OPENCLAW_STATE_DIRNAME = ".openclaw"
 OPENCLAW_LEGACY_STATE_DIRNAME = ".clawdbot"
+SUPPORTED_OPENCLAW_VERSION = "2026.4.14"
 _PATH_AUTHORITY_KEYS = frozenset(
     {
         "HOME",
@@ -58,6 +61,55 @@ class OpenClawConfigAuthority:
     state_target_candidates: tuple[Path, ...]
     dotenv_target_paths: tuple[Path, ...]
     nested_state_target_candidates: tuple[Path, ...]
+
+
+def openclaw_compatibility() -> dict[str, Any]:
+    """Read installed OpenClaw package metadata without launching OpenClaw."""
+
+    executable = shutil.which("openclaw")
+    if executable is None:
+        return {
+            "installed": False,
+            "version": None,
+            "supported": False,
+            "reason": "openclaw_missing",
+        }
+    try:
+        resolved = Path(executable).resolve(strict=True)
+    except OSError:
+        return {
+            "installed": True,
+            "version": None,
+            "supported": False,
+            "reason": "openclaw_version_unknown",
+        }
+    version: str | None = None
+    for parent in (resolved.parent, *resolved.parents[:6]):
+        package = parent / "package.json"
+        if not package.is_file():
+            continue
+        try:
+            payload = json.loads(package.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        candidate = payload.get("version") if isinstance(payload, dict) else None
+        if isinstance(candidate, str):
+            version = candidate
+            break
+    if version is None:
+        return {
+            "installed": True,
+            "version": None,
+            "supported": False,
+            "reason": "openclaw_version_unknown",
+        }
+    supported = version == SUPPORTED_OPENCLAW_VERSION
+    return {
+        "installed": True,
+        "version": version,
+        "supported": supported,
+        "reason": "supported" if supported else "unsupported_openclaw_version",
+    }
 
 
 def _home_value(value: str | None) -> str | None:

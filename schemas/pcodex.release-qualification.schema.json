@@ -8,7 +8,7 @@
     "schema_version", "status", "commit", "product_version", "platform",
     "artifacts", "package_content_allowlist", "wheel_sdist_parity",
     "wheel_sdist_parity_evidence",
-    "installed_lifecycle", "no_write", "upgrade_rollback", "codex_plugin", "sbom",
+    "installed_lifecycle", "no_write", "upgrade_rollback", "codex_plugin", "openclaw_adapter", "sbom",
     "provenance", "public_registry_published"
   ],
   "properties": {
@@ -86,6 +86,16 @@
         "wheel": {"const": true},
         "sdist": {"const": true},
         "live_codex_version": {"type": ["string", "null"]}
+      }
+    },
+    "openclaw_adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheel", "sdist", "live_openclaw_version"],
+      "properties": {
+        "wheel": {"const": true},
+        "sdist": {"const": true},
+        "live_openclaw_version": {"const": "2026.4.14"}
       }
     },
     "sbom": {"const": "release/SBOM.cyclonedx.json"},

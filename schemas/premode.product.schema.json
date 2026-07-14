@@ -8,7 +8,7 @@
     "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
     "supported_runtime", "version_source", "production_package", "phase_boundary", "documentation_contract",
     "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
-    "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "install_state_authority", "no_write_authority",
+    "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "integration_contracts", "install_state_authority", "no_write_authority",
     "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
   ],
   "properties": {
@@ -18,7 +18,7 @@
     "release_target": {"const": "0.3.0b1"},
     "release_class": {"const": "Codex-first private technical beta"},
     "status": {"type": "string", "minLength": 1},
-    "supported_runtime": {"const": "Codex CLI terminal workflow"},
+    "supported_runtime": {"const": "Codex CLI and OpenClaw terminal workflows"},
     "version_source": {"const": "src/premode/__init__.py::__version__ (pyproject and plugin versions derive from it)"},
     "production_package": {"const": "premode-router"},
     "phase_boundary": {
@@ -33,7 +33,7 @@
     },
     "documentation_contract": {
       "type": "object", "additionalProperties": false,
-      "required": ["canonical_docs", "current_product_version", "supported_codex_versions", "declared_legacy_product_versions", "required_journeys"],
+      "required": ["canonical_docs", "current_product_version", "supported_codex_versions", "supported_openclaw_versions", "declared_legacy_product_versions", "required_journeys"],
       "properties": {
         "canonical_docs": {
           "type": "array", "minItems": 10, "maxItems": 10, "uniqueItems": true,
@@ -41,13 +41,15 @@
         },
         "current_product_version": {"const": "0.3.0b1"},
         "supported_codex_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": "0.143.x"}},
+        "supported_openclaw_versions": {"type": "array", "minItems": 1, "maxItems": 1, "uniqueItems": true, "items": {"const": "2026.4.14"}},
         "declared_legacy_product_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": "0.2.6.24"}},
         "required_journeys": {
           "type": "object", "additionalProperties": false,
-          "required": ["first_value", "codex_lifecycle", "migration", "managed_lifecycle"],
+          "required": ["first_value", "codex_lifecycle", "openclaw_lifecycle", "migration", "managed_lifecycle"],
           "properties": {
             "first_value": {"$ref": "#/$defs/commandList"},
             "codex_lifecycle": {"$ref": "#/$defs/commandList"},
+            "openclaw_lifecycle": {"$ref": "#/$defs/commandList"},
             "migration": {"$ref": "#/$defs/commandList"},
             "managed_lifecycle": {"$ref": "#/$defs/commandList"}
           }
@@ -130,6 +132,33 @@
         }
       }
     },
+    "integration_contracts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["openclaw"],
+      "properties": {
+        "openclaw": {
+          "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+          "allOf": [
+            {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "OpenClawPreflightRequestV1"}}}, "minContains": 1, "maxContains": 1},
+            {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "OpenClawPreflightResultV1"}}}, "minContains": 1, "maxContains": 1},
+            {"contains": {"type": "object", "required": ["name"], "properties": {"name": {"const": "OpenClawPreflightReceiptV1"}}}, "minContains": 1, "maxContains": 1}
+          ],
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "scope", "python_authority", "schema", "golden", "sensitivity", "unknown_versions"],
+            "properties": {
+              "name": {"enum": ["OpenClawPreflightRequestV1", "OpenClawPreflightResultV1", "OpenClawPreflightReceiptV1"]},
+              "scope": {"const": "application_contract"},
+              "python_authority": {"type": "string", "minLength": 1},
+              "schema": {"type": "string", "pattern": "^schemas/pcodex\\.openclaw-preflight-.+\\.json$"},
+              "golden": {"type": "string", "pattern": "^contracts/goldens/openclaw-preflight-.+\\.json$"},
+              "sensitivity": {"enum": ["sensitive_private", "private_metadata", "content_free"]},
+              "unknown_versions": {"const": "fail_closed"}
+            }
+          }
+        }
+      }
+    },
     "install_state_authority": {
       "type": "object", "additionalProperties": false,
       "required": ["schema_version", "schema", "default_receipt", "scope", "source_install_provenance", "authority_relationship", "preview_is_read_only", "unknown_schemas_fail_closed", "raw_prompts_or_packets_stored"],
@@ -205,7 +234,7 @@
         "codex_cli": {"const": "supported_terminal_workflow"},
         "codex_repo_assets": {"const": "canonical_receipt_bound_opt_in_with_native_registration"},
         "mcp": {"const": "optional_workspace_bound_descriptor_and_registration_not_automatic"},
-        "openclaw": {"const": "advanced_experimental_not_production_supported"}
+        "openclaw": {"const": "production_adapter_openclaw_2026_4_14_receipt_bound"}
       }
     },
     "known_beta_debt": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}

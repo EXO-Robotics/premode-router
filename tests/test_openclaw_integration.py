@@ -10,6 +10,8 @@ import pytest
 from premode.no_write import governed_roots_from_product, verify_no_write
 from premode.openclaw_integration import (
     OpenClawAuthorityError,
+    SUPPORTED_OPENCLAW_VERSION,
+    openclaw_compatibility,
     resolve_openclaw_config_authority,
 )
 
@@ -18,6 +20,56 @@ def _write(path: Path, value: str = "{}\n") -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value, encoding="utf-8")
     return path
+
+
+@pytest.mark.parametrize(
+    ("version", "supported", "reason"),
+    (
+        (SUPPORTED_OPENCLAW_VERSION, True, "supported"),
+        ("2026.4.15", False, "unsupported_openclaw_version"),
+    ),
+)
+def test_openclaw_compatibility_reads_package_metadata_without_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    version: str,
+    supported: bool,
+    reason: str,
+) -> None:
+    package = tmp_path / "package"
+    executable = package / "openclaw.mjs"
+    bin_dir = tmp_path / "bin"
+    package.mkdir()
+    bin_dir.mkdir()
+    executable.write_text("raise SystemExit('must not launch')\n", encoding="utf-8")
+    executable.chmod(0o755)
+    (package / "package.json").write_text(
+        f'{{"name":"openclaw","version":"{version}"}}\n', encoding="utf-8"
+    )
+    (bin_dir / "openclaw").symlink_to(executable)
+    monkeypatch.setenv("PATH", str(bin_dir))
+
+    result = openclaw_compatibility()
+
+    assert result == {
+        "installed": True,
+        "version": version,
+        "supported": supported,
+        "reason": reason,
+    }
+
+
+def test_openclaw_compatibility_reports_missing_runtime(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert openclaw_compatibility() == {
+        "installed": False,
+        "version": None,
+        "supported": False,
+        "reason": "openclaw_missing",
+    }
 
 
 def test_explicit_config_path_outranks_state_and_home(tmp_path: Path) -> None:

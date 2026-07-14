@@ -39,6 +39,9 @@ premode = []
   "contracts/goldens/packet-strategy-plugin-v1.json",
   "contracts/goldens/production-ranking-request-v1.json",
   "contracts/goldens/production-ranking-result-v1.json",
+  "contracts/goldens/openclaw-preflight-request-v1.json",
+  "contracts/goldens/openclaw-preflight-result-v1.json",
+  "contracts/goldens/openclaw-preflight-receipt-v1.json",
 ]
 "share/premode-router/plugins/pcodex/.codex-plugin" = ["plugins/pcodex/.codex-plugin/plugin.json"]
 "share/premode-router/plugins/pcodex/assets" = ["plugins/pcodex/assets/README.md"]

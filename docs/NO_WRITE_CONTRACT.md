@@ -23,6 +23,10 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | `pcodex integrate codex --dry-run --with-mcp` | `literal_no_write_required` | Preview the optional descriptor and workspace binding without creating or launching it. |
 | `pcodex integrate codex --repair --dry-run` | `literal_no_write_required` | Preview only missing receipt-proven plugin and registration restoration without mutation or Codex launch. |
 | `pcodex integrate codex --uninstall --dry-run` | `literal_no_write_required` | Preview only exact receipt-proven removals while preserving modified or unrelated state. |
+| `pcodex integrate openclaw --dry-run` | `literal_no_write_required` | Resolve workspace and OpenClaw configuration authority, check local package metadata, and preview the exact JSON5 registration without writes or process launch. |
+| `pcodex integrate openclaw --status` | `literal_no_write_required` | Classify registration, receipt, workspace, and version state without repair or OpenClaw/MCP launch. |
+| `pcodex integrate openclaw --repair --dry-run` | `literal_no_write_required` | Preview restoration of only a missing receipt-proven registration. |
+| `pcodex integrate openclaw --uninstall --dry-run` | `literal_no_write_required` | Preview exact registration and receipt removal while preserving unrelated or modified JSON5 state. |
 | `pcodex repair --dry-run` | `literal_no_write_required` | Read bound lifecycle authority and exact hashes; no repair, migration, operation receipt, or temporary file. |
 | `pcodex uninstall --dry-run` | `literal_no_write_required` | Read receipt and targets with fail-closed ownership rules; no operation receipt or quarantine. |
 | `pcodex cleanup --local-state --dry-run` | `literal_no_write_required` | List bounded generated-state targets without deletion. |
@@ -40,7 +44,7 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | install `--apply`, setup/on/off/tuned/tune apply, integration `--write`, plugin init without `--dry-run`, cleanup/repair/uninstall `--yes` | `state_changing` | Require explicit apply authority. |
 | setup/off dry-run, review-patch dry-run, plugin migration preview | `unsupported` | No such current authoritative flag is advertised. |
 | legacy private-alpha installer/plugin names | `deprecated` | Compatibility-only; no new guarantee is inferred. |
-| OpenClaw execution integration | `experimental` | Not a production no-write surface. |
+| OpenClaw integration `--write`, `--repair`, `--disable`, or `--uninstall` | `state_changing` | Require explicit authority and mutate only the exact receipt-bound registration and lifecycle state. |
 
 ## Evidence model
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exo-robotics.github.io/premode-router/schemas/pcodex.openclaw-integration-state.v1.schema.json",
+  "title": "pCodex OpenClaw Integration State V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "adapter_version", "product_version", "ownership_id",
+    "workspace_binding_id", "workspace", "workspace_device", "workspace_inode",
+    "config_path", "config_authority_source", "openclaw_version", "enabled",
+    "registration_value_sha256", "editor_ownership", "config_was_absent"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.openclaw-integration-state.v1"},
+    "adapter_version": {"const": "pcodex.openclaw-agent-adapter.v1"},
+    "product_version": {"type": "string", "minLength": 1},
+    "ownership_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "workspace_binding_id": {"type": "string", "pattern": "^ocwb_[0-9a-f]{32}$"},
+    "workspace": {"type": "string", "minLength": 1},
+    "workspace_device": {"type": "integer", "minimum": 0},
+    "workspace_inode": {"type": "integer", "minimum": 0},
+    "config_path": {"type": "string", "minLength": 1},
+    "config_authority_source": {"type": "string", "minLength": 1},
+    "openclaw_version": {"const": "2026.4.14"},
+    "enabled": {"type": "boolean"},
+    "registration_value_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "config_was_absent": {"type": "boolean"},
+    "editor_ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "target_path", "target_value_sha256", "created_containers"],
+      "properties": {
+        "schema_version": {"const": "pcodex.openclaw-json5-ownership.v1"},
+        "target_path": {"const": ["mcp", "servers", "pcodex"]},
+        "target_value_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "created_containers": {
+          "type": "array",
+          "enum": [[], ["mcp.servers"], ["mcp", "mcp.servers"]]
+        }
+      }
+    }
+  }
+}

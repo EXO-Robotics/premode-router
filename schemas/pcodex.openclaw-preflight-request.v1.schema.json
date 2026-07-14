@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.openclaw-preflight-request.v1.schema.json",
+  "title": "OpenClawPreflightRequestV1",
+  "$comment": "Sensitive/private input. The exact task is accepted once; callers cannot supply a workspace root, commands, snippets, or configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "exact_task",
+    "sensitivity_classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.openclaw-preflight-request.v1"},
+    "exact_task": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768
+    },
+    "profile": {"const": "openclaw", "default": "openclaw"},
+    "sensitivity_classification": {"const": "sensitive_private"}
+  }
+}

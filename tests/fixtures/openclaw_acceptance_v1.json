@@ -1,0 +1,88 @@
+{
+  "schema_version": "pcodex.openclaw-acceptance.v1",
+  "frozen": true,
+  "fixture_count": 10,
+  "task_count": 20,
+  "fixtures": [
+    {
+      "id": "F01_complete_control_plane",
+      "qualified": true,
+      "tasks": [
+        {"id": "T01", "task": "Reconcile current queue against prior evidence", "primary": ["PROJECT/state/history/old.json"], "verify": [], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["PROJECT/tasks.json"]},
+        {"id": "T02", "task": "Fix tools/gamebot/task_queue.py and verify tests/test_task_queue.py", "primary": ["tools/gamebot/task_queue.py"], "verify": ["tests/test_task_queue.py"], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["tools/gamebot/task_queue.py", "tests/test_task_queue.py", "PROJECT/tasks.json"]}
+      ]
+    },
+    {
+      "id": "F02_minimal_valid",
+      "qualified": true,
+      "tasks": [
+        {"id": "T03", "task": "Investigate the worker start rule", "primary": ["AGENTS.md"], "verify": [], "support": ["PROJECT/AI/worker_start/WORKER_START_HERE.md"], "mode": "narrow", "expected_paths": ["AGENTS.md", "PROJECT/AI/worker_start/WORKER_START_HERE.md"]},
+        {"id": "T04", "task": "Repair validators/state_validator.py and verify tests/test_state_validator.py", "primary": ["validators/state_validator.py"], "verify": ["tests/test_state_validator.py"], "support": [], "mode": "narrow", "expected_paths": ["validators/state_validator.py", "tests/test_state_validator.py"]}
+      ]
+    },
+    {
+      "id": "F03_false_positive",
+      "qualified": false,
+      "tasks": [
+        {"id": "T05", "task": "Investigate src/app.py", "primary": ["src/app.py"], "verify": [], "support": [], "mode": "narrow", "expected_paths": []},
+        {"id": "T06", "task": "Explain whether OpenClaw appears in this generic repository", "primary": ["src/app.py"], "verify": [], "support": [], "mode": "narrow", "expected_paths": []}
+      ]
+    },
+    {
+      "id": "F04_nested_executor",
+      "qualified": true,
+      "tasks": [
+        {"id": "T07", "task": "Fix web/executor/src/index.ts", "primary": ["web/executor/src/index.ts"], "verify": [], "support": ["web/executor/package.json"], "mode": "narrow", "expected_paths": ["web/executor/src/index.ts", "web/executor/package.json"]},
+        {"id": "T08", "task": "Repair web/executor/tests/index.test.ts", "primary": ["web/executor/tests/index.test.ts"], "verify": ["web/executor/package.json"], "support": ["web/executor/node_modules/pkg/index.js"], "mode": "narrow", "expected_paths": ["web/executor/tests/index.test.ts", "web/executor/package.json"]}
+      ]
+    },
+    {
+      "id": "F05_unreal",
+      "qualified": true,
+      "tasks": [
+        {"id": "T09", "task": "Fix Source/Game/Player.cpp and verify tests/test_player.py", "primary": ["Source/Game/Player.cpp"], "verify": ["tests/test_player.py"], "support": ["Content/Maps/World.umap"], "mode": "narrow", "expected_paths": ["Source/Game/Player.cpp", "tests/test_player.py"]},
+        {"id": "T10", "task": "Modify Content/Maps/World.umap directly", "primary": ["Content/Maps/World.umap"], "verify": [], "support": [], "mode": "narrow", "expected_paths": [], "expected_mode": "abstain"}
+      ]
+    },
+    {
+      "id": "F06_blender",
+      "qualified": true,
+      "tasks": [
+        {"id": "T11", "task": "Fix blender/pipeline/build_scene.py and verify tests/test_scene.py", "primary": ["blender/pipeline/build_scene.py"], "verify": ["tests/test_scene.py"], "support": ["Assets/scene.blend"], "mode": "narrow", "expected_paths": ["blender/pipeline/build_scene.py", "tests/test_scene.py"]},
+        {"id": "T12", "task": "Edit Assets/scene.blend directly", "primary": ["Assets/scene.blend"], "verify": [], "support": [], "mode": "narrow", "expected_paths": [], "expected_mode": "abstain"}
+      ]
+    },
+    {
+      "id": "F07_missing_authority",
+      "qualified": false,
+      "tasks": [
+        {"id": "T13", "task": "Investigate current state", "primary": ["src/app.py"], "verify": [], "support": [], "mode": "narrow", "expected_paths": []},
+        {"id": "T14", "task": "Reconcile state", "primary": ["PROJECT/tasks.json"], "verify": [], "support": [], "mode": "narrow", "expected_paths": []}
+      ]
+    },
+    {
+      "id": "F08_current_history_conflict",
+      "qualified": true,
+      "tasks": [
+        {"id": "T15", "task": "Use current queue authority", "primary": ["PROJECT/state/history/old.json"], "verify": [], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["PROJECT/tasks.json"]},
+        {"id": "T16", "task": "Compare PROJECT/state/history/old.json with PROJECT/tasks.json", "primary": ["PROJECT/state/history/old.json"], "verify": [], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["PROJECT/state/history/old.json", "PROJECT/tasks.json"]}
+      ]
+    },
+    {
+      "id": "F09_misleading_generated",
+      "qualified": true,
+      "tasks": [
+        {"id": "T17", "task": "Follow current authority only", "primary": ["_claw_output/proof.json"], "verify": [], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["PROJECT/tasks.json"]},
+        {"id": "T18", "task": "Inspect _claw_output/proof.json as evidence", "primary": ["_claw_output/proof.json"], "verify": [], "support": ["PROJECT/tasks.json"], "mode": "narrow", "expected_paths": ["_claw_output/proof.json", "PROJECT/tasks.json"]}
+      ]
+    },
+    {
+      "id": "F10_spaces_unicode",
+      "qualified": true,
+      "tasks": [
+        {"id": "T19", "task": "Fix src/space folder/naïve.py", "primary": ["src/space folder/naïve.py"], "verify": [], "support": [], "mode": "narrow", "expected_paths": ["src/space folder/naïve.py"]},
+        {"id": "T20", "task": "Repair tests/验证/test_naïve.py", "primary": ["tests/验证/test_naïve.py"], "verify": [], "support": [], "mode": "narrow", "expected_paths": ["tests/验证/test_naïve.py"]}
+      ]
+    }
+  ]
+}

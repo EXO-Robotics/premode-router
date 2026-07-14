@@ -10,6 +10,9 @@ include contracts/goldens/context-receipt-v1.json
 include contracts/goldens/packet-strategy-plugin-v1.json
 include contracts/goldens/production-ranking-request-v1.json
 include contracts/goldens/production-ranking-result-v1.json
+include contracts/goldens/openclaw-preflight-request-v1.json
+include contracts/goldens/openclaw-preflight-result-v1.json
+include contracts/goldens/openclaw-preflight-receipt-v1.json
 recursive-include plugins/pcodex *
 include plugins/pcodex/.codex-plugin/plugin.json
 recursive-include src *.py

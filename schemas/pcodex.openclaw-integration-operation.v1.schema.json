@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://exo-robotics.github.io/premode-router/schemas/pcodex.openclaw-integration-operation.v1.schema.json",
+  "title": "pCodex OpenClaw Integration Operation V1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "operation", "phase", "ownership_id", "config_path",
+    "config_before_sha256", "config_after_sha256", "state_before_sha256", "state_after"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.openclaw-integration-operation.v1"},
+    "operation": {"enum": ["install", "disable", "uninstall", "uninstall_disabled"]},
+    "phase": {"enum": ["started", "config_committed"]},
+    "ownership_id": {"type": "string", "pattern": "^[0-9a-f]{32}$"},
+    "config_path": {"type": "string", "minLength": 1},
+    "config_before_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "config_after_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "state_before_sha256": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "state_after": {
+      "oneOf": [
+        {"type": "null"},
+        {"$ref": "pcodex.openclaw-integration-state.v1.schema.json"}
+      ]
+    }
+  }
+}

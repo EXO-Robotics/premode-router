@@ -7,7 +7,11 @@
 - Added atomic managed install-state receipts and receipt-driven bounded uninstall preview/apply foundations.
 - Completed public receipt-bound repair preview/apply, lifecycle status/doctor reporting, uninstall tombstones, safe reinstall, and user-modification preservation.
 - Added strict repair-preview no-write coverage plus isolated wheel/sdist lifecycle probes and lifecycle operation receipt schemas.
-- Kept OpenClaw advanced/experimental and preserved the post-beta 90/100 roadmap gates.
+- Added the production OpenClaw `2026.4.14` adapter implementation, including its
+  receipt-bound registration lifecycle, bounded MCP transport, installed-artifact
+  qualification surfaces, and adapter policy/conformance fixtures. Observer
+  profiles and research harnesses remain experimental, and the held-out product
+  outcome and other post-beta 90/100 roadmap gates remain open.
 
 ## v0.2.6.24
 

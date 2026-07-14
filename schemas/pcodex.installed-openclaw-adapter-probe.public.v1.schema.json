@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pcodex:schema:installed-openclaw-adapter-probe:public:v1",
+  "title": "InstalledOpenClawAdapterProbePublicV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "passed",
+    "installed_import_isolated",
+    "openclaw_version",
+    "no_write",
+    "lifecycle",
+    "mcp",
+    "schemas_validated"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.installed-openclaw-adapter-probe.public.v1"},
+    "passed": {"type": "boolean"},
+    "installed_import_isolated": {"const": true},
+    "openclaw_version": {"const": "2026.4.14"},
+    "no_write": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preview", "status_absent", "repair_preview", "uninstall_preview"],
+      "properties": {
+        "preview": {"$ref": "#/$defs/noWriteEvidence"},
+        "status_absent": {"$ref": "#/$defs/noWriteEvidence"},
+        "repair_preview": {"$ref": "#/$defs/noWriteEvidence"},
+        "uninstall_preview": {"$ref": "#/$defs/noWriteEvidence"}
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "install", "idempotent", "ready", "live_config_valid",
+        "live_registration_exact", "disable", "disabled_status", "reenable",
+        "repair_preview", "repair_preview_no_write", "repair",
+        "ready_after_repair", "uninstall_preview", "uninstall_preview_no_write",
+        "uninstall", "unrelated_preserved", "reinstall", "final_ready",
+        "final_uninstall"
+      ],
+      "properties": {
+        "install": {"type": ["string", "null"]},
+        "idempotent": {"type": "boolean"},
+        "ready": {"type": ["string", "null"]},
+        "live_config_valid": {"type": "boolean"},
+        "live_registration_exact": {"type": "boolean"},
+        "disable": {"type": ["string", "null"]},
+        "disabled_status": {"type": ["string", "null"]},
+        "reenable": {"type": ["string", "null"]},
+        "repair_preview": {"type": ["string", "null"]},
+        "repair_preview_no_write": {"type": "boolean"},
+        "repair": {"type": ["string", "null"]},
+        "ready_after_repair": {"type": ["string", "null"]},
+        "uninstall_preview": {"type": ["string", "null"]},
+        "uninstall_preview_no_write": {"type": "boolean"},
+        "uninstall": {"type": ["string", "null"]},
+        "unrelated_preserved": {"type": "boolean"},
+        "reinstall": {"type": ["string", "null"]},
+        "final_ready": {"type": ["string", "null"]},
+        "final_uninstall": {"type": ["string", "null"]}
+      }
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed", "protocol_version", "tools", "input_schema_authoritative",
+        "output_schema_authoritative", "structured_content_schema_valid",
+        "transport_schema_version", "tool_call_succeeded", "tool_status",
+        "expected_path_evidence", "observed_paths", "shutdown_succeeded"
+      ],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "protocol_version": {"type": ["string", "null"]},
+        "tools": {"type": "array", "items": {"type": ["string", "null"]}, "maxItems": 8},
+        "input_schema_authoritative": {"type": "boolean"},
+        "output_schema_authoritative": {"type": "boolean"},
+        "structured_content_schema_valid": {"type": "boolean"},
+        "transport_schema_version": {"type": ["string", "null"]},
+        "tool_call_succeeded": {"type": "boolean"},
+        "tool_status": {"type": ["string", "null"]},
+        "expected_path_evidence": {"type": "boolean"},
+        "observed_paths": {"type": "array", "items": {"type": "string"}, "maxItems": 64, "uniqueItems": true},
+        "shutdown_succeeded": {"type": "boolean"}
+      }
+    },
+    "schemas_validated": {"$ref": "#/$defs/schemaValidation"}
+  },
+  "$defs": {
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["root_id", "path", "change"],
+      "properties": {
+        "root_id": {"type": "string"},
+        "path": {"type": "string"},
+        "change": {"enum": ["created", "deleted", "modified"]}
+      }
+    },
+    "noWriteEvidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed", "changes", "exceptions", "process_observation",
+        "filesystem_observation", "forbidden_processes_launched",
+        "transient_filesystem_events"
+      ],
+      "properties": {
+        "passed": {"type": "boolean"},
+        "changes": {"type": "array", "items": {"$ref": "#/$defs/change"}},
+        "exceptions": {"type": "array", "items": {"type": "string"}},
+        "process_observation": {"enum": ["complete", "unavailable", "disabled"]},
+        "filesystem_observation": {"enum": ["complete", "unavailable", "disabled"]},
+        "forbidden_processes_launched": {"type": "integer", "minimum": 0},
+        "transient_filesystem_events": {"type": "integer", "minimum": 0}
+      }
+    },
+    "schemaValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "openclaw_integration_state", "mcp_input_schema_authority",
+        "mcp_output_schema_authority", "mcp_structured_content",
+        "public_receipt", "private_receipt"
+      ],
+      "properties": {
+        "openclaw_integration_state": {"type": "boolean"},
+        "mcp_input_schema_authority": {"type": "boolean"},
+        "mcp_output_schema_authority": {"type": "boolean"},
+        "mcp_structured_content": {"type": "boolean"},
+        "public_receipt": {"const": true},
+        "private_receipt": {"const": true}
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pcodex:schema:installed-openclaw-adapter-probe:private:v1",
+  "title": "InstalledOpenClawAdapterProbePrivateV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "passed",
+    "installed_import_isolated",
+    "openclaw_version",
+    "no_write",
+    "lifecycle",
+    "mcp",
+    "installed_package_path",
+    "schemas_validated",
+    "public_receipt"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.installed-openclaw-adapter-probe.private.v1"},
+    "passed": {"type": "boolean"},
+    "installed_import_isolated": {"const": true},
+    "openclaw_version": {"const": "2026.4.14"},
+    "no_write": {"type": "object"},
+    "lifecycle": {"type": "object"},
+    "mcp": {"type": "object"},
+    "installed_package_path": {"type": "string", "minLength": 1},
+    "schemas_validated": {"type": "object"},
+    "public_receipt": {"$ref": "#/$defs/publicReceipt"}
+  },
+  "$defs": {
+    "publicReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version", "passed", "installed_import_isolated",
+        "openclaw_version", "no_write", "lifecycle", "mcp",
+        "schemas_validated"
+      ],
+      "properties": {
+        "schema_version": {"const": "pcodex.installed-openclaw-adapter-probe.public.v1"},
+        "passed": {"type": "boolean"},
+        "installed_import_isolated": {"const": true},
+        "openclaw_version": {"const": "2026.4.14"},
+        "no_write": {"type": "object"},
+        "lifecycle": {"type": "object"},
+        "mcp": {"type": "object"},
+        "schemas_validated": {"type": "object"}
+      }
+    }
+  }
+}

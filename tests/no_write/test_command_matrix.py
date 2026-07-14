@@ -14,6 +14,7 @@ import pytest
 from premode import pcodex_bootstrap as pcodex
 from premode import cli as premode_cli
 from premode import inventory as inventory_module
+from premode import openclaw_lifecycle
 from premode import topology as topology_module
 from premode import __version__
 from premode.no_write import GovernedRoot, verify_no_write
@@ -116,6 +117,62 @@ def test_every_advertised_pcodex_preview_is_literal_no_write(
     )
     assert verification["value"][0] == 0, verification["value"][1]
     assert verification["passed"], verification["comparison"]["changes"]
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("operation", ["--dry-run", "--status"])
+def test_openclaw_preview_and_status_are_literal_no_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+) -> None:
+    repo = _repo(tmp_path, "OpenClaw authority workspace β")
+    (repo / "AGENTS.md").write_text("# authority\n", encoding="utf-8")
+    (repo / "PROJECT/AI/worker_start").mkdir(parents=True)
+    (repo / "PROJECT/tasks.json").write_text("{}\n", encoding="utf-8")
+    (repo / "PROJECT/AI/worker_start/WORKER_START_HERE.md").write_text(
+        "# worker\n", encoding="utf-8"
+    )
+    home, temp, marker = _controlled_environment(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        openclaw_lifecycle,
+        "openclaw_compatibility",
+        lambda: {
+            "installed": True,
+            "version": "2026.4.14",
+            "supported": True,
+            "reason": "supported",
+        },
+    )
+    monkeypatch.setattr(
+        openclaw_lifecycle,
+        "_installed_helper_authority_available",
+        lambda _path: True,
+    )
+    roots = [
+        GovernedRoot("repo", repo),
+        GovernedRoot("home", home),
+        GovernedRoot("temp", temp),
+    ]
+
+    verification = verify_no_write(
+        lambda: _execute(
+            [
+                "integrate",
+                "openclaw",
+                operation,
+                "--json",
+                "--repo-root",
+                str(repo),
+            ]
+        ),
+        roots=roots,
+        monitor_processes=False,
+        monitor_filesystem=True,
+    )
+
+    assert verification["passed"], verification["comparison"]["changes"]
+    assert verification["value"][0] in {0, 1}
     assert not marker.exists()
 
 

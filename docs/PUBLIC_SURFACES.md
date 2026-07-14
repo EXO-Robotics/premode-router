@@ -8,8 +8,8 @@
 | --- | --- |
 | `public_core` | `premode` production package, `canonical_core_v1`, `ProductionRankingProviderV1` |
 | `public_codex` | public pCodex commands, receipt-driven install/repair/uninstall lifecycle, repo-local pCodex skills/plugin assets |
-| `advanced` | first-run/on/tuned/tune/ui/compile/integrate, MCP, plugin initialization, OpenClaw repository profile |
-| `experimental` | OpenClaw execution-integration work |
+| `advanced` | first-run/on/tuned/tune/ui/compile/integrate, MCP, plugin initialization, OpenClaw repository profile and `2026.4.14` adapter |
+| `experimental` | non-product OpenClaw observer, executor, and generated-proof research |
 | `research` | observer/Qwen evidence, labs, live-token harnesses, experimental candidates |
 | `deprecated` | private-alpha naming, legacy installer and plugin state |
 | `historical` | `docs/history/` and superseded version documents |
@@ -24,7 +24,7 @@ Production-owned repo-local state includes generated `.premode` state and exact 
 The following are explicitly not production-owned:
 
 - observer databases, raw Qwen evidence, experiment runs, and algorithm promotion artifacts;
-- OpenClaw runtime state, templates/fixtures created outside a receipt-proven product operation;
+- OpenClaw runtime state, templates, fixtures, and registrations created outside the receipt-proven `pcodex integrate openclaw` operation;
 - legacy or partial installations whose ownership cannot be proven;
 - arbitrary `.agents`, `.pcodex`, plugin, marketplace, MCP, cache, log, or temporary siblings.
 

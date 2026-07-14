@@ -367,6 +367,46 @@ def test_two_concurrent_requests_preserve_ids_and_exact_tasks(tmp_path: Path) ->
         assert response["result"]["structuredContent"]["transformed_prompt"] == task
 
 
+def test_legacy_in_process_session_retains_cwd_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / ".git").mkdir()
+
+    def runner(
+        root: Path, prompt: str, _profile: str | None, **_kwargs: object
+    ) -> dict[str, object]:
+        assert root == workspace.resolve()
+        return {
+            "route": "plugin_alias",
+            "packet": prompt,
+            "routing_decision": {
+                "schema_version": "routing-decision.v1",
+                "mode": "abstain",
+                "confidence": "low",
+                "primary_paths": [],
+                "verification_paths": [],
+                "support_paths": [],
+                "ambiguity_indicators": ["fixture"],
+                "decision_reasons": ["fixture"],
+                "candidate_provenance": [],
+            },
+        }
+
+    monkeypatch.chdir(workspace)
+    session = server.McpSession(
+        compile_runner=runner,
+        initialized=True,
+        ready=True,
+    )
+    response = session.handle(_tool_call(53, "Inspect fallback.py"))
+    assert response is not None
+    assert response["result"]["structuredContent"]["transformed_prompt"] == (
+        "Inspect fallback.py"
+    )
+
+
 @pytest.mark.parametrize("candidate", ["../outside.py", "/outside.py", "escape/outside.py"])
 def test_tool_rejects_traversal_absolute_and_symlink_escape_candidates(
     tmp_path: Path, candidate: str,

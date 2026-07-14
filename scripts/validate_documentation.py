@@ -36,7 +36,7 @@ CANONICAL_DOCS = [
     "docs/ROLLBACK.md",
     "docs/UNINSTALL.md",
 ]
-EXTERNAL_COMMANDS = {"codex", "export", "python", "python3"}
+EXTERNAL_COMMANDS = {"codex", "openclaw", "export", "python", "python3"}
 CHECKSUM_CODE = "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest())"
 
 # Make the advertised source-checkout invocation independent of an editable install.
@@ -195,6 +195,12 @@ def _validate_shell_command(tokens: list[str], root: Path) -> list[str]:
         failures.append(
             "only the declared codex --version documentation probe is accepted"
         )
+    if command == "openclaw" and tokens[1:] not in (
+        ["--version"],
+        ["config", "validate", "--json"],
+        ["mcp", "show", "pcodex", "--json"],
+    ):
+        failures.append("unsupported canonical OpenClaw command shape")
     if command == "export" and tokens[1:] not in (
         ["PATH=$HOME/.pcodex-beta/bin:$PATH"],
         ["PATH=$HOME/.pcodex-alpha/bin:$PATH"],
@@ -412,7 +418,11 @@ def validate_documentation(root: Path) -> dict[str, Any]:
             *contract["supported_codex_versions"],
         ],
         "docs/CODEX_INTEGRATION.md": contract["supported_codex_versions"],
-        "docs/KNOWN_LIMITATIONS.md": contract["supported_codex_versions"],
+        "docs/KNOWN_LIMITATIONS.md": [
+            *contract["supported_codex_versions"],
+            *contract["supported_openclaw_versions"],
+        ],
+        "docs/OPENCLAW_INTEGRATION.md": contract["supported_openclaw_versions"],
         "docs/MIGRATION.md": contract["declared_legacy_product_versions"],
     }
     for relative, versions in version_checks.items():

@@ -77,6 +77,23 @@ pcodex integrate codex --uninstall
 
 The supported Codex runtime is `0.143.x`. There is no automatic hosted-agent interception, custom slash command, or public marketplace publication claim.
 
+## Production OpenClaw adapter
+
+OpenClaw `2026.4.14` has a separate explicit integration lifecycle:
+
+```console
+pcodex integrate openclaw --dry-run
+pcodex integrate openclaw --write
+pcodex integrate openclaw --status
+pcodex integrate openclaw --repair --dry-run
+pcodex integrate openclaw --repair
+pcodex integrate openclaw --disable
+pcodex integrate openclaw --uninstall --dry-run
+pcodex integrate openclaw --uninstall
+```
+
+It registers one immutable-workspace `premode_preflight` tool and preserves unrelated OpenClaw JSON5 configuration. It does not grant arbitrary command execution, execute validation, or intercept OpenClaw automatically.
+
 ## Supported claims
 
 - Exact-task-preserving deterministic context routing.
@@ -85,14 +102,15 @@ The supported Codex runtime is `0.143.x`. There is no automatic hosted-agent int
 - Receipt-bound setup, repair, migration, disable, uninstall, and reinstall.
 - Qualified wheel and sdist lifecycle on macOS and Linux with Python 3.11-3.13.
 - Canonical Codex plugin lifecycle with Codex `0.143.x`.
+- Receipt-bound production OpenClaw adapter for OpenClaw `2026.4.14`.
 
 ## Unsupported claims
 
 - Universal token savings or quality improvement.
 - Public package or marketplace availability.
 - Automatic Codex interception or internal subagent routing.
-- Production OpenClaw integration.
-- Complete optional MCP protocol conformance.
+- OpenClaw versions other than `2026.4.14` or automatic OpenClaw interception.
+- Complete protocol conformance for the separately optional Codex MCP surface.
 - Windows support.
 - A completed five-person first-run study.
 - A frozen 10-repository/100-task release proof.

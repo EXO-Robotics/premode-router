@@ -1,0 +1,50 @@
+{
+  "schema_version": "pcodex.openclaw-preflight-result.v1",
+  "profile": "openclaw",
+  "routing_mode": "narrow",
+  "abstention_reason": null,
+  "exact_task_sha256": "ce33e3dfd5550b551b7fe3ee9cb3d9334eff7ecdb40e8cfa0a87c2d2e2b98562",
+  "workspace_binding_id": "ocwb_0123456789abcdef0123456789abcdef",
+  "ordered_likely_paths": [
+    {
+      "path": "tools/gamebot/task_queue.py",
+      "selection_role": "primary",
+      "authority_class": "authored_source",
+      "surface": "task_queue",
+      "mutation_policy": "eligible",
+      "explicitly_task_named": true,
+      "reason_codes": ["exact_task_path", "authored_source"]
+    },
+    {
+      "path": "tests/test_task_queue.py",
+      "selection_role": "verify",
+      "authority_class": "validation_surface",
+      "surface": "task_queue",
+      "mutation_policy": "read_only",
+      "explicitly_task_named": false,
+      "reason_codes": ["related_validation", "verification_only"]
+    }
+  ],
+  "dangerous_mutation_zones": [
+    {
+      "path_pattern": "PROJECT/tasks.json",
+      "surface": "task_queue",
+      "mutation_policy": "explicit_authorization_required",
+      "reason_code": "task_queue_authorization_required"
+    },
+    {
+      "path_pattern": "Content/**",
+      "surface": "unreal_asset",
+      "mutation_policy": "forbidden",
+      "reason_code": "binary_asset_mutation_forbidden"
+    }
+  ],
+  "expected_validation_surfaces": [
+    {
+      "path": "tests/test_task_queue.py",
+      "kind": "test"
+    }
+  ],
+  "receipt_id": "ocpr_7ee88230f26b092e770fe030413220dc25ab61b298fb99828429450568c80620",
+  "sensitivity_classification": "private_metadata"
+}

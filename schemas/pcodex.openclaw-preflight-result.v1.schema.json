@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.openclaw-preflight-result.v1.schema.json",
+  "title": "OpenClawPreflightResultV1",
+  "$comment": "Private, content-free OpenClaw path metadata. It contains no task echo, snippets, commands, absolute root, configuration, or experiment metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile",
+    "routing_mode",
+    "abstention_reason",
+    "exact_task_sha256",
+    "workspace_binding_id",
+    "ordered_likely_paths",
+    "dangerous_mutation_zones",
+    "expected_validation_surfaces",
+    "receipt_id",
+    "sensitivity_classification"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.openclaw-preflight-result.v1"},
+    "profile": {"const": "openclaw"},
+    "routing_mode": {"enum": ["narrow", "broad", "fallback", "abstain"]},
+    "abstention_reason": {
+      "enum": [
+        null,
+        "conservative_safety_boundary",
+        "insufficient_path_evidence",
+        "provider_declined",
+        "unsupported_task_class"
+      ]
+    },
+    "exact_task_sha256": {"$ref": "#/$defs/sha256"},
+    "workspace_binding_id": {
+      "type": "string",
+      "pattern": "^ocwb_[0-9a-f]{32}$"
+    },
+    "ordered_likely_paths": {
+      "type": "array",
+      "maxItems": 20,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/likely_path"}
+    },
+    "dangerous_mutation_zones": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/dangerous_zone"}
+    },
+    "expected_validation_surfaces": {
+      "type": "array",
+      "maxItems": 12,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/validation_surface"}
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^ocpr_[0-9a-f]{64}$"
+    },
+    "sensitivity_classification": {"const": "private_metadata"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"routing_mode": {"const": "abstain"}}},
+      "then": {
+        "properties": {
+          "abstention_reason": {
+            "enum": [
+              "conservative_safety_boundary",
+              "insufficient_path_evidence",
+              "provider_declined",
+              "unsupported_task_class"
+            ]
+          },
+          "ordered_likely_paths": {"maxItems": 0}
+        }
+      },
+      "else": {"properties": {"abstention_reason": {"const": null}}}
+    },
+    {
+      "if": {"properties": {"routing_mode": {"const": "fallback"}}},
+      "then": {"properties": {"ordered_likely_paths": {"maxItems": 0}}}
+    }
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!~(?:/|$))(?!\\s)(?!.*\\s$)(?!.*\\\\)(?!\\.{1,2}(?:/|$))(?!.*\/\\.{1,2}(?:/|$))(?!.*//)(?!.*[?*\\[\\]])[^\\u0000/](?:[^\\u0000]*[^\\u0000/])?$"
+    },
+    "relative_pattern": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?!/)(?![A-Za-z]:)(?!~(?:/|$))(?!\\s)(?!.*\\s$)(?!.*\\\\)(?!\\.{1,2}(?:/|$))(?!.*\/\\.{1,2}(?:/|$))(?!.*//)[^\\u0000/](?:[^\\u0000]*[^\\u0000/])?$"
+    },
+    "public_identifier": {
+      "type": "string",
+      "maxLength": 96,
+      "pattern": "^(?!.*(?:candidate|experiment|observer|qwen|d3|c2))[a-z0-9][a-z0-9._-]*$"
+    },
+    "likely_path": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "selection_role",
+        "authority_class",
+        "surface",
+        "mutation_policy",
+        "explicitly_task_named",
+        "reason_codes"
+      ],
+      "properties": {
+        "path": {"$ref": "#/$defs/relative_path"},
+        "selection_role": {"enum": ["primary", "verify", "support"]},
+        "authority_class": {
+          "enum": [
+            "current_authority",
+            "authored_source",
+            "validation_surface",
+            "configuration",
+            "historical_evidence",
+            "generated_evidence",
+            "unknown"
+          ]
+        },
+        "surface": {
+          "enum": [
+            "control_plane",
+            "task_queue",
+            "state_authority",
+            "bridge",
+            "unreal_source",
+            "unreal_asset",
+            "blender_pipeline",
+            "blender_asset",
+            "nested_executor",
+            "general"
+          ]
+        },
+        "mutation_policy": {
+          "enum": [
+            "eligible",
+            "read_only",
+            "explicit_authorization_required",
+            "forbidden"
+          ]
+        },
+        "explicitly_task_named": {"type": "boolean"},
+        "reason_codes": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/public_identifier"}
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "authority_class": {
+                "enum": ["historical_evidence", "generated_evidence"]
+              }
+            }
+          },
+          "then": {"properties": {"mutation_policy": {"const": "read_only"}}}
+        }
+      ]
+    },
+    "dangerous_zone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path_pattern", "surface", "mutation_policy", "reason_code"],
+      "properties": {
+        "path_pattern": {"$ref": "#/$defs/relative_pattern"},
+        "surface": {
+          "enum": [
+            "control_plane",
+            "task_queue",
+            "state_authority",
+            "bridge",
+            "unreal_source",
+            "unreal_asset",
+            "blender_pipeline",
+            "blender_asset",
+            "nested_executor",
+            "general"
+          ]
+        },
+        "mutation_policy": {
+          "enum": ["explicit_authorization_required", "forbidden"]
+        },
+        "reason_code": {"$ref": "#/$defs/public_identifier"}
+      }
+    },
+    "validation_surface": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "kind"],
+      "properties": {
+        "path": {"$ref": "#/$defs/relative_path"},
+        "kind": {"enum": ["test", "schema", "build", "workflow", "proof"]}
+      }
+    }
+  }
+}

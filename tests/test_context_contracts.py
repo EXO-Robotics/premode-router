@@ -36,6 +36,9 @@ CONTRACT_SCHEMA_PAIRS = {
     "context-receipt-v1.json": "context-receipt-v1.schema.json",
     "packet-strategy-plugin-v1.json": "packet-strategy-plugin-v1.schema.json",
     "agent-adapter-v1.json": "agent-adapter-v1.schema.json",
+    "openclaw-preflight-request-v1.json": "pcodex.openclaw-preflight-request.v1.schema.json",
+    "openclaw-preflight-result-v1.json": "pcodex.openclaw-preflight-result.v1.schema.json",
+    "openclaw-preflight-receipt-v1.json": "pcodex.openclaw-preflight-receipt.v1.schema.json",
 }
 
 

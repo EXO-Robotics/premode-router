@@ -60,7 +60,8 @@ def test_no_install_pythonpath_module_detect_works():
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)
     assert payload["schema_version"] == 3
-    assert payload["active_project_kind"] == "python"
+    assert payload["active_project"]["adapter"] == "python"
+    assert payload["active_project"]["project_kind"] == "python"
 
 
 def test_review_patch_since_compile_end_to_end_cli_temp_git_repo(tmp_path: Path):

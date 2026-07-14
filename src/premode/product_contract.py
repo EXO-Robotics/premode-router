@@ -13,7 +13,10 @@ from typing import Any
 def installed_contract_paths(prefix: Path | str | None = None) -> tuple[Path, Path]:
     root = Path(sys.prefix if prefix is None else prefix)
     share = root / "share" / "premode-router"
-    return share / "premode.product.json", share / "schemas" / "premode.product.schema.json"
+    return (
+        share / "premode.product.json",
+        share / "schemas" / "premode.product.schema.json",
+    )
 
 
 def _resolve_ref(root_schema: dict[str, Any], reference: str) -> dict[str, Any]:
@@ -31,9 +34,13 @@ def validate_payload_against_schema(instance: Any, schema: dict[str, Any]) -> No
     _validate(instance, schema, "$", schema)
 
 
-def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dict[str, Any]) -> None:
+def _validate(
+    instance: Any, schema: dict[str, Any], path: str, root_schema: dict[str, Any]
+) -> None:
     if "$ref" in schema:
-        _validate(instance, _resolve_ref(root_schema, str(schema["$ref"])), path, root_schema)
+        _validate(
+            instance, _resolve_ref(root_schema, str(schema["$ref"])), path, root_schema
+        )
         return
     if "const" in schema and instance != schema["const"]:
         raise ValueError(f"{path}: wrong constant")
@@ -47,7 +54,11 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             or ("object" in expected and isinstance(instance, dict))
             or ("array" in expected and isinstance(instance, list))
             or ("boolean" in expected and isinstance(instance, bool))
-            or ("integer" in expected and isinstance(instance, int) and not isinstance(instance, bool))
+            or (
+                "integer" in expected
+                and isinstance(instance, int)
+                and not isinstance(instance, bool)
+            )
             or (
                 "number" in expected
                 and isinstance(instance, (int, float))
@@ -65,8 +76,12 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
         if not required <= set(instance):
             raise ValueError(f"{path}: missing {sorted(required - set(instance))}")
         properties = schema.get("properties", {})
-        if schema.get("additionalProperties") is False and not set(instance) <= set(properties):
-            raise ValueError(f"{path}: unexpected {sorted(set(instance) - set(properties))}")
+        if schema.get("additionalProperties") is False and not set(instance) <= set(
+            properties
+        ):
+            raise ValueError(
+                f"{path}: unexpected {sorted(set(instance) - set(properties))}"
+            )
         for key, value in instance.items():
             if key in properties:
                 _validate(value, properties[key], f"{path}.{key}", root_schema)
@@ -86,7 +101,10 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             raise ValueError(f"{path}: expected string")
         if len(instance) < int(schema.get("minLength", 0)):
             raise ValueError(f"{path}: string too short")
-        if schema.get("pattern") and re.search(str(schema["pattern"]), instance) is None:
+        if (
+            schema.get("pattern")
+            and re.search(str(schema["pattern"]), instance) is None
+        ):
             raise ValueError(f"{path}: pattern mismatch")
     elif expected == "boolean" and not isinstance(instance, bool):
         raise ValueError(f"{path}: expected boolean")
@@ -104,7 +122,9 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             raise ValueError(f"{path}: expected finite number")
 
 
-def validate_installed_product_contract(prefix: Path | str | None = None) -> dict[str, Any]:
+def validate_installed_product_contract(
+    prefix: Path | str | None = None,
+) -> dict[str, Any]:
     manifest_path, schema_path = installed_contract_paths(prefix)
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
@@ -118,9 +138,38 @@ def validate_installed_product_contract(prefix: Path | str | None = None) -> dic
         "AgentAdapterV1",
     }
     contracts = manifest.get("cross_process_contracts")
-    names = [item.get("name") for item in contracts] if isinstance(contracts, list) else []
+    names = (
+        [item.get("name") for item in contracts] if isinstance(contracts, list) else []
+    )
     if len(names) != len(required_contracts) or set(names) != required_contracts:
-        raise ValueError("$.cross_process_contracts: exactly one authority per required contract is required")
+        raise ValueError(
+            "$.cross_process_contracts: exactly one authority per required contract is required"
+        )
+    required_openclaw_contracts = {
+        "OpenClawPreflightRequestV1",
+        "OpenClawPreflightResultV1",
+        "OpenClawPreflightReceiptV1",
+    }
+    integration_contracts = manifest.get("integration_contracts")
+    openclaw_contracts = (
+        integration_contracts.get("openclaw")
+        if isinstance(integration_contracts, dict)
+        else None
+    )
+    openclaw_names = (
+        [item.get("name") for item in openclaw_contracts]
+        if isinstance(openclaw_contracts, list)
+        and all(isinstance(item, dict) for item in openclaw_contracts)
+        else []
+    )
+    if (
+        len(openclaw_names) != len(required_openclaw_contracts)
+        or set(openclaw_names) != required_openclaw_contracts
+    ):
+        raise ValueError(
+            "$.integration_contracts.openclaw: exactly one authority per "
+            "required OpenClaw application contract is required"
+        )
     return {
         "status": "valid",
         "schema_version": manifest["schema_version"],
@@ -140,12 +189,17 @@ def validate_installed_contract_goldens(
         "context-receipt-v1.json": "context-receipt-v1.schema.json",
         "packet-strategy-plugin-v1.json": "packet-strategy-plugin-v1.schema.json",
         "agent-adapter-v1.json": "agent-adapter-v1.schema.json",
+        "openclaw-preflight-request-v1.json": "pcodex.openclaw-preflight-request.v1.schema.json",
+        "openclaw-preflight-result-v1.json": "pcodex.openclaw-preflight-result.v1.schema.json",
+        "openclaw-preflight-receipt-v1.json": "pcodex.openclaw-preflight-receipt.v1.schema.json",
     }
     for golden_name, schema_name in pairs.items():
         golden = json.loads(
             (root / "contracts" / "goldens" / golden_name).read_text(encoding="utf-8")
         )
-        schema = json.loads((root / "schemas" / schema_name).read_text(encoding="utf-8"))
+        schema = json.loads(
+            (root / "schemas" / schema_name).read_text(encoding="utf-8")
+        )
         validate_payload_against_schema(golden, schema)
     return {
         "status": "valid",

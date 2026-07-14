@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from premode import cli
+from premode import bounded_mcp_runtime
 from premode import pcodex_mcp
 from premode import pcodex_mcp_server
 
@@ -100,7 +101,10 @@ def test_pcodex_mcp_server_registered_command_string_is_stable() -> None:
 
 
 def test_mcp_server_source_remains_stdio_only_and_no_secret_dump() -> None:
-    source = Path(pcodex_mcp_server.__file__).read_text(encoding="utf-8")
+    source = "\n".join(
+        Path(module.__file__).read_text(encoding="utf-8")
+        for module in (pcodex_mcp_server, bounded_mcp_runtime)
+    )
 
     assert "sys.stdin" in source
     assert "sys.stdout" in source

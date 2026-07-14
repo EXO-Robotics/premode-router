@@ -621,6 +621,8 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(
         "sdist_no_write": {"passed": True},
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
+        "sdist_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "upgrade_rollback": {
             "passed": True,
             "failed_upgrade_post_mutation_rollback": {"passed": True},
@@ -697,6 +699,8 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
         "sdist_no_write": {"passed": True},
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
+        "sdist_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "upgrade_rollback": {
             "passed": True,
             "failed_upgrade_post_mutation_rollback": {"passed": True},

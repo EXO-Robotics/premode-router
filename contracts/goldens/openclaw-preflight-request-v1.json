@@ -1,0 +1,6 @@
+{
+  "schema_version": "pcodex.openclaw-preflight-request.v1",
+  "exact_task": "Fix tools/gamebot/task_queue.py and verify tests/test_task_queue.py.",
+  "profile": "openclaw",
+  "sensitivity_classification": "sensitive_private"
+}
