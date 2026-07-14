@@ -1,0 +1,11 @@
+# Exact historical fingerprints for intentional synthetic safety fixtures.
+# New commits, paths, rules, or lines remain fail-closed.
+3fcd6ddbcb47136e0b2a9361700e887eef0676ff:release/artifact-allowlist.json:generic-api-key:92
+3fcd6ddbcb47136e0b2a9361700e887eef0676ff:scripts/check_public_hygiene.py:stripe-access-token:31
+3fcd6ddbcb47136e0b2a9361700e887eef0676ff:scripts/check_public_hygiene.py:aws-access-token:29
+74defa7e5997517a66e1688cce52b09c7bc05e96:tests/test_lab73bn_tuning_mini_verifier.py:stripe-access-token:311
+74defa7e5997517a66e1688cce52b09c7bc05e96:tests/test_lab73bn_tuning_mini_verifier.py:stripe-access-token:320
+7cef79d8541629954144dfdd7921393a9f96d244:tests/test_lab73bm_static_only_tuner.py:stripe-access-token:254
+cbb8d99479859aab40b0100658535334aec2ed7f:src/premode/fixture.py:generic-api-key:26
+cbb8d99479859aab40b0100658535334aec2ed7f:tests/test_packet_v2.py:aws-access-token:103
+cbb8d99479859aab40b0100658535334aec2ed7f:tests/test_packet_v2.py:aws-access-token:110
