@@ -71,6 +71,7 @@ jobs:
       - name: Run complete repository suite
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONPATH: ${{ github.workspace }}/src
         run: python -m pytest -q
       - name: Run public hygiene and diff gates
         shell: bash
@@ -191,12 +192,18 @@ jobs:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
-      - name: Build pinned history scanners
+      - name: Install pinned history scanners
         env:
           GOBIN: ${{ runner.temp }}/security-bin
         run: |
           go install github.com/zricethezav/gitleaks/v8@v8.30.1
-          go install github.com/trufflesecurity/trufflehog/v3@v3.95.9
+          curl --fail --location --retry 3 \
+            --output "$RUNNER_TEMP/trufflehog_3.95.9_linux_amd64.tar.gz" \
+            https://github.com/trufflesecurity/trufflehog/releases/download/v3.95.9/trufflehog_3.95.9_linux_amd64.tar.gz
+          echo "f6d1106b85107d79527ed7a5b98b592beadd8b770dc3c9e8c1ad99e1b2cf127e  $RUNNER_TEMP/trufflehog_3.95.9_linux_amd64.tar.gz" \
+            | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/trufflehog_3.95.9_linux_amd64.tar.gz" \
+            -C "$GOBIN" trufflehog
           "$GOBIN/gitleaks" version | grep -F '8.30.1'
           "$GOBIN/trufflehog" --version | grep -F '3.95.9'
       - name: Run Gitleaks against full history
