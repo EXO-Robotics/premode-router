@@ -9,8 +9,10 @@ files and one repo marketplace entry, registers the marketplace and plugin
 through the supported Codex CLI, then writes independent repo and native
 authority receipts at `.pcodex/codex-plugin-state.json` and
 `.pcodex/codex-native-state.json`. `--status` is read-only. `--repair` restores
-only missing receipt-proven bytes and re-enables exact disabled entries.
-`--disable` is reversible. `--uninstall` removes only exact owned files and the
+only missing receipt-proven bytes and re-enables exact disabled entries;
+`--repair --dry-run` previews those actions literally without writing.
+`--disable` is reversible. `--uninstall --dry-run` previews and `--uninstall`
+applies removal of only exact owned files and the
 exact owned entry. Modified, linked, malformed, future-schema, duplicate, and
 unknown-owner state is preserved or blocked.
 

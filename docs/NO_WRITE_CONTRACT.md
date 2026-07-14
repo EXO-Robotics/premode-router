@@ -21,6 +21,8 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | `pcodex integrate codex --dry-run` | `literal_no_write_required` | Inspect canonical, legacy, marketplace, and optional-MCP state and build a plan in memory. |
 | `pcodex integrate codex --status` | `literal_no_write_required` | Classify plugin and registration state without repair or capability processes. |
 | `pcodex integrate codex --dry-run --with-mcp` | `literal_no_write_required` | Preview the optional descriptor and workspace binding without creating or launching it. |
+| `pcodex integrate codex --repair --dry-run` | `literal_no_write_required` | Preview only missing receipt-proven plugin and registration restoration without mutation or Codex launch. |
+| `pcodex integrate codex --uninstall --dry-run` | `literal_no_write_required` | Preview only exact receipt-proven removals while preserving modified or unrelated state. |
 | `pcodex repair --dry-run` | `literal_no_write_required` | Read bound lifecycle authority and exact hashes; no repair, migration, operation receipt, or temporary file. |
 | `pcodex uninstall --dry-run` | `literal_no_write_required` | Read receipt and targets with fail-closed ownership rules; no operation receipt or quarantine. |
 | `pcodex cleanup --local-state --dry-run` | `literal_no_write_required` | List bounded generated-state targets without deletion. |
@@ -42,7 +44,7 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 
 ## Evidence model
 
-`premode.no_write` snapshots bounded governed roots derived by the product-authority root factory. A receipt cannot claim complete coverage from caller-supplied category labels: the factory binding and the complete canonical root-ID/category map are required. The framework records no-follow entry type, device/inode, size, mode, uid/gid, regular-file content evidence, symlink target, directory membership, mtime, ctime, birth time where available, xattr name/value hashes where supported, and hard-link count. Missing and unreadable paths remain explicit records. FIFOs, sockets, and device files are never opened.
+`premode.no_write` snapshots bounded governed roots derived by the product-authority root factory, including controlled `XDG_CONFIG_HOME`, `XDG_CACHE_HOME`, and `XDG_DATA_HOME` pCodex roots. A receipt cannot claim complete coverage from caller-supplied category labels: the factory binding and the complete canonical root-ID/category map are required. The framework records no-follow entry type, device/inode, size, mode, uid/gid, regular-file content evidence, symlink target, directory membership, mtime, ctime, birth time where available, xattr name/value hashes where supported, and hard-link count. Missing and unreadable paths remain explicit records. FIFOs, sockets, and device files are never opened.
 
 Files up to 4 MiB receive a full SHA-256. Larger files receive size plus SHA-256 over bounded 64 KiB samples at the start, midpoint, and end. Metadata detects size, timestamp, ownership, mode, inode, and link changes; an adversarial same-size modification outside all three samples with restored metadata is a documented limitation. `O_NOATIME` is used where the platform supports and permits it; otherwise platform access-time behavior is not part of the comparison because reading evidence can itself affect access time.
 

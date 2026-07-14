@@ -696,17 +696,45 @@ def _load_state(root: Path) -> dict[str, Any] | None:
     if set(registrations) != expected_registration_keys:
         raise CodexPluginError("plugin state registration set is invalid")
     if (
-        marketplace.get("registration_type") not in {"marketplace_entry", "marketplace_file_and_entry"}
+        marketplace.get("registration_type") != (
+            "marketplace_file_and_entry" if payload["marketplace_preexisting_file_hash"] is None else "marketplace_entry"
+        )
         or marketplace.get("registration_key") != PLUGIN_NAME
+        or marketplace.get("registration_scope") != "integration_root"
+        or marketplace.get("preexisting_value_hash") is not None
         or marketplace.get("installed_value_hash") != _sha256_json(marketplace_entry(enabled=True))
+        or marketplace.get("current_value_hash") not in {
+            _sha256_json(marketplace_entry(enabled=True)),
+            _sha256_json(marketplace_entry(enabled=False)),
+        }
+        or marketplace.get("source_plugin_version") != __version__
+        or marketplace.get("target_plugin_version") != __version__
+        or marketplace.get("managed_fields") != (
+            ["name", "interface", "plugins[name=pcodex]"]
+            if payload["marketplace_preexisting_file_hash"] is None else ["plugins[name=pcodex]"]
+        )
+        or marketplace.get("preserved_fields") != (
+            [] if payload["marketplace_preexisting_file_hash"] is None
+            else ["marketplace_top_level_fields", "plugins[name!=pcodex]"]
+        )
+        or marketplace.get("user_modified") is not False
+        or marketplace.get("conflict_state") is not None
+        or marketplace.get("cleanup_policy") != "remove_exact_receipt_bound_value_only"
+        or marketplace.get("repair_policy") != "restore_missing_exact_receipt_bound_value_only"
     ):
         raise CodexPluginError("plugin state marketplace value authority is invalid")
-    for registration in registrations.values():
-        disabled_hash = registration.get("disabled_value_hash")
-        if disabled_hash is not None and (
-            not isinstance(disabled_hash, str) or re.fullmatch(r"[0-9a-f]{64}", disabled_hash) is None
-        ):
-            raise CodexPluginError("plugin disabled registration hash is invalid")
+    file_hash = payload["marketplace_preexisting_file_hash"]
+    if file_hash is not None and (not isinstance(file_hash, str) or re.fullmatch(r"[0-9a-f]{64}", file_hash) is None):
+        raise CodexPluginError("plugin state marketplace file authority is invalid")
+    marketplace_disabled_hash = marketplace.get("disabled_value_hash")
+    expected_marketplace_disabled_hash = _sha256_json(marketplace_entry(enabled=False))
+    if marketplace_disabled_hash is not None and marketplace_disabled_hash != expected_marketplace_disabled_hash:
+        raise CodexPluginError("plugin disabled marketplace authority is invalid")
+    expected_marketplace_current_hash = (
+        marketplace["installed_value_hash"] if payload["enabled"] else expected_marketplace_disabled_hash
+    )
+    if marketplace.get("current_value_hash") != expected_marketplace_current_hash:
+        raise CodexPluginError("plugin marketplace lifecycle authority is inconsistent")
     if payload["with_mcp"]:
         mcp = registrations["mcp"]
         if (
@@ -717,7 +745,23 @@ def _load_state(root: Path) -> dict[str, Any] | None:
         ):
             raise CodexPluginError("plugin MCP authority is malformed")
         expected_mcp = _mcp_payload(root)["mcpServers"]["pcodex"]
-        if mcp.get("installed_value_hash") != _sha256_json(expected_mcp):
+        if (
+            mcp.get("registration_type") != "plugin_mcp_descriptor"
+            or mcp.get("registration_key") != "pcodex"
+            or mcp.get("registration_scope") != "integration_root"
+            or mcp.get("preexisting_value_hash") is not None
+            or mcp.get("installed_value_hash") != _sha256_json(expected_mcp)
+            or mcp.get("current_value_hash") != _sha256_json(expected_mcp)
+            or mcp.get("managed_fields") != ["mcpServers.pcodex"]
+            or mcp.get("preserved_fields") != []
+            or mcp.get("source_plugin_version") != __version__
+            or mcp.get("target_plugin_version") != __version__
+            or mcp.get("user_modified") is not False
+            or mcp.get("conflict_state") is not None
+            or mcp.get("cleanup_policy") != "remove_exact_receipt_bound_value_only"
+            or mcp.get("repair_policy") != "restore_missing_exact_receipt_bound_value_only"
+            or mcp.get("disabled_value_hash") is not None
+        ):
             raise CodexPluginError("plugin MCP value authority is invalid")
     if not isinstance(payload["migration"], dict) or payload["migration"].get("schema_version") != MIGRATION_SCHEMA_VERSION:
         raise CodexPluginError("plugin migration authority is malformed")
@@ -1277,7 +1321,7 @@ def apply_integration(
             root,
             files,
             ownership_id=ownership_id,
-            existing_entry=existing_entry,
+            existing_entry=None if prior is not None else existing_entry,
             before_file_hash=before_file_hash,
             with_mcp=with_mcp,
             migration=migration,
@@ -1359,7 +1403,13 @@ def disable_integration(
             return {"status": "blocked", "reason": native_result.get("reason"), "native_registration": native_result, "writes_performed": False}
         if source_checkout:
             return {"status": "disabled", "native_registration": native_result, "writes_performed": bool(native_result.get("writes_performed")), "next_recommended_action": "pcodex integrate codex --repair"}
-    state = _load_state(root)
+    try:
+        state = _load_state(root)
+    except CodexPluginError as exc:
+        return {
+            "status": "blocked", "reason": "corrupt_or_future_authority",
+            "error": str(exc), "writes_performed": False, "preserved": True,
+        }
     if state is None:
         return {"status": "blocked", "reason": "plugin_absent", "writes_performed": False}
     if (root / JOURNAL_RELATIVE).exists():
@@ -1445,7 +1495,13 @@ def _recover_interrupted_install(root: Path) -> dict[str, Any]:
 
 def repair_integration(root: Path, *, native: bool = False) -> dict[str, Any]:
     root = root.resolve()
-    state = _load_state(root)
+    try:
+        state = _load_state(root)
+    except CodexPluginError as exc:
+        return {
+            "status": "blocked", "reason": "corrupt_or_future_authority",
+            "error": str(exc), "writes_performed": False, "preserved": True,
+        }
     if state is None:
         if native and _is_canonical_source_checkout(root):
             from .codex_native import repair as native_repair
@@ -1531,12 +1587,232 @@ def repair_integration(root: Path, *, native: bool = False) -> dict[str, Any]:
     return result
 
 
+def repair_preview(root: Path, *, native: bool = False) -> dict[str, Any]:
+    """Return exact receipt-bound repair actions without creating state."""
+    root = root.resolve()
+    try:
+        state = _load_state(root)
+    except CodexPluginError as exc:
+        return {
+            "schema_version": "pcodex.codex-plugin-repair-preview.v1",
+            "status": "dry_run", "dry_run": True, "writes_performed": False,
+            "readiness": "BLOCKED", "will_restore": [], "will_preserve": [],
+            "conflicts": [{"reason": str(exc)}], "next_recommended_action": "review corrupt or future authority manually",
+        }
+    if state is None:
+        if native and _is_canonical_source_checkout(root):
+            from .codex_native import repair_preview as native_repair_preview
+
+            native_result = native_repair_preview(root)
+            return {
+                "schema_version": "pcodex.codex-plugin-repair-preview.v1",
+                "status": "dry_run", "dry_run": True, "writes_performed": False,
+                "readiness": native_result.get("readiness", "BLOCKED"),
+                "will_restore": native_result.get("will_restore", []), "will_preserve": [],
+                "conflicts": native_result.get("conflicts", []), "native_registration": native_result,
+                "next_recommended_action": (
+                    "pcodex integrate codex --repair"
+                    if native_result.get("readiness") == "NEEDS_ACTION" else
+                    "none" if native_result.get("readiness") == "READY" else
+                    "review native Codex authority manually"
+                ),
+            }
+        return {
+            "schema_version": "pcodex.codex-plugin-repair-preview.v1",
+            "status": "dry_run", "dry_run": True, "writes_performed": False,
+            "readiness": "BLOCKED", "will_restore": [], "will_preserve": [],
+            "conflicts": [{"reason": "missing_authority"}],
+            "next_recommended_action": "pcodex integrate codex --write",
+        }
+    conflicts: list[dict[str, Any]] = []
+    will_restore: list[dict[str, str]] = []
+    will_preserve: list[dict[str, str]] = []
+    if (root / JOURNAL_RELATIVE).exists():
+        conflicts.append({"reason": "active_operation_journal"})
+    for relative, authority in state["files"].items():
+        path = root / PLUGIN_INSTALL_RELATIVE / relative
+        try:
+            _ensure_safe_parents(root, path)
+            file_stat = _lstat_regular(path)
+        except CodexPluginError as exc:
+            conflicts.append({"path": relative, "reason": str(exc)})
+            will_preserve.append({"path": relative, "reason": "unsafe_or_unproven"})
+            continue
+        if file_stat is None:
+            will_restore.append({"path": f"{PLUGIN_INSTALL_RELATIVE.as_posix()}/{relative}", "authority": "installed_hash"})
+        else:
+            try:
+                current_hash = _sha256_bytes(path.read_bytes())
+            except OSError as exc:
+                conflicts.append({"path": relative, "reason": f"unreadable:{exc.__class__.__name__}"})
+                will_preserve.append({"path": relative, "reason": "unreadable"})
+            else:
+                if current_hash != authority["installed_hash"]:
+                    conflicts.append({"path": relative, "reason": "user_modified"})
+                    will_preserve.append({"path": relative, "reason": "user_modified"})
+    try:
+        marketplace, _ = _load_marketplace(root)
+    except CodexPluginError as exc:
+        conflicts.append({"registration": "marketplace", "reason": str(exc)})
+        marketplace = {"plugins": []}
+    entry = _current_entry(marketplace)
+    receipt = state["registrations"]["marketplace"]
+    if entry is None:
+        will_restore.append({"path": f"{MARKETPLACE_RELATIVE.as_posix()}#plugins[name=pcodex]", "authority": "registration_receipt"})
+    elif _sha256_json(entry) not in {receipt["installed_value_hash"], receipt.get("disabled_value_hash")}:
+        conflicts.append({"registration": "marketplace", "reason": "user_modified"})
+    elif not state.get("enabled"):
+        will_restore.append({"path": f"{MARKETPLACE_RELATIVE.as_posix()}#plugins[name=pcodex].enabled", "authority": "registration_receipt"})
+    native_status_result: dict[str, Any] | None = None
+    if native:
+        from .codex_native import status as native_status
+
+        native_status_result = native_status(root)
+        if native_status_result.get("readiness") == "BLOCKED":
+            conflicts.append({"registration": "native_codex", "reason": str(native_status_result.get("reason"))})
+        elif native_status_result.get("readiness") == "NEEDS_ACTION":
+            for item in native_status_result.get("conflicts") or []:
+                if isinstance(item, dict) and item.get("reason") in {"missing", "disabled"}:
+                    will_restore.append({"path": f"$CODEX_HOME/config.toml#{item.get('registration')}", "authority": "native_registration_receipt"})
+    return {
+        "schema_version": "pcodex.codex-plugin-repair-preview.v1",
+        "status": "dry_run", "dry_run": True, "writes_performed": False,
+        "readiness": "BLOCKED" if conflicts else ("NEEDS_ACTION" if will_restore else "READY"),
+        "will_restore": will_restore, "will_preserve": will_preserve,
+        "conflicts": conflicts, "native_registration": native_status_result,
+        "next_recommended_action": (
+            "resolve reported conflicts" if conflicts else
+            "pcodex integrate codex --repair" if will_restore else "none"
+        ),
+    }
+
+
+def uninstall_preview(root: Path, *, native: bool = False) -> dict[str, Any]:
+    """Return the exact bounded uninstall plan without creating any state."""
+    root = root.resolve()
+    try:
+        state = _load_state(root)
+    except CodexPluginError as exc:
+        return {
+            "schema_version": "pcodex.codex-plugin-uninstall-preview.v1",
+            "status": "dry_run", "dry_run": True, "writes_performed": False,
+            "readiness": "BLOCKED", "already_absent": False,
+            "will_remove": [], "will_preserve": [{"path": STATE_RELATIVE.as_posix(), "reason": "corrupt_or_future_authority"}],
+            "conflicts": [{"reason": str(exc)}],
+            "next_recommended_action": "review corrupt or future authority manually",
+        }
+    if state is None:
+        if native and _is_canonical_source_checkout(root):
+            from .codex_native import uninstall_preview as native_uninstall_preview
+
+            native_result = native_uninstall_preview(root)
+            return {
+                "schema_version": "pcodex.codex-plugin-uninstall-preview.v1",
+                "status": "dry_run", "dry_run": True, "writes_performed": False,
+                "readiness": native_result.get("readiness", "BLOCKED"),
+                "already_absent": native_result.get("already_absent", False),
+                "will_remove": native_result.get("will_remove", []), "will_preserve": [],
+                "conflicts": native_result.get("conflicts", []), "native_registration": native_result,
+                "next_recommended_action": (
+                    "pcodex integrate codex --uninstall"
+                    if native_result.get("readiness") == "READY" else
+                    "pcodex integrate codex --dry-run" if native_result.get("already_absent") else
+                    "review native Codex authority manually"
+                ),
+            }
+        return {
+            "schema_version": "pcodex.codex-plugin-uninstall-preview.v1",
+            "status": "dry_run", "dry_run": True, "writes_performed": False,
+            "readiness": "NEEDS_ACTION", "already_absent": True,
+            "will_remove": [], "will_preserve": [], "conflicts": [],
+            "next_recommended_action": "pcodex integrate codex --write",
+        }
+    conflicts: list[dict[str, Any]] = []
+    if (root / JOURNAL_RELATIVE).exists():
+        conflicts.append({"reason": "active_operation_journal"})
+    will_remove: list[dict[str, str]] = []
+    will_preserve: list[dict[str, str]] = []
+    for relative, authority in state["files"].items():
+        path = root / PLUGIN_INSTALL_RELATIVE / relative
+        try:
+            _ensure_safe_parents(root, path)
+            file_stat = _lstat_regular(path)
+        except CodexPluginError as exc:
+            conflicts.append({"path": relative, "reason": str(exc)})
+            will_preserve.append({"path": relative, "reason": "unsafe_or_unproven"})
+            continue
+        if file_stat is None:
+            continue
+        try:
+            current_hash = _sha256_bytes(path.read_bytes())
+        except OSError as exc:
+            conflicts.append({"path": relative, "reason": f"unreadable:{exc.__class__.__name__}"})
+            will_preserve.append({"path": relative, "reason": "unreadable"})
+        else:
+            if current_hash == authority["installed_hash"]:
+                will_remove.append({"path": f"{PLUGIN_INSTALL_RELATIVE.as_posix()}/{relative}", "authority": "installed_hash"})
+            else:
+                conflicts.append({"path": relative, "reason": "user_modified"})
+                will_preserve.append({"path": relative, "reason": "user_modified"})
+    try:
+        marketplace, _ = _load_marketplace(root)
+    except CodexPluginError as exc:
+        conflicts.append({"registration": "marketplace", "reason": str(exc)})
+        will_preserve.append({"path": MARKETPLACE_RELATIVE.as_posix(), "reason": "malformed_or_future_registration"})
+        marketplace = {"plugins": []}
+    entry = _current_entry(marketplace)
+    receipt = state["registrations"]["marketplace"]
+    allowed = {receipt["installed_value_hash"], receipt.get("disabled_value_hash")}
+    if entry is not None and _sha256_json(entry) not in allowed:
+        conflicts.append({"registration": "marketplace", "reason": "user_modified"})
+        will_preserve.append({"path": MARKETPLACE_RELATIVE.as_posix(), "reason": "user_modified_registration"})
+    elif entry is not None:
+        will_remove.append({"path": f"{MARKETPLACE_RELATIVE.as_posix()}#plugins[name=pcodex]", "authority": "registration_receipt"})
+    if receipt.get("registration_type") == "marketplace_file_and_entry":
+        expected_container = {
+            "name": "local-premode-marketplace",
+            "interface": {"displayName": "Local pCodex"},
+            "plugins": [entry] if entry is not None else [],
+        }
+        if marketplace != expected_container:
+            conflicts.append({"registration": "marketplace", "reason": "created_container_modified"})
+    native_status_result: dict[str, Any] | None = None
+    if native:
+        from .codex_native import uninstall_preview as native_uninstall_preview
+
+        native_status_result = native_uninstall_preview(root)
+        if native_status_result.get("readiness") == "BLOCKED":
+            conflicts.extend(native_status_result.get("conflicts") or [{"registration": "native_codex", "reason": str(native_status_result.get("reason"))}])
+        elif native_status_result.get("readiness") == "READY":
+            will_remove.extend(native_status_result.get("will_remove", []))
+    will_remove.extend([
+        {"path": STATE_RELATIVE.as_posix(), "authority": "plugin_state_receipt"},
+    ])
+    return {
+        "schema_version": "pcodex.codex-plugin-uninstall-preview.v1",
+        "status": "dry_run", "dry_run": True, "writes_performed": False,
+        "readiness": "BLOCKED" if conflicts else "READY",
+        "already_absent": False, "will_remove": will_remove,
+        "will_preserve": will_preserve, "conflicts": conflicts,
+        "native_registration": native_status_result,
+        "next_recommended_action": (
+            "resolve reported conflicts" if conflicts else "pcodex integrate codex --uninstall"
+        ),
+    }
+
+
 def uninstall_integration(
     root: Path, *, native: bool = False,
     inject: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
     root = root.resolve()
-    state = _load_state(root)
+    try:
+        state = _load_state(root)
+    except CodexPluginError as exc:
+        return {
+            "status": "blocked", "reason": "corrupt_or_future_authority",
+            "error": str(exc), "writes_performed": False, "preserved": True,
+        }
     if state is None:
         if native and _is_canonical_source_checkout(root):
             from .codex_native import uninstall as native_uninstall

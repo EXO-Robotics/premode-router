@@ -2396,9 +2396,9 @@ def _parser() -> argparse.ArgumentParser:
     integrate_mode.add_argument("--dry-run", action="store_true", help="Preview canonical plugin and registration changes without writing.")
     integrate_mode.add_argument("--write", action="store_true", help="Install the canonical plugin with exact ownership receipts.")
     integrate_mode.add_argument("--status", action="store_true", help="Inspect plugin and registration state without repairing it.")
-    integrate_mode.add_argument("--repair", action="store_true", help="Restore missing proven-owned state or re-enable a disabled plugin.")
     integrate_mode.add_argument("--disable", action="store_true", help="Reversibly disable the receipt-owned marketplace entry.")
-    integrate_mode.add_argument("--uninstall", action="store_true", help="Remove only exact receipt-owned plugin and registration state.")
+    integrate_codex.add_argument("--repair", action="store_true", help="Restore proven-owned state; combine with --dry-run to preview.")
+    integrate_codex.add_argument("--uninstall", action="store_true", help="Remove only exact receipt-owned state; combine with --dry-run to preview.")
     integrate_codex.add_argument("--migrate", action="store_true", help="Use migration semantics with --dry-run or --write; bare --migrate previews safely.")
     integrate_codex.add_argument("--with-mcp", action="store_true", help="Explicitly include the optional workspace-bound MCP descriptor.")
     integrate_codex.add_argument("--json", action="store_true", help="Print machine-readable integration result.")
@@ -2695,17 +2695,31 @@ def main(argv: list[str] | None = None) -> int:
             integration_preview,
             plugin_status,
             repair_integration,
+            repair_preview,
             uninstall_integration,
+            uninstall_preview,
         )
+
+        if args.uninstall and any((args.write, args.status, args.repair, args.disable, args.migrate, args.with_mcp)):
+            payload = {"status": "error", "error": "--uninstall supports only the optional --dry-run mode"}
+            print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
+        if args.repair and any((args.write, args.status, args.disable, args.migrate, args.with_mcp)):
+            payload = {"status": "error", "error": "--repair supports only the optional --dry-run mode"}
+            print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+            return 2
 
         if args.status:
             payload = plugin_status(repo_root, native=True)
         elif args.repair:
-            payload = repair_integration(repo_root, native=True)
+            payload = repair_preview(repo_root, native=True) if args.dry_run else repair_integration(repo_root, native=True)
         elif args.disable:
             payload = disable_integration(repo_root, native=True)
         elif args.uninstall:
-            payload = uninstall_integration(repo_root, native=True)
+            payload = (
+                uninstall_preview(repo_root, native=True)
+                if args.dry_run else uninstall_integration(repo_root, native=True)
+            )
         elif args.write:
             payload = apply_integration(repo_root, with_mcp=bool(args.with_mcp), migration=bool(args.migrate), native=True)
         else:

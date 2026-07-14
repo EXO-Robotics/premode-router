@@ -322,23 +322,72 @@ def _load_state(workspace: Path) -> dict[str, Any] | None:
         "conflict_state", "cleanup_policy", "repair_policy",
     }
     receipt_allowed = receipt_required | {"disabled_value_hash"}
-    for receipt in registrations.values():
+    workspace_value = str(workspace.resolve())
+    expected_installed_values: dict[str, Any] = {
+        "codex_marketplace": {
+            "source": workspace_value,
+            "source_type": "local",
+        },
+        "codex_plugin_enable": {"enabled": True},
+    }
+    if value.get("with_mcp"):
+        expected_installed_values["codex_mcp"] = {
+            "command": str(Path(sys.executable).resolve()),
+            "args": ["-m", "premode.pcodex_bootstrap", "mcp-server"],
+            "env": {"PCODEX_WORKSPACE": workspace_value},
+        }
+    expected_semantics = {
+        "codex_marketplace": {
+            "registration_type": "codex_marketplace_source",
+            "registration_key": MARKETPLACE,
+            "managed_fields": [f"marketplaces.{MARKETPLACE}"],
+            "preserved_fields": [f"marketplaces.{MARKETPLACE}.last_updated", "all_other_codex_configuration"],
+            "disabled_value": None,
+        },
+        "codex_plugin_enable": {
+            "registration_type": "codex_plugin_enable_state",
+            "registration_key": PLUGIN_ID,
+            "managed_fields": [f"plugins.{PLUGIN_ID}"],
+            "preserved_fields": ["all_other_codex_configuration"],
+            "disabled_value": {"enabled": False},
+        },
+        "codex_mcp": {
+            "registration_type": "codex_mcp_server",
+            "registration_key": "pcodex",
+            "managed_fields": ["mcp_servers.pcodex"],
+            "preserved_fields": ["all_other_mcp_servers", "all_other_codex_configuration"],
+            "disabled_value": None,
+        },
+    }
+    for authority_key, receipt in registrations.items():
         if not isinstance(receipt, dict) or (set(receipt) != receipt_required and set(receipt) != receipt_allowed):
             raise NativeCodexError("native Codex registration authority is malformed")
+        semantics = expected_semantics[authority_key]
+        expected_installed_hash = _registration_hash(authority_key, expected_installed_values[authority_key])
+        expected_disabled_hash = (
+            _registration_hash(authority_key, semantics["disabled_value"])
+            if authority_key != "codex_marketplace" else None
+        )
         if (
             receipt.get("ownership_id") != value["ownership_id"]
             or receipt.get("registration_scope") != str(_config_path())
+            or receipt.get("registration_type") != semantics["registration_type"]
+            or receipt.get("registration_key") != semantics["registration_key"]
             or receipt.get("source_plugin_version") != __version__
             or receipt.get("target_plugin_version") != __version__
             or receipt.get("preexisting_value_hash") is not None
-            or not isinstance(receipt.get("installed_value_hash"), str)
-            or re.fullmatch(r"[0-9a-f]{64}", receipt["installed_value_hash"]) is None
+            or receipt.get("installed_value_hash") != expected_installed_hash
+            or receipt.get("current_value_hash") not in {expected_installed_hash, expected_disabled_hash}
+            or receipt.get("managed_fields") != semantics["managed_fields"]
+            or receipt.get("preserved_fields") != semantics["preserved_fields"]
+            or receipt.get("user_modified") is not False
+            or receipt.get("conflict_state") is not None
+            or receipt.get("cleanup_policy") != "remove_only_if_exact_value_matches"
+            or receipt.get("repair_policy") != "restore_only_if_receipt_and_unrelated_state_match"
         ):
             raise NativeCodexError("native Codex registration authority is incompatible")
         disabled_hash = receipt.get("disabled_value_hash")
-        if disabled_hash is not None and (
-            not isinstance(disabled_hash, str) or re.fullmatch(r"[0-9a-f]{64}", disabled_hash) is None
-        ):
+        if disabled_hash is not None and disabled_hash != expected_disabled_hash:
             raise NativeCodexError("native Codex disabled registration hash is invalid")
     cache = value.get("cache")
     cache_required = {"registration_type", "path", "files", "installed_value_hash", "ownership_id", "cleanup_policy", "repair_policy"}
@@ -589,6 +638,97 @@ def status(workspace: Path) -> dict[str, Any]:
             else "conflict"
         ),
         "conflicts": conflicts, "writes_performed": False,
+    }
+
+
+def repair_preview(workspace: Path) -> dict[str, Any]:
+    """Return an exact, receipt-bound native repair plan without writes."""
+    workspace = workspace.resolve()
+    try:
+        state = _load_state(workspace)
+    except NativeCodexError as exc:
+        return {
+            "schema_version": "pcodex.codex-native-repair-preview.v1",
+            "readiness": "BLOCKED", "will_restore": [],
+            "conflicts": [{"reason": str(exc)}], "writes_performed": False,
+        }
+    current = status(workspace)
+    if state is None:
+        return {
+            "schema_version": "pcodex.codex-native-repair-preview.v1",
+            "readiness": current["readiness"], "will_restore": [],
+            "conflicts": current.get("conflicts", [{"reason": current.get("reason")}]),
+            "writes_performed": False,
+        }
+    if current["readiness"] == "BLOCKED":
+        return {
+            "schema_version": "pcodex.codex-native-repair-preview.v1",
+            "readiness": "BLOCKED", "will_restore": [],
+            "conflicts": current.get("conflicts", [{"reason": current.get("reason")}]),
+            "writes_performed": False,
+        }
+    will_restore = [
+        {
+            "path": str(state["cache"]["path"]) if item.get("registration") == "codex_cache"
+            else f"{state['registrations'][item['registration']]['registration_scope']}#{item['registration']}",
+            "authority": "native_registration_receipt",
+        }
+        for item in current.get("conflicts", [])
+        if item.get("reason") == "missing"
+    ]
+    if not current.get("enabled"):
+        receipt = state["registrations"]["codex_plugin_enable"]
+        will_restore.append({
+            "path": f"{receipt['registration_scope']}#codex_plugin_enable",
+            "authority": "native_registration_receipt",
+        })
+    return {
+        "schema_version": "pcodex.codex-native-repair-preview.v1",
+        "readiness": "NEEDS_ACTION" if will_restore else "READY",
+        "will_restore": will_restore, "conflicts": [], "writes_performed": False,
+    }
+
+
+def uninstall_preview(workspace: Path) -> dict[str, Any]:
+    """Return every receipt-proven native removal target without writes."""
+    workspace = workspace.resolve()
+    try:
+        state = _load_state(workspace)
+    except NativeCodexError as exc:
+        return {
+            "schema_version": "pcodex.codex-native-uninstall-preview.v1",
+            "readiness": "BLOCKED", "already_absent": False, "will_remove": [],
+            "conflicts": [{"reason": str(exc)}], "writes_performed": False,
+        }
+    current = status(workspace)
+    if state is None:
+        return {
+            "schema_version": "pcodex.codex-native-uninstall-preview.v1",
+            "readiness": current["readiness"], "already_absent": current["readiness"] == "NEEDS_ACTION",
+            "will_remove": [], "conflicts": current.get("conflicts", []), "writes_performed": False,
+        }
+    if current["readiness"] == "BLOCKED":
+        return {
+            "schema_version": "pcodex.codex-native-uninstall-preview.v1",
+            "readiness": "BLOCKED", "already_absent": False, "will_remove": [],
+            "conflicts": current.get("conflicts", [{"reason": current.get("reason")}]),
+            "writes_performed": False,
+        }
+    will_remove = [
+        {
+            "path": f"{receipt['registration_scope']}#{key}",
+            "authority": "native_registration_receipt",
+        }
+        for key, receipt in sorted(state["registrations"].items())
+    ]
+    will_remove.extend([
+        {"path": str(state["cache"]["path"]), "authority": "native_cache_receipt"},
+        {"path": STATE_RELATIVE.as_posix(), "authority": "native_state_receipt"},
+    ])
+    return {
+        "schema_version": "pcodex.codex-native-uninstall-preview.v1",
+        "readiness": "READY", "already_absent": False,
+        "will_remove": will_remove, "conflicts": [], "writes_performed": False,
     }
 
 

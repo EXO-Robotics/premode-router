@@ -26,8 +26,11 @@ from premode.codex_plugin import (
     marketplace_entry,
     plugin_status,
     repair_integration,
+    repair_preview,
     uninstall_integration,
+    uninstall_preview,
 )
+from premode.product_contract import validate_payload_against_schema
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -225,6 +228,124 @@ def test_modified_owned_file_and_registration_are_preserved(tmp_path: Path) -> N
     assert skill.read_text(encoding="utf-8") == "user modified\n"
 
 
+def test_plugin_repair_and_uninstall_previews_are_literal_no_write(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path, "plugin-previews")
+    assert apply_integration(repo)["status"] == "installed"
+    helper = repo / "plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh"
+    helper.unlink()
+    before = _snapshot(repo)
+    repair_plan = repair_preview(repo)
+    assert repair_plan["dry_run"] is True
+    assert repair_plan["writes_performed"] is False
+    assert any(item["path"].endswith("resolve-pcodex.sh") for item in repair_plan["will_restore"])
+    assert _snapshot(repo) == before
+    assert repair_integration(repo)["status"] == "repaired"
+    before = _snapshot(repo)
+    uninstall_plan = uninstall_preview(repo)
+    assert uninstall_plan["readiness"] == "READY"
+    assert uninstall_plan["writes_performed"] is False
+    assert uninstall_plan["will_remove"]
+    assert _snapshot(repo) == before
+
+
+def test_plugin_previews_fail_closed_for_malformed_authority_and_marketplace(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path, "malformed-previews")
+    assert apply_integration(repo)["status"] == "installed"
+    state_path = repo / STATE_RELATIVE
+    original_state = state_path.read_bytes()
+    state_path.write_text('{"schema_version":"future"}\n', encoding="utf-8")
+    before = _snapshot(repo)
+    assert repair_preview(repo)["readiness"] == "BLOCKED"
+    assert uninstall_preview(repo)["readiness"] == "BLOCKED"
+    assert _snapshot(repo) == before
+    state_path.write_bytes(original_state)
+    marketplace = repo / ".agents/plugins/marketplace.json"
+    marketplace.write_text("{malformed\n", encoding="utf-8")
+    before = _snapshot(repo)
+    assert repair_preview(repo)["readiness"] == "BLOCKED"
+    assert uninstall_preview(repo)["readiness"] == "BLOCKED"
+    assert _snapshot(repo) == before
+
+
+def test_repair_preview_fails_closed_for_unreadable_owned_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _make_repo(tmp_path, "unreadable-preview")
+    assert apply_integration(repo)["status"] == "installed"
+    target = repo / "plugins/pcodex/skills/pcodex/SKILL.md"
+    original_read_bytes = Path.read_bytes
+
+    def guarded_read_bytes(path: Path) -> bytes:
+        if path == target:
+            raise PermissionError("fixture unreadable file")
+        return original_read_bytes(path)
+
+    state_before = (repo / STATE_RELATIVE).read_bytes()
+    marketplace_before = (repo / ".agents/plugins/marketplace.json").read_bytes()
+    monkeypatch.setattr(Path, "read_bytes", guarded_read_bytes)
+    result = repair_preview(repo)
+    assert result["readiness"] == "BLOCKED"
+    assert {item["reason"] for item in result["will_preserve"]} == {"unreadable"}
+    assert original_read_bytes(repo / STATE_RELATIVE) == state_before
+    assert original_read_bytes(repo / ".agents/plugins/marketplace.json") == marketplace_before
+
+
+def test_forged_disabled_marketplace_hash_cannot_adopt_user_entry(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path, "forged-disabled-marketplace")
+    assert apply_integration(repo)["status"] == "installed"
+    marketplace_path = repo / ".agents/plugins/marketplace.json"
+    marketplace = json.loads(marketplace_path.read_text(encoding="utf-8"))
+    entry = next(item for item in marketplace["plugins"] if item["name"] == "pcodex")
+    entry["user_note"] = "preserve"
+    marketplace_path.write_text(json.dumps(marketplace) + "\n", encoding="utf-8")
+    state_path = repo / STATE_RELATIVE
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["registrations"]["marketplace"]["disabled_value_hash"] = codex_plugin._sha256_json(entry)
+    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    before = marketplace_path.read_bytes()
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert repair_preview(repo)["readiness"] == "BLOCKED"
+    assert uninstall_preview(repo)["readiness"] == "BLOCKED"
+    assert repair_integration(repo)["status"] == "blocked"
+    assert uninstall_integration(repo)["status"] == "blocked"
+    assert marketplace_path.read_bytes() == before
+
+
+def test_source_checkout_previews_delegate_to_native_authority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _make_repo(tmp_path, "source-preview")
+    monkeypatch.setattr(codex_plugin, "_is_canonical_source_checkout", lambda _: True)
+    monkeypatch.setattr(
+        codex_native, "repair_preview",
+        lambda _: {"readiness": "NEEDS_ACTION", "will_restore": [{"path": "native"}], "conflicts": [], "writes_performed": False},
+    )
+    monkeypatch.setattr(
+        codex_native, "uninstall_preview",
+        lambda _: {"readiness": "READY", "already_absent": False, "will_remove": [{"path": "native"}], "conflicts": [], "writes_performed": False},
+    )
+    assert repair_preview(repo, native=True)["will_restore"] == [{"path": "native"}]
+    assert uninstall_preview(repo, native=True)["will_remove"] == [{"path": "native"}]
+
+
+def test_forged_marketplace_file_authority_is_blocked_and_preserved(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path, "forged-marketplace-file-authority")
+    marketplace = repo / ".agents/plugins/marketplace.json"
+    marketplace.parent.mkdir(parents=True)
+    original = '{"name":"local-premode-marketplace","interface":{"displayName":"Local pCodex"},"plugins":[]}\n'
+    marketplace.write_text(original, encoding="utf-8")
+    assert apply_integration(repo)["status"] == "installed"
+    state_path = repo / STATE_RELATIVE
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    assert state["marketplace_preexisting_file_hash"] is not None
+    state["registrations"]["marketplace"]["registration_type"] = "marketplace_file_and_entry"
+    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    before = marketplace.read_bytes()
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert uninstall_integration(repo)["status"] == "blocked"
+    assert marketplace.read_bytes() == before
+
+
 def test_malformed_optional_mcp_authority_reports_blocked(tmp_path: Path) -> None:
     repo = _make_repo(tmp_path, "malformed-mcp-authority")
     assert apply_integration(repo, with_mcp=True)["status"] == "installed"
@@ -345,7 +466,9 @@ def test_exact_migration_remains_reachable_after_canonical_install(
     monkeypatch.setattr(codex_plugin, "LEGACY_PLUGIN_FINGERPRINT", {
         ".codex-plugin/plugin.json": hashlib.sha256(content).hexdigest(),
     })
-    monkeypatch.setattr(codex_plugin, "LEGACY_SKILL_FINGERPRINT", {})
+    monkeypatch.setattr(codex_plugin, "LEGACY_SKILL_FINGERPRINT", {
+        "pcodex/SKILL.md": hashlib.sha256(b"not installed").hexdigest(),
+    })
     preview = integration_preview(repo, migration=True)
     assert preview["migration"]["will_remove_legacy"] is True
     migrated = apply_integration(repo, migration=True)
@@ -415,6 +538,93 @@ def test_interruption_leaves_journal_and_never_reports_ready(tmp_path: Path) -> 
     assert plugin_status(repo)["readiness"] == "READY"
 
 
+def test_interrupted_plugin_operation_journal_validates_against_packaged_schema(tmp_path: Path) -> None:
+    repo = _make_repo(tmp_path, "schema-journal")
+
+    def stop(stage: str) -> None:
+        if stage == "plugin_file_staging":
+            raise RuntimeError("stop for schema proof")
+
+    with pytest.raises(RuntimeError, match="schema proof"):
+        apply_integration(repo, inject=stop)
+    journal = json.loads((repo / JOURNAL_RELATIVE).read_text(encoding="utf-8"))
+    schema = json.loads((REPO_ROOT / "schemas/pcodex.codex-plugin-operation.v1.schema.json").read_text(encoding="utf-8"))
+    validate_payload_against_schema(journal, schema)
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert repair_integration(repo)["status"] == "recovered"
+
+
+@pytest.mark.parametrize("stage", ["disable_started", "disable_marketplace_update"])
+def test_interrupted_plugin_disable_recovers_to_ready(tmp_path: Path, stage: str) -> None:
+    repo = _make_repo(tmp_path, f"disable-{stage}")
+    assert apply_integration(repo)["status"] == "installed"
+
+    def stop(current: str) -> None:
+        if current == stage:
+            raise RuntimeError("interrupt disable")
+
+    with pytest.raises(RuntimeError, match="interrupt disable"):
+        disable_integration(repo, inject=stop)
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert repair_integration(repo)["status"] == "repaired"
+    assert plugin_status(repo)["readiness"] == "READY"
+
+
+@pytest.mark.parametrize("stage", ["uninstall_started", "uninstall_marketplace_update", "uninstall_file_removal"])
+def test_interrupted_plugin_uninstall_recovers_without_unrelated_loss(tmp_path: Path, stage: str) -> None:
+    repo = _make_repo(tmp_path, f"uninstall-{stage}")
+    marketplace = repo / ".agents/plugins/marketplace.json"
+    marketplace.parent.mkdir(parents=True)
+    original = '{"name":"personal","unknown":{"keep":true},"plugins":[]}\n'
+    marketplace.write_text(original, encoding="utf-8")
+    assert apply_integration(repo)["status"] == "installed"
+
+    def stop(current: str) -> None:
+        if current == stage:
+            raise RuntimeError("interrupt uninstall")
+
+    with pytest.raises(RuntimeError, match="interrupt uninstall"):
+        uninstall_integration(repo, inject=stop)
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert repair_integration(repo)["status"] == "repaired"
+    assert plugin_status(repo)["readiness"] == "READY"
+    assert uninstall_integration(repo)["status"] == "uninstalled"
+    assert marketplace.read_text(encoding="utf-8") == original
+
+
+def test_interrupted_exact_migration_remains_partial_until_deterministic_rerun(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _make_repo(tmp_path, "migration-interrupted")
+    legacy = repo / ".agents/plugins/plugins/premode-router"
+    content = b"accepted legacy bytes\n"
+    path = legacy / ".codex-plugin/plugin.json"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(content)
+    monkeypatch.setattr(codex_plugin, "LEGACY_PLUGIN_FINGERPRINT", {
+        ".codex-plugin/plugin.json": hashlib.sha256(content).hexdigest(),
+    })
+    monkeypatch.setattr(codex_plugin, "LEGACY_SKILL_FINGERPRINT", {
+        "pcodex/SKILL.md": hashlib.sha256(b"not installed").hexdigest(),
+    })
+
+    def stop(stage: str) -> None:
+        if stage == "legacy_removal":
+            raise RuntimeError("interrupt migration")
+
+    with pytest.raises(RuntimeError, match="interrupt migration"):
+        apply_integration(repo, migration=True, inject=stop)
+    assert plugin_status(repo)["readiness"] == "BLOCKED"
+    assert repair_integration(repo)["status"] == "recovered"
+    partial = plugin_status(repo)
+    assert partial["readiness"] == "NEEDS_ACTION"
+    assert legacy.exists()
+    rerun = apply_integration(repo, migration=True)
+    assert rerun["writes_performed"] is True
+    assert not legacy.exists()
+    assert plugin_status(repo)["readiness"] == "READY"
+
+
 @pytest.mark.skipif(shutil.which("codex") is None, reason="local Codex CLI unavailable")
 def test_native_codex_registration_lifecycle_and_unrelated_config_preservation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
@@ -437,6 +647,14 @@ def test_native_codex_registration_lifecycle_and_unrelated_config_preservation(
     state = json.loads((repo / NATIVE_STATE_RELATIVE).read_text(encoding="utf-8"))
     assert set(state["registrations"]) == {"codex_marketplace", "codex_plugin_enable"}
     assert plugin_status(repo, native=True)["readiness"] == "READY"
+    native_plan = codex_native.uninstall_preview(repo)
+    native_targets = {item["path"] for item in native_plan["will_remove"]}
+    assert any(path.endswith("#codex_marketplace") for path in native_targets)
+    assert any(path.endswith("#codex_plugin_enable") for path in native_targets)
+    assert state["cache"]["path"] in native_targets
+    assert NATIVE_STATE_RELATIVE.as_posix() in native_targets
+    combined_plan = uninstall_preview(repo, native=True)
+    assert native_targets <= {item["path"] for item in combined_plan["will_remove"]}
     assert disable_integration(repo, native=True)["status"] == "disabled"
     assert plugin_status(repo, native=True)["reason"] == "disabled"
     assert repair_integration(repo, native=True)["status"] == "repaired"
@@ -460,6 +678,11 @@ def test_native_optional_mcp_and_interruption_recovery(tmp_path: Path, monkeypat
 
     with pytest.raises(RuntimeError, match="interrupt native install"):
         apply_integration(repo, with_mcp=True, native=True, inject=stop_install)
+    native_journal = json.loads((repo / codex_native.JOURNAL_RELATIVE).read_text(encoding="utf-8"))
+    native_operation_schema = json.loads(
+        (REPO_ROOT / "schemas/pcodex.codex-native-operation.v1.schema.json").read_text(encoding="utf-8")
+    )
+    validate_payload_against_schema(native_journal, native_operation_schema)
     assert plugin_status(repo, native=True)["reason"] in {"interrupted_operation", "interrupted_native_operation"}
     assert repair_integration(repo, native=True)["native_registration"]["status"] == "recovered"
     state = json.loads((repo / NATIVE_STATE_RELATIVE).read_text(encoding="utf-8"))
@@ -485,6 +708,42 @@ def test_native_optional_mcp_and_interruption_recovery(tmp_path: Path, monkeypat
     assert repair_integration(repo, native=True)["native_registration"]["status"] == "recovered"
     assert plugin_status(repo, native=True)["readiness"] == "READY"
     assert uninstall_integration(repo, native=True)["status"] == "uninstalled"
+
+
+@pytest.mark.skipif(shutil.which("codex") is None, reason="local Codex CLI unavailable")
+@pytest.mark.parametrize(
+    "stage",
+    ["mcp_registration_update", "codex_uninstall_mcp_update", "codex_uninstall_marketplace_update"],
+)
+def test_native_mcp_registration_and_uninstall_interruptions_recover(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str,
+) -> None:
+    repo = _make_repo(tmp_path, f"native-{stage}")
+    home = tmp_path / f"codex-{stage}"
+    home.mkdir()
+    unrelated = '# preserved\nmodel = "fixture-model"\n\n[mcp_servers.unrelated]\ncommand = "/usr/bin/true"\n'
+    config = home / "config.toml"
+    config.write_text(unrelated, encoding="utf-8")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setenv("PCODEX_TEST_CODEX_VERSION", "0.143.0")
+
+    def stop(current: str) -> None:
+        if current == stage:
+            raise RuntimeError("interrupt native stage")
+
+    if stage == "mcp_registration_update":
+        with pytest.raises(RuntimeError, match="interrupt native stage"):
+            apply_integration(repo, with_mcp=True, native=True, inject=stop)
+    else:
+        assert apply_integration(repo, with_mcp=True, native=True)["native_registration"]["status"] == "registered"
+        with pytest.raises(RuntimeError, match="interrupt native stage"):
+            uninstall_integration(repo, native=True, inject=stop)
+    assert plugin_status(repo, native=True)["readiness"] == "BLOCKED"
+    recovered = repair_integration(repo, native=True)
+    assert recovered["native_registration"]["status"] == "recovered"
+    assert plugin_status(repo, native=True)["readiness"] == "READY"
+    assert uninstall_integration(repo, native=True)["status"] == "uninstalled"
+    assert config.read_text(encoding="utf-8") == unrelated
 
 
 @pytest.mark.skipif(shutil.which("codex") is None, reason="local Codex CLI unavailable")
@@ -555,6 +814,39 @@ def test_native_authority_write_rejects_symlinked_parent(tmp_path: Path) -> None
     with pytest.raises(codex_native.NativeCodexError):
         codex_native._atomic_json(workspace / codex_native.STATE_RELATIVE, {"sentinel": True})
     assert list(outside.iterdir()) == []
+
+
+@pytest.mark.skipif(shutil.which("codex") is None, reason="local Codex CLI unavailable")
+def test_forged_native_registration_hash_cannot_adopt_user_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = _make_repo(tmp_path, "native-forged-adoption")
+    home = tmp_path / "codex-forged-adoption"
+    home.mkdir()
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setenv("PCODEX_TEST_CODEX_VERSION", "0.143.0")
+    assert apply_integration(repo, native=True)["native_registration"]["status"] == "registered"
+    state_path = repo / NATIVE_STATE_RELATIVE
+    original_state = state_path.read_bytes()
+    state = json.loads(original_state)
+    config_path = home / "config.toml"
+    config = config_path.read_text(encoding="utf-8")
+    config = config.replace(
+        '[plugins."pcodex@local-premode-marketplace"]\nenabled = true\n',
+        '[plugins."pcodex@local-premode-marketplace"]\nenabled = true\nuser_note = "preserve"\n',
+    )
+    assert 'user_note = "preserve"' in config
+    config_path.write_text(config, encoding="utf-8")
+    targets = codex_native._target_values(codex_native._read_config()[0])
+    forged_hash = codex_native._registration_hash("codex_plugin_enable", targets["codex_plugin_enable"])
+    state["registrations"]["codex_plugin_enable"]["installed_value_hash"] = forged_hash
+    state["registrations"]["codex_plugin_enable"]["current_value_hash"] = forged_hash
+    state_path.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    before = config_path.read_bytes()
+    assert codex_native.status(repo)["readiness"] == "BLOCKED"
+    assert codex_native.uninstall(repo)["status"] == "blocked"
+    assert config_path.read_bytes() == before
+    state_path.write_bytes(original_state)
 
 
 def test_malformed_native_registration_authority_reports_blocked(
@@ -643,6 +935,14 @@ def test_new_pcodex_commands_route_to_bootstrap(monkeypatch: pytest.MonkeyPatch)
     assert cli.pcodex_main(["integrate", "codex", "--dry-run"]) == 0
     assert cli.pcodex_main(["integrate", "codex", "--status"]) == 0
     assert calls == [["integrate", "codex", "--dry-run"], ["integrate", "codex", "--status"]]
+
+
+def test_plugin_repair_and_uninstall_preview_cli_syntax_is_supported() -> None:
+    parser = pcodex._parser()
+    repair_args = parser.parse_args(["integrate", "codex", "--repair", "--dry-run"])
+    uninstall_args = parser.parse_args(["integrate", "codex", "--uninstall", "--dry-run"])
+    assert repair_args.repair and repair_args.dry_run
+    assert uninstall_args.uninstall and uninstall_args.dry_run
 
 
 def test_model_facing_packet_rendering_constants_unchanged() -> None:

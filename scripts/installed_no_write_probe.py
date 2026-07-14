@@ -43,6 +43,7 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
         "TMPDIR": str(temp_root),
         "XDG_CONFIG_HOME": str(home / "xdg-config"),
         "XDG_CACHE_HOME": str(home / "xdg-cache"),
+        "XDG_DATA_HOME": str(home / "xdg-data"),
         "CODEX_HOME": str(home / "codex-home"),
         "PATH": str(binary_root) + os.pathsep + os.environ.get("PATH", ""),
         "PYTHONDONTWRITEBYTECODE": "1",
@@ -65,6 +66,34 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
         raise RuntimeError(f"could not prepare damaged installed fixture: {install_result.stderr}")
     (damaged_repository / ".premode" / "pcodex-install.json").unlink()
     damaged_roots = governed_roots_from_product(damaged_repository, home=home, temp_root=temp_root, environ=env)
+    from premode.codex_plugin import apply_integration
+
+    damaged_plugin_repository = control_root / "damaged-plugin"
+    damaged_plugin_repository.mkdir()
+    (damaged_plugin_repository / ".git").mkdir()
+    if apply_integration(damaged_plugin_repository).get("status") != "installed":
+        raise RuntimeError("could not prepare damaged canonical plugin fixture")
+    (damaged_plugin_repository / "plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh").unlink()
+    damaged_plugin_roots = governed_roots_from_product(
+        damaged_plugin_repository, home=home, temp_root=temp_root, environ=env,
+    )
+    uninstall_plugin_repository = control_root / "uninstall-plugin"
+    uninstall_plugin_repository.mkdir()
+    (uninstall_plugin_repository / ".git").mkdir()
+    if apply_integration(uninstall_plugin_repository).get("status") != "installed":
+        raise RuntimeError("could not prepare canonical plugin uninstall fixture")
+    uninstall_plugin_roots = governed_roots_from_product(
+        uninstall_plugin_repository, home=home, temp_root=temp_root, environ=env,
+    )
+    migration_repository = control_root / "legacy-preview"
+    migration_repository.mkdir()
+    (migration_repository / ".git").mkdir()
+    legacy = migration_repository / ".agents/plugins/plugins/premode-router"
+    legacy.mkdir(parents=True)
+    (legacy / "user-owned.txt").write_text("preserve\n", encoding="utf-8")
+    migration_roots = governed_roots_from_product(
+        migration_repository, home=home, temp_root=temp_root, environ=env,
+    )
     commands = {
         "status_advisory": [str(pcodex), "status", "--advisory", "--json", "--repo-root", str(repository)],
         "doctor_advisory": [str(pcodex), "doctor", "--advisory", "--json", "--repo-root", str(repository)],
@@ -72,6 +101,10 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
         "uninstall_preview": [str(pcodex), "uninstall", "--dry-run", "--json", "--repo-root", str(repository)],
         "run_dry_run": [str(pcodex), "run", "Installed exact task", "--dry-run", "--json", "--repo", str(repository)],
         "integrate_codex_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--json", "--repo-root", str(repository)],
+        "integrate_codex_migration_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--migrate", "--json", "--repo-root", str(migration_repository)],
+        "integrate_codex_mcp_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--with-mcp", "--json", "--repo-root", str(repository)],
+        "integrate_codex_repair_preview": [str(pcodex), "integrate", "codex", "--repair", "--dry-run", "--json", "--repo-root", str(damaged_plugin_repository)],
+        "integrate_codex_uninstall_preview": [str(pcodex), "integrate", "codex", "--uninstall", "--dry-run", "--json", "--repo-root", str(uninstall_plugin_repository)],
         "cleanup_preview": [str(pcodex), "cleanup", "--local-state", "--dry-run", "--json", "--repo-root", str(repository)],
         "install_preview": [str(pcodex), "install", "--repo-root", str(repository)],
         "first_run_advisory": [str(pcodex), "first-run", "--advisory", "--json", "--repo-root", str(repository)],
@@ -82,9 +115,14 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
     results: dict[str, object] = {}
     public_receipts: dict[str, object] = {}
     private_receipts: dict[str, object] = {}
+    command_contexts = {
+        "repair_preview": (damaged_repository, damaged_roots),
+        "integrate_codex_migration_preview": (migration_repository, migration_roots),
+        "integrate_codex_repair_preview": (damaged_plugin_repository, damaged_plugin_roots),
+        "integrate_codex_uninstall_preview": (uninstall_plugin_repository, uninstall_plugin_roots),
+    }
     for name, command in commands.items():
-        command_repository = damaged_repository if name == "repair_preview" else repository
-        command_roots = damaged_roots if name == "repair_preview" else roots
+        command_repository, command_roots = command_contexts.get(name, (repository, roots))
         verification = verify_no_write(
             lambda command=command, command_repository=command_repository: _run(command, cwd=command_repository, env=env),
             roots=command_roots,
@@ -94,7 +132,7 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
         value = verification.pop("value")
         returncode = value.get("returncode") if isinstance(value, dict) else None
         results[name] = {
-            "passed": verification["passed"] and returncode == 0,
+            "passed": verification["passed"] and returncode in ({0, 1} if name == "integrate_codex_repair_preview" else {0}),
             "returncode": returncode,
             "before_snapshot_hash": verification["before"]["snapshot_sha256"],
             "after_snapshot_hash": verification["after"]["snapshot_sha256"],

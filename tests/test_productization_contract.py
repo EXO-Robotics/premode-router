@@ -1,12 +1,24 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import zipfile
 
 from scripts.check_public_hygiene import scan
-from scripts.build_release_artifacts import validate_archive_content, validate_names, validate_sdist_names
+from scripts.build_release_artifacts import (
+    build,
+    require_probe_passed,
+    run_json_probe,
+    validate_archive_content,
+    validate_names,
+    validate_required_plugin_resources,
+    validate_sdist_names,
+    validated_python_interpreter,
+    write_tester_bundle,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,6 +63,73 @@ def test_release_allowlist_is_default_deny_for_sdist_source_members() -> None:
     assert validate_names(
         [accidental_wheel], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True
     ) == [f"unexpected_wheel_member:{accidental_wheel}"]
+
+
+def test_release_allowlist_requires_every_canonical_plugin_resource() -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    required = policy["plugin_allowed_members"]
+    wheel_names = [
+        "premode_router-0.3.0b1.data/data/share/premode-router/plugins/pcodex/" + item
+        for item in required
+    ]
+    sdist_names = ["premode_router-0.3.0b1/plugins/pcodex/" + item for item in required]
+    assert validate_required_plugin_resources(wheel_names, policy, archive_kind="wheel") == []
+    assert validate_required_plugin_resources(sdist_names, policy, archive_kind="sdist") == []
+    assert validate_required_plugin_resources(wheel_names[1:], policy, archive_kind="wheel") == [
+        f"missing_plugin_resource:{required[0]}"
+    ]
+
+
+def test_builder_requires_an_absolute_validated_python_interpreter() -> None:
+    try:
+        validated_python_interpreter("python3")
+    except RuntimeError as exc:
+        assert "absolute" in str(exc)
+    else:
+        raise AssertionError("relative interpreter unexpectedly accepted")
+
+
+def test_builder_refuses_to_skip_sdist_qualification(tmp_path: Path) -> None:
+    try:
+        build("HEAD", tmp_path / "out", python=str(Path(sys.executable).resolve()), with_sdist=False)
+    except RuntimeError as exc:
+        assert "wheel and sdist" in str(exc)
+    else:
+        raise AssertionError("builder unexpectedly permitted wheel-only qualification")
+
+
+def test_failed_json_probe_preserves_structured_receipts(tmp_path: Path) -> None:
+    probe = tmp_path / "probe.py"
+    probe.write_text('import json; print(json.dumps({"schema_version":"fixture.v1","passed":False})); raise SystemExit(1)\n')
+    output = tmp_path / "evidence"
+    payload, returncode = run_json_probe(
+        str(Path(sys.executable).resolve()),
+        str(probe), output=output, label="expected-failure", cwd=tmp_path, env=dict(os.environ),
+    )
+    assert returncode == 1
+    assert payload["passed"] is False
+    assert json.loads((output / "private-receipts/probe-execution/expected-failure.json").read_text())["payload"] == payload
+    assert json.loads((output / "receipts/probe-execution/expected-failure.json").read_text())["payload_passed"] is False
+    try:
+        require_probe_passed("fixture", payload, returncode)
+    except RuntimeError as exc:
+        assert "structured evidence" in str(exc)
+    else:
+        raise AssertionError("failed probe unexpectedly accepted")
+
+
+def test_tester_bundle_preserves_resolver_executable_mode(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "fixture.whl").write_bytes(b"wheel")
+    output = tmp_path / "out"
+    output.mkdir()
+    bundle = write_tester_bundle(ROOT, output, artifacts)
+    with zipfile.ZipFile(bundle) as archive:
+        resolver = archive.getinfo("plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh")
+        skill = archive.getinfo("plugins/pcodex/skills/pcodex/SKILL.md")
+    assert resolver.external_attr >> 16 == 0o755
+    assert skill.external_attr >> 16 == 0o644
 
 
 def test_source_distribution_prunes_test_and_release_script_trees() -> None:

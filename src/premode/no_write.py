@@ -38,6 +38,7 @@ REQUIRED_GOVERNED_ROOTS = {
     "codex_mcp": "external_config",
     "xdg_config": "user_state",
     "xdg_cache": "cache",
+    "xdg_data": "user_state",
     "designated_temp": "temporary_state",
 }
 
@@ -348,6 +349,7 @@ def governed_roots_from_product(
         GovernedRoot("codex_mcp", codex_home / "mcp.json", "external_config"),
         GovernedRoot("xdg_config", Path(env.get("XDG_CONFIG_HOME", home / ".config")) / "pcodex", "user_state"),
         GovernedRoot("xdg_cache", Path(env.get("XDG_CACHE_HOME", home / ".cache")) / "pcodex", "cache"),
+        GovernedRoot("xdg_data", Path(env.get("XDG_DATA_HOME", home / ".local/share")) / "pcodex", "user_state"),
     ]
     roots.extend(candidates)
     for index, variable in enumerate(("PCODEX_CONFIG", "PCODEX_CONFIG_PATH"), start=1):
