@@ -127,6 +127,13 @@ def test_missing_codex_installs_repo_state_but_defers_native_registration(
     assert (repo / STATE_RELATIVE).exists()
     assert not (repo / NATIVE_STATE_RELATIVE).exists()
 
+    installed_snapshot = _snapshot(repo)
+    repeated = apply_integration(repo, native=True)
+    assert repeated["status"] == "installed_needs_codex"
+    assert repeated["writes_performed"] is False
+    assert repeated["native_registration"]["status"] == "deferred"
+    assert _snapshot(repo) == installed_snapshot
+
 
 def test_unsupported_codex_version_blocks_before_any_write(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = _make_repo(tmp_path)

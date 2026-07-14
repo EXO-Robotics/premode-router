@@ -1275,13 +1275,20 @@ def apply_integration(
     migratable_now = migration and any(
         item.get("classification") == "legacy_migratable" for item in preview.get("legacy_sources_found", [])
     )
+    installed_but_codex_missing = (
+        native
+        and current_status.get("reason") == "codex_missing"
+        and current_status.get("conflicts") == []
+        and current_status.get("enabled") is True
+    )
     if prior is not None and (
         current_status.get("readiness") == "READY"
         or current_status.get("reason") == "legacy_preserved_manual_action"
+        or installed_but_codex_missing
     ) and not migratable_now:
         result = {
             "schema_version": "pcodex.codex-plugin-result.v1",
-            "status": "unchanged",
+            "status": "installed_needs_codex" if installed_but_codex_missing else "unchanged",
             "writes_performed": False,
             "ownership_id": prior["ownership_id"],
             "receipt": STATE_RELATIVE.as_posix(),
@@ -1289,6 +1296,13 @@ def apply_integration(
             "legacy_preserved": prior.get("migration", {}).get("legacy_preserved", []),
             "next_recommended_action": "pcodex integrate codex --status",
         }
+        if installed_but_codex_missing:
+            result["reason"] = "codex_missing"
+            result["native_registration"] = {
+                "status": "deferred",
+                "reason": "codex_missing",
+                "writes_performed": False,
+            }
         return result
     ownership_id = prior["ownership_id"] if prior else str(uuid4())
     files = canonical_files(root, with_mcp=with_mcp)

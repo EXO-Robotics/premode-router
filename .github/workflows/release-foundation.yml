@@ -62,6 +62,7 @@ jobs:
       - name: Run focused product, lifecycle, no-write, plugin, and packaging suites
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONPATH: ${{ github.workspace }}/src
         run: >-
           python -m pytest -q
           tests/test_product_contract.py
