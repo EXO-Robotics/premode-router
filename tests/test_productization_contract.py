@@ -450,11 +450,29 @@ def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> N
                 "schemas_validated": True,
                 "repair_public": {"operation_id": operation_id},
             },
+            "full_cycle": {
+                "install": "installed",
+                "status_installed": {
+                    "schema_version": "pcodex.lifecycle-status.v1",
+                    "state": "healthy_installation",
+                    "readiness": "READY",
+                    "recommended_action": "pcodex status --advisory",
+                    "exit_code": 0,
+                    "repair_plan": {
+                        "ownership_id": operation_id,
+                        "authority_receipt_hash": "a" * 64,
+                    },
+                },
+            },
         },
     )
 
     assert summary["receipt_evidence"]["public_receipt_types"] == ["repair_public"]
-    assert operation_id not in (tmp_path / "receipts/installed-lifecycle-wheel.json").read_text()
+    public_text = (tmp_path / "receipts/installed-lifecycle-wheel.json").read_text()
+    assert operation_id not in public_text
+    assert "ownership_id" not in public_text
+    assert "authority_receipt_hash" not in public_text
+    assert summary["full_cycle"]["status_installed"]["readiness"] == "READY"
     assert operation_id in (tmp_path / "private-receipts/lifecycle/wheel.json").read_text()
 
 

@@ -563,10 +563,46 @@ def persist_lifecycle_probe(output: Path, label: str, payload: dict[str, object]
     public_receipt_types = sorted(
         key for key in receipt_payload if key.endswith("_public")
     )
+    full_cycle_payload = dict(payload.get("full_cycle") or {})
+    status_fields = (
+        "schema_version",
+        "state",
+        "readiness",
+        "recommended_action",
+        "exit_code",
+    )
+    full_cycle: dict[str, object] = {}
+    for key in (
+        "install",
+        "repair_preview",
+        "repair_preview_no_write",
+        "repair_apply",
+        "uninstall_preview",
+        "uninstall_preview_no_write",
+        "uninstall_apply",
+        "reinstall",
+        "unrelated_preserved",
+    ):
+        value = full_cycle_payload.get(key)
+        if isinstance(value, (str, bool, int, float)) or value is None:
+            full_cycle[key] = value
+    for key in (
+        "status_installed",
+        "status_repaired",
+        "status_uninstalled",
+        "status_reinstalled",
+    ):
+        value = full_cycle_payload.get(key)
+        if isinstance(value, dict):
+            full_cycle[key] = {
+                field: value.get(field)
+                for field in status_fields
+                if field in value
+            }
     summary = {
         "schema_version": payload.get("schema_version"),
         "passed": payload.get("passed"),
-        "full_cycle": payload.get("full_cycle"),
+        "full_cycle": full_cycle,
         "modified_cycle": payload.get("modified_cycle"),
         "receipt_evidence": {
             "schemas_validated": receipt_payload.get("schemas_validated") is True,
