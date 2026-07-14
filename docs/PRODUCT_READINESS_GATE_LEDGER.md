@@ -3,7 +3,7 @@
 Status date: 2026-07-14
 Campaign branch: `product/codex-beta-v1`
 Accepted campaign baseline: `88b459ca79ebd04149bb0719405656df2c904292`
-Current integrated milestone implementation: `0c268054daf3afaf292e9517f84b06e6312d5620`
+Current integrated milestone implementation: `f37a7f18cbceffaaeb53a409b8983a9df6cbda87`
 
 The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate for an earlier failed gate.
 
@@ -21,12 +21,12 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 | Gate | Baseline/evidence | Implementation | Qualification | Current blocker | Debt | Decision |
 | --- | --- | --- | --- | --- | --- | --- |
 | G0 — product contract and scope | `premode.product.json`, `docs/PRODUCT_CONTRACT.md`, `docs/ROADMAP_TO_90.md` | complete | contract/schema tests pass | none | none | passed |
-| G1 — product and CLI consolidation | public parser tests, strict doctor, lifecycle tests, first-run fixtures | complete | automated journeys pass | five-person external study not executed | median activation evidence | substantially_complete |
+| G1 — product and CLI consolidation | public parser tests, strict doctor, lifecycle tests, first-run fixtures | complete | automated journeys and the tamper-evident five-session study kit pass | five-person external study not executed | median activation evidence | substantially_complete |
 | G2-core | canonical packet, `ProductionRankingProviderV1`, frozen incumbent handoff, managed state, repair/uninstall | complete | full repository suite, clean artifact lifecycle, and nine-case production behavior freeze pass | none | later algorithm promotion must use the immutable handoff contract | passed |
 | G2-security | no-write receipts, containment, ownership, scanners | complete | macOS/Linux and Python 3.11-3.13 CI and Stage 2 clean-artifact proof pass | none | broader adversarial review continues | passed |
 | G3 — production Codex integration | canonical plugin lifecycle, bounded optional MCP, and Codex 0.143 discovery | complete | macOS/Linux wheel/sdist lifecycle, live discovery, workspace binding, protocol, containment, cancellation, shutdown, and sensitive-error checks pass | none | broader Codex versions are unsupported | passed |
-| G4 — production OpenClaw adapter | canonical lifecycle, bounded MCP tool, OpenClaw `2026.4.14`, and 10-fixture/20-task policy-conformance set at `0c268054` | complete | adapter lifecycle, installed-artifact, containment, protocol, and policy-conformance proof pass; real agent-outcome acceptance remains | frozen production algorithm handoff and real OpenClaw agent outcomes for patch quality, validation, exploration, and complete-task cost | state-changing operations require writer quiescence; broader OpenClaw versions unsupported | partial |
-| G5 — distribution and release engineering | workflows `29301111990`, `29302610473`, and `29311089717`; reproducible wheel/sdist, SBOM, provenance, rollback | substantially complete | macOS/Linux × Python 3.11-3.13 and frozen-algorithm artifact authorities pass; upgrade/rollback implementation is under current clean-artifact qualification | final RC evidence, canonical artifact fan-out, and remote qualification of the current upgrade milestone remain | Windows not supported | substantially_complete |
+| G4 — production OpenClaw adapter | canonical lifecycle, bounded MCP tool, OpenClaw `2026.4.14`, and 10-fixture/20-task policy-conformance set at `0c268054` | complete | adapter lifecycle, installed-artifact, containment, protocol, and policy-conformance proof pass; real agent-outcome acceptance remains | real OpenClaw agent outcomes for patch quality, validation, exploration, and complete-task cost | state-changing operations require writer quiescence; broader OpenClaw versions unsupported | partial |
+| G5 — distribution and release engineering | successful workflows `29301111990`, `29302610473`, and `29311089717`; diagnostic workflow `29342622068`; reproducible wheel/sdist, SBOM, provenance, rollback, and first-run evidence kit | complete | local exact-commit qualification and all six remote test/artifact cells pass; downstream fan-in repair awaits a fresh exact-SHA run | the topology-corrective workflow must reach terminal success before this row can be promoted | Windows not supported | substantially_complete |
 | G6 — held-out product proof | protocol foundations only | not started | not started | frozen 10-repository/100-task corpus and case studies absent | external/model execution | not_started |
 
 ## Milestone receipts
@@ -70,6 +70,26 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Remote evidence: workflow `29305106614`; six test jobs, six artifact jobs, reproducibility, release evidence, static quality, and history scanning passed. Dependency review was correctly skipped for manual dispatch.
 - External evidence: `docs/FIRST_RUN_STUDY_PROTOCOL.md` freezes the five-person study and reconciled activation thresholds. No tester result is inferred from automation.
 - Current blocker: five eligible human tester receipts have not been collected.
+
+### Stage 3 corrective closure — tamper-evident first-run evidence
+
+- Classification: substantially complete; the implementation and qualification harness are complete, while real human results remain external evidence debt.
+- Starting SHA: `93c81a87d71a8cd882e377d104cdafa9533e3aef`.
+- Evidence-hardening SHA: `ac4a26b4edb70f0db4906c7a24a687734c540ed6`.
+- Cross-version corrective SHA: `f37a7f18cbceffaaeb53a409b8983a9df6cbda87`.
+- Study authority: five preassigned fixture sessions, HMAC-signed receipts and attestations, a hash-chained attempt ledger, whole-transition locking, atomic finalization, exact fixture restoration, copied-tool and runtime hashes, and a standalone copied-recorder probe with bytecode writes disabled.
+- Automated journey: the copied coordinator CLI executes initialization, every `run-next`, aggregate review, independent review, and finalization for all five fixtures in fresh subprocesses. A failed package install is recorded as a signed fail-closed attempt and cannot be retried as if it had not occurred.
+- Tests: 37 focused first-run tests passed. The complete local repository suite collected 1,625 tests: 1,619 passed and 6 intentional platform/runtime skips; there were no failures or deselections.
+- Static and hygiene qualification: Ruff check/format, scoped mypy, Python compilation, JSON/schema and product-manifest validation, canonical documentation validation, public hygiene, Bandit, Detect Secrets, `pip-audit`, and diff checks passed. Local Semgrep could not establish its CA trust anchors; the remote static-quality job is the authoritative Semgrep surface. Gitleaks and TruffleHog are authoritative in the remote full-history scan.
+- Clean local artifacts: wheel SHA-256 `b69a1075b02ce999081a0ffc91507d78a86791cf4b59d5269883edd3d7278448`; sdist SHA-256 `be67ca6ad9645824438bab3d89a417f233643dcf792e354b2d6b2d53bc4055a1`; SBOM SHA-256 `53c600de3863d751b9400e11f33880ccb9e1e55745af3d341e80cb40223e2c52`; provenance SHA-256 `41a95c41239c0ac65fc9e50fc99e0d85bde22e5beb54f79f4ecd5f5fb55b5162`; study-kit authority SHA-256 `c54af9de8ae6b94ff7404305ce699e106f75479a3deec99f2ff1520752e860ee`.
+- Installed-artifact qualification: wheel/sdist parity, no-write, lifecycle, Codex `0.143.0`, OpenClaw `2026.4.14`, upgrade/rollback, package allowlist, SBOM, provenance, and package removal passed outside the checkout.
+- Diagnostic remote evidence: workflow `29341698377` correctly failed because a synthetic study receipt hardcoded Python `3.11.15`; the validator detected the mismatch on other matrix runtimes. The corrective commit derives the value from the exact kit-bound interpreter using the validator's controlled invocation.
+- Diagnostic remote evidence: workflow `29342622068` passed all six test cells and all six wheel/sdist qualification cells, then correctly blocked promotion when the reproducibility job found zero receipts. Combining the qualification root and first-run kit in one uploaded artifact added an extra directory level that violated the established fan-in topology; release-candidate, tool-install, and final evidence jobs were skipped.
+- Fan-in repair: qualification evidence and first-run study kits now upload as separate, nonoverlapping artifact names. The `pcodex-*` download pattern therefore receives the original `<matrix-cell>/receipts` topology while every study kit remains retained independently for 14 days. A regression test freezes this boundary.
+- Fresh remote evidence: the topology-corrective commit requires a new exact-SHA workflow that reaches terminal success before G5 promotion.
+- Independent review: three read-only lanes ended at P0=0/P1=0 after fixes for transition serialization, true copied-CLI all-five execution, signed failed-install attempts, and cross-version runtime binding.
+- Supported claim: coordinators can conduct and record the frozen five-person first-run study from the copied kit without a source checkout; final aggregate verification is independently repeated from the exact clean candidate checkout.
+- Unsupported claim: that five humans have completed the study or that its activation thresholds have passed.
 
 ### G3 — Canonical Codex Plugin and Optional MCP Closure
 
@@ -115,6 +135,6 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Installed-artifact evidence: wheel/sdist package parity, no-write, lifecycle, ready MCP execution, exact registered command resolution, repair/disable/uninstall/reinstall, package removal, SBOM, provenance, and release metadata passed from the clean implementation commit.
 - Artifacts: wheel SHA-256 `15d123ea6f4525d6e56cb817c70c09d5308604c3edfa5653fec4c248f5e44e50`; sdist SHA-256 `4ffd91a08a9155c96778769789b29404d85be5a84131e9c948bdfd9be2d45255`; tester bundle SHA-256 `fa73d2b9c76e3106b83cdedc802f2ab593bcb1a22cf612d798df908146b9cc98`; SBOM SHA-256 `67ce6dec8b3e7d180e8c69ab2c02389b08710168a9ac5206ab1429308a0bf462`; provenance SHA-256 `637c49c5945e39759507cd2eda7621dbb10e0cb206361b3d5b25177b6e33c633`.
 - Independent review: architecture, migration/security, and artifact/release lanes ended at P0=0/P1=0/P2=0 after corrective cycles.
-- Remote evidence: workflow `29320312258` targets the exact implementation commit; its terminal result must be recorded before the G4 receipt is promoted beyond local qualification.
+- Remote evidence: workflow `29320312258` passed at the exact implementation commit across all six declared OS/Python cells and downstream release jobs.
 - Supported claim: pCodex has one installed-artifact-independent, reversible, contained production OpenClaw adapter for the declared runtime matrix.
 - Unsupported claim: G4 agent-outcome qualification, a promoted algorithm, reduced exploration, lower complete-task cost, or broader OpenClaw-version support.

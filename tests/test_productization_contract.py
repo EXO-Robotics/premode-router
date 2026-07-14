@@ -107,6 +107,32 @@ def test_ci_secret_hash_exclusion_is_value_and_field_bounded() -> None:
     )
 
 
+def test_ci_keeps_matrix_qualification_and_first_run_kit_artifacts_separate() -> None:
+    workflow = (ROOT / ".github/workflows/release-foundation.yml").read_text(
+        encoding="utf-8"
+    )
+
+    qualification_upload = workflow.split(
+        "- name: Upload qualification evidence without publishing", 1
+    )[1].split("- name: Upload first-run study kit without publishing", 1)[0]
+    study_kit_upload = workflow.split(
+        "- name: Upload first-run study kit without publishing", 1
+    )[1].split("\n  static-quality:", 1)[0]
+
+    assert (
+        "name: pcodex-${{ matrix.os }}-py${{ matrix.python }}"
+        in qualification_upload
+    )
+    assert "path: ${{ runner.temp }}/pcodex-qualification" in qualification_upload
+    assert "first-run-study-kit" not in qualification_upload
+    assert (
+        "name: first-run-study-kit-${{ matrix.os }}-py${{ matrix.python }}"
+        in study_kit_upload
+    )
+    assert "path: ${{ runner.temp }}/first-run-study-kit" in study_kit_upload
+    assert "name: pcodex-" not in study_kit_upload
+
+
 def test_evaluation_holdout_is_unpopulated_and_answer_free() -> None:
     holdout = json.loads(
         (ROOT / "evaluation/corpora/final-holdout.stub.json").read_text()

@@ -194,9 +194,15 @@ jobs:
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: pcodex-${{ matrix.os }}-py${{ matrix.python }}
-          path: |
-            ${{ runner.temp }}/pcodex-qualification
-            ${{ runner.temp }}/first-run-study-kit
+          path: ${{ runner.temp }}/pcodex-qualification
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload first-run study kit without publishing
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: first-run-study-kit-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/first-run-study-kit
           if-no-files-found: error
           retention-days: 14
 
