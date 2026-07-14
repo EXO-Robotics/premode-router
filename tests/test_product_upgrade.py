@@ -134,7 +134,9 @@ def test_actual_predecessor_user_config_is_preserved_as_noop(tmp_path: Path) -> 
     assert _snapshot(root) == before
 
 
-def test_supported_predecessor_upgrades_and_is_idempotent(tmp_path: Path) -> None:
+def test_supported_predecessor_upgrades_and_is_idempotent(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = _repo(tmp_path)
     _install_previous(root)
 
@@ -149,12 +151,23 @@ def test_supported_predecessor_upgrades_and_is_idempotent(tmp_path: Path) -> Non
     assert result["operation"]["completed_actions"] == ["upgrade_managed_install_state"]
     receipt = read_install_state_receipt(root / DEFAULT_INSTALL_STATE_RELATIVE_PATH)
     assert receipt["payload"]["product_version"] == __version__
+    upgraded_item = next(
+        item
+        for item in receipt["payload"]["items"]
+        if item["owned_path"] == ".premode/pcodex-install.json"
+    )
+    assert upgraded_item["creation_or_modification"] == "created"
+    assert upgraded_item["cleanup_policy"] == "remove_if_owned_and_unmodified"
     marker = json.loads((root / ".premode/pcodex-install.json").read_text())
     assert marker["product_version"] == __version__
 
     second = apply_product_upgrade(root)
     assert second["status"] == "already_current"
     assert second["writes_performed"] is False
+    assert pcodex_main(["uninstall", "--yes", "--json", "--repo-root", str(root)]) == 0
+    uninstall = json.loads(capsys.readouterr().out)
+    assert uninstall["status"] == "applied"
+    assert uninstall["removed"] == [".premode/pcodex-install.json"]
 
 
 def test_upgrade_plan_and_operation_validate_against_schemas(tmp_path: Path) -> None:

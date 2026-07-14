@@ -701,7 +701,13 @@ def install_managed_file(
         "current_hash": current_hash,
         "creation_or_modification": "created" if created or safe_update else "preexisting_identical",
         "sensitivity": sensitivity,
-        "cleanup_policy": "remove_if_owned_and_unmodified" if created else "preserve_preexisting",
+        "cleanup_policy": (
+            prior_item["cleanup_policy"]
+            if safe_update and prior_item is not None
+            else "remove_if_owned_and_unmodified"
+            if created
+            else "preserve_preexisting"
+        ),
         "repair_policy": "replace_only_if_owned_and_unmodified",
         "conflict_state": None,
         "user_modified": False,

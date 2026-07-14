@@ -1801,7 +1801,17 @@ def run_upgrade_rollback_probe(
         )
     )
     if (
-        rollback_uninstall.get("status") != "uninstalled"
+        rollback_uninstall.get("status") != "applied"
+        or rollback_uninstall.get("applied") is not True
+        or rollback_uninstall.get("writes_performed") is not True
+        or rollback_uninstall.get("removed") != [".premode/pcodex-install.json"]
+        or rollback_uninstall.get("requires_manual_action") != []
+        or rollback_uninstall.get("conflict") != []
+        or rollback_uninstall.get("unknown_owner") != []
+        or rollback_uninstall.get("unsupported_registration") != []
+        or dict(rollback_uninstall.get("operation") or {}).get("result") != "applied"
+        or dict(rollback_uninstall.get("operation") or {}).get("completed_actions")
+        != [".premode/pcodex-install.json"]
         or rollback_reinstall.get("status") not in {"installed", "already_installed"}
         or dict(rollback_reinstall_status.get("lifecycle") or {}).get("readiness")
         != "READY"
