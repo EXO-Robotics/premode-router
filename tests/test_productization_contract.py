@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tarfile
+from types import SimpleNamespace
 import zipfile
 import io
 
@@ -15,12 +16,17 @@ import pytest
 
 from scripts.check_public_hygiene import scan
 from scripts.compare_release_artifacts import compare
+from scripts.installed_codex_plugin_probe import (
+    _McpLineReader,
+    _classify_mcp_process_observations,
+)
 from scripts.build_release_artifacts import (
     build,
     normalize_sdist_archive,
     require_probe_passed,
     run_json_probe,
     persist_lifecycle_probe,
+    persist_codex_plugin_probe,
     validate_archive_content,
     validate_archive_structure,
     validate_names,
@@ -557,6 +563,106 @@ def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> N
     assert "authority_receipt_hash" not in public_text
     assert summary["full_cycle"]["status_installed"]["readiness"] == "READY"
     assert operation_id in (tmp_path / "private-receipts/lifecycle/wheel.json").read_text()
+
+
+def test_codex_probe_keeps_private_mcp_evidence_out_of_public_summary(tmp_path: Path) -> None:
+    private_marker = "/private/secret-workspace"
+    payload = {
+        "schema_version": "pcodex.installed-codex-plugin-probe.v1",
+        "passed": True,
+        "mcp": {
+            "registered": True,
+            "protocol_conformance": {
+                "passed": True,
+                "checks": {"filesystem_no_write": True},
+                "filesystem_changes": 0,
+                "snapshot_complete": True,
+                "forbidden_process_launches": 0,
+                "workspace": "opaque:installed-mcp-workspace",
+                "private_evidence": {
+                    "exact_changes": [{"path": private_marker}],
+                    "process": {"command": private_marker},
+                },
+            },
+        },
+    }
+    summary = persist_codex_plugin_probe(tmp_path, "wheel", payload)
+    public_text = (tmp_path / "receipts/installed-codex-plugin-wheel.json").read_text()
+    private_text = (tmp_path / "private-receipts/codex-plugin/wheel.json").read_text()
+    assert private_marker not in public_text
+    assert private_marker in private_text
+    assert "private_evidence" not in json.dumps(summary)
+
+
+def test_mcp_process_evidence_allows_only_exact_workers_and_readers() -> None:
+    root = {"pid": 1, "ppid": 0, "command": "probe", "executable_path": "/bin/probe"}
+    server = {
+        "pid": 2,
+        "ppid": 1,
+        "command": "/venv/bin/python /venv/bin/pcodex mcp-server",
+        "executable_path": "/venv/bin/python",
+    }
+    spawn = {
+        "pid": 3,
+        "ppid": 2,
+        "command": (
+            "/venv/bin/python -B -c from multiprocessing.spawn import spawn_main; "
+            "spawn_main(tracker_fd=6, pipe_handle=8) --multiprocessing-fork"
+        ),
+        "executable_path": "/venv/bin/python",
+    }
+    records = [
+        server,
+        spawn,
+        {
+            "pid": 7,
+            "ppid": 2,
+            "command": (
+                "/venv/bin/python -B -c from multiprocessing.resource_tracker import "
+                "main;main(5)"
+            ),
+            "executable_path": "/venv/bin/python",
+        },
+        {"pid": 4, "ppid": 2, "command": "/usr/bin/curl example.invalid", "executable_path": "/usr/bin/curl"},
+        {"pid": 5, "ppid": 3, "command": "/usr/bin/git status --porcelain", "executable_path": "/usr/bin/git"},
+        {"pid": 6, "ppid": 3, "command": "/usr/bin/git clean -fd", "executable_path": "/usr/bin/git"},
+        {"pid": 8, "ppid": 3, "command": "(git)", "executable_path": "(git)"},
+        {"pid": 9, "ppid": 3, "command": "/tmp/evil/git status --short", "executable_path": "/tmp/evil/git"},
+        {"pid": 10, "ppid": 3, "command": "/tmp/evil/rg --files", "executable_path": "/tmp/evil/rg"},
+        {"pid": 11, "ppid": 3, "command": "/bin/sh /guard/git status --short", "executable_path": "/usr/bin/dash"},
+    ]
+    monitor = SimpleNamespace(
+        root_pid=1,
+        before={1: root},
+        observed={(item["pid"], str(item["pid"])): item for item in records},
+        after={},
+        observation_available=True,
+    )
+    evidence = _classify_mcp_process_observations(
+        monitor,
+        server_pid=2,
+        git_guard=Path("/guard/git"),
+        real_git=Path("/usr/bin/git"),
+        shell_authorities={
+            Path("/bin/sh"): Path("/usr/bin/dash"),
+            Path("/bin/bash"): Path("/usr/bin/bash"),
+        },
+    )
+    assert evidence["server_observed"] is True
+    assert evidence["worker_observed"] is True
+    assert evidence["forbidden_count"] == 5
+
+
+def test_mcp_line_reader_preserves_lines_already_buffered_in_user_space() -> None:
+    process = SimpleNamespace(
+        stdout=io.StringIO('{"id": 1}\n{"id": 2}\n'),
+    )
+
+    reader = _McpLineReader(process)
+
+    assert reader.read(timeout=1)["id"] == 1
+    assert reader.read(timeout=1)["id"] == 2
+    reader.close()
 
 
 def test_release_artifact_reproducibility_requires_six_identical_matrix_receipts(

@@ -739,6 +739,25 @@ class ProcessMonitor:
         self.observed: dict[tuple[int, str], dict[str, Any]] = {}
         self.root_pid = os.getpid()
 
+    @staticmethod
+    def _record_quality(record: dict[str, Any]) -> tuple[int, int, int]:
+        """Prefer live process details over the abbreviated zombie form from ps."""
+        command = str(record.get("command") or "")
+        executable = str(record.get("executable_path") or "")
+        command_is_live = bool(command) and not (
+            command.startswith("(") and command.endswith(")")
+        )
+        executable_is_live = bool(executable) and not (
+            executable.startswith("(") and executable.endswith(")")
+        )
+        return (int(command_is_live), int(executable_is_live), len(command))
+
+    def _record_observation(self, record: dict[str, Any]) -> None:
+        key = (int(record["pid"]), str(record["start_time"]))
+        existing = self.observed.get(key)
+        if existing is None or self._record_quality(record) > self._record_quality(existing):
+            self.observed[key] = record
+
     def __enter__(self) -> "ProcessMonitor":
         self.before = _read_process_table()
         self._thread = threading.Thread(target=self._poll, name="pcodex-no-write-process-monitor", daemon=True)
@@ -749,7 +768,7 @@ class ProcessMonitor:
         while not self._stop.wait(self.interval_seconds):
             for record in _read_process_table().values():
                 if record["pid"] not in self.before:
-                    self.observed[(record["pid"], str(record["start_time"]))] = record
+                    self._record_observation(record)
 
     def __exit__(self, *_: object) -> None:
         self._stop.set()
@@ -758,7 +777,7 @@ class ProcessMonitor:
         self.after = _read_process_table()
         for record in self.after.values():
             if record["pid"] not in self.before:
-                self.observed[(record["pid"], str(record["start_time"]))] = record
+                self._record_observation(record)
 
     @property
     def observation_available(self) -> bool:

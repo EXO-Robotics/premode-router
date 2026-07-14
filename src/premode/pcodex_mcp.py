@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,13 +12,22 @@ from .pcodex_subagent import CompileRunner, transform_subagent_prompt
 MODEL_FACING_SECTIONS = ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"]
 
 TOOL_NAME = "pcodex_transform_subagent_prompt"
+MAX_TASK_CHARACTERS = 32_768
+MAX_TASK_BYTES = 65_536
+MAX_PARENT_PROMPT_CHARACTERS = 32_768
+MAX_PARENT_PROMPT_BYTES = 65_536
+MAX_SPAWN_METADATA_BYTES = 16_384
 
 TOOL_INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
-        "subagent_prompt": {"type": "string"},
-        "parent_prompt": {"type": ["string", "null"]},
-        "spawn_metadata": {"type": ["object", "null"], "additionalProperties": True},
+        "subagent_prompt": {"type": "string", "minLength": 1, "maxLength": MAX_TASK_CHARACTERS},
+        "parent_prompt": {"type": ["string", "null"], "maxLength": MAX_PARENT_PROMPT_CHARACTERS},
+        "spawn_metadata": {
+            "type": ["object", "null"],
+            "additionalProperties": True,
+            "maxProperties": 128,
+        },
         "dry_run": {"type": ["boolean", "null"]},
     },
     "required": ["subagent_prompt"],

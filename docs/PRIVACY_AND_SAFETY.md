@@ -25,7 +25,7 @@ State-changing operations require explicit authority. Repair and uninstall act o
 
 ## Codex and MCP
 
-The canonical Codex plugin is repository-bound and MCP is disabled by default. `--with-mcp` is explicit opt-in for registration lifecycle only. Complete MCP protocol and containment readiness is not claimed.
+The canonical Codex plugin is repository-bound and MCP is disabled by default. `--with-mcp` is explicit opt-in. The registered stdio server binds to the exact resolved workspace from receipt-owned configuration, rejects caller-selected roots and oversized or malformed inputs, performs no-write selection, and returns bounded errors without absolute roots or environment values. This qualification does not claim automatic Codex invocation or hosted-agent interception.
 
 Normal pCodex operations do not claim that network activity is globally absent; no-write evidence reports network observation as measured or not measured. Real Codex runs follow the installed Codex runtime's own network and data policies.
 

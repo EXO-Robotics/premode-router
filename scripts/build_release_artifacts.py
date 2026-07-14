@@ -655,6 +655,27 @@ def persist_lifecycle_probe(output: Path, label: str, payload: dict[str, object]
 
 def persist_codex_plugin_probe(output: Path, label: str, payload: dict[str, object]) -> dict[str, object]:
     write_json(output / "private-receipts" / "codex-plugin" / f"{label}.json", payload)
+    raw_mcp = payload.get("mcp")
+    public_mcp: dict[str, object] | None = None
+    if isinstance(raw_mcp, dict):
+        public_mcp = {
+            key: value
+            for key, value in raw_mcp.items()
+            if key != "protocol_conformance"
+        }
+        protocol = raw_mcp.get("protocol_conformance")
+        if isinstance(protocol, dict):
+            public_mcp["protocol_conformance"] = {
+                key: protocol.get(key)
+                for key in (
+                    "passed",
+                    "checks",
+                    "filesystem_changes",
+                    "snapshot_complete",
+                    "forbidden_process_launches",
+                    "workspace",
+                )
+            }
     summary = {
         "schema_version": payload.get("schema_version"),
         "passed": payload.get("passed"),
@@ -666,7 +687,7 @@ def persist_codex_plugin_probe(output: Path, label: str, payload: dict[str, obje
         "schemas_validated": payload.get("schemas_validated"),
         "lifecycle": payload.get("lifecycle"),
         "discovery": payload.get("discovery"),
-        "mcp": payload.get("mcp"),
+        "mcp": public_mcp,
         "migration": payload.get("migration"),
         "preservation": payload.get("preservation"),
         "performance": payload.get("performance"),

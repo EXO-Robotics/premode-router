@@ -46,6 +46,29 @@ def test_process_monitor_reports_launch_during_window(monkeypatch: pytest.Monkey
     assert monitor.forbidden and monitor.forbidden[0]["classification"] == "codex"
 
 
+def test_process_monitor_preserves_live_command_when_process_becomes_zombie() -> None:
+    monitor = ProcessMonitor()
+    live = {
+        "pid": 22,
+        "ppid": 1,
+        "start_time": "b",
+        "command": "/usr/bin/git status --porcelain",
+        "executable_path": "/usr/bin/git",
+    }
+    zombie = {
+        "pid": 22,
+        "ppid": 1,
+        "start_time": "b",
+        "command": "(git)",
+        "executable_path": "(git)",
+    }
+
+    monitor._record_observation(live)
+    monitor._record_observation(zombie)
+
+    assert monitor.observed[(22, "b")] == live
+
+
 def test_codex_dry_run_forces_all_write_and_capability_probes_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

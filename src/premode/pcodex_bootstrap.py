@@ -1369,7 +1369,19 @@ def register_mcp_for_setup(
         config_scope = "isolated"
         warning = None
     pcodex_command = _command_path("pcodex") or "pcodex"
-    add_result = _run_codex_mcp_command(["add", "pcodex", "--", pcodex_command, "mcp-server"], codex_home=codex_home)
+    workspace = str(repo_root.resolve())
+    add_result = _run_codex_mcp_command(
+        [
+            "add",
+            "pcodex",
+            "--env",
+            f"PCODEX_WORKSPACE={workspace}",
+            "--",
+            pcodex_command,
+            "mcp-server",
+        ],
+        codex_home=codex_home,
+    )
     list_result = _run_codex_mcp_command(["list"], codex_home=codex_home)
     registered = add_result["returncode"] == 0
     status_value = "registered" if registered else "failed"
@@ -2734,7 +2746,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "mcp-server":
         from . import pcodex_mcp_server
 
-        return pcodex_mcp_server.serve()
+        try:
+            workspace = pcodex_mcp_server.workspace_from_environment(os.environ)
+        except pcodex_mcp_server.WorkspaceBindingError:
+            return 2
+        return pcodex_mcp_server.serve(workspace=workspace)
     if args.command == "integrate":
         from .codex_plugin import (
             apply_integration,

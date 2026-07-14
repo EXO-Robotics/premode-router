@@ -8,10 +8,11 @@ The following are not current release claims:
 - automatic hosted-agent interception;
 - universal token savings or quality improvement;
 - production OpenClaw integration;
-- complete optional MCP protocol conformance;
 - Windows support;
 - arbitrary power-loss recovery;
 - a completed five-tester first-run study;
 - a frozen 10-repository, 100-task held-out release proof.
 
 Optional MCP remains disabled by default. The canonical Codex plugin does not require MCP for its supported lifecycle.
+The registered local MCP server is workspace-bound and protocol-qualified, but
+automatic Codex tool selection or subagent interception is not claimed.

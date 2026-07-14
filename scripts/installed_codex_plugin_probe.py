@@ -8,9 +8,13 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from queue import Empty, Queue
+import re
+import shlex
 import shutil
 import subprocess
 import sys
+from threading import Thread
 import time
 import tomllib
 from typing import Any
@@ -110,6 +114,567 @@ def _percentiles(values: list[float]) -> dict[str, Any]:
     }
 
 
+def _write_mcp_line(process: subprocess.Popen[str], payload: dict[str, Any] | str) -> None:
+    if process.stdin is None:
+        raise RuntimeError("MCP probe stdin is unavailable")
+    line = payload if isinstance(payload, str) else json.dumps(payload, sort_keys=True)
+    process.stdin.write(line + "\n")
+    process.stdin.flush()
+
+
+class _McpLineReader:
+    """Drain buffered text stdout once and expose bounded per-line reads."""
+
+    def __init__(self, process: subprocess.Popen[str]) -> None:
+        if process.stdout is None:
+            raise RuntimeError("MCP probe stdout is unavailable")
+        self.process = process
+        self.lines: Queue[str | None] = Queue(maxsize=32)
+        self.thread = Thread(target=self._drain, name="pcodex-installed-mcp-reader", daemon=True)
+        self.thread.start()
+
+    def _drain(self) -> None:
+        assert self.process.stdout is not None
+        for line in self.process.stdout:
+            self.lines.put(line)
+        self.lines.put(None)
+
+    def read(self, *, timeout: float = 30.0) -> dict[str, Any]:
+        try:
+            line = self.lines.get(timeout=timeout)
+        except Empty as exc:
+            raise RuntimeError("MCP probe timed out waiting for a response") from exc
+        if line is None:
+            raise RuntimeError("MCP server exited before responding")
+        return _decode_mcp_line(line)
+
+    def close(self) -> None:
+        self.thread.join(timeout=1)
+
+
+def _decode_mcp_line(line: str) -> dict[str, Any]:
+    try:
+        response = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("MCP server returned non-JSON output") from exc
+    if not isinstance(response, dict):
+        raise RuntimeError("MCP server returned a non-object response")
+    return response
+
+
+def _classify_mcp_process_observations(
+    monitor: Any,
+    *,
+    server_pid: int,
+    git_guard: Path,
+    real_git: Path,
+    shell_authorities: dict[Path, Path],
+) -> dict[str, Any]:
+    records = {
+        **monitor.before,
+        **{record["pid"]: record for record in monitor.observed.values()},
+        **monitor.after,
+    }
+
+    def descendant_of(pid: int, ancestor: int) -> bool:
+        seen: set[int] = set()
+        current = pid
+        while current > 0 and current not in seen:
+            if current == ancestor:
+                return True
+            seen.add(current)
+            record = records.get(current)
+            if record is None:
+                return False
+            current = int(record.get("ppid") or 0)
+        return False
+
+    observations: list[dict[str, Any]] = []
+    forbidden = 0
+    monitor_internal_count = 0
+    server_record = records.get(server_pid, {})
+    server_command = str(server_record.get("command") or "")
+    server_executable = str(server_record.get("executable_path") or "")
+
+    def multiprocessing_child_kind(record: dict[str, Any]) -> str | None:
+        if int(record.get("ppid") or 0) != server_pid:
+            return None
+        command = str(record.get("command") or "")
+        executable = str(record.get("executable_path") or "")
+        if not executable or executable != server_executable:
+            return None
+        prefix = re.escape(server_executable) + r"(?: -(?:B|E|I|S))* -c "
+        if re.fullmatch(
+            prefix
+            + r"from multiprocessing\.spawn import spawn_main; "
+            + r"spawn_main\(tracker_fd=\d+, pipe_handle=\d+\) "
+            + r"--multiprocessing-fork",
+            command,
+        ):
+            return "worker"
+        if re.fullmatch(
+            prefix + r"from multiprocessing\.resource_tracker import main;main\(\d+\)",
+            command,
+        ):
+            return "resource_tracker"
+        return None
+
+    def allowed_repository_reader(command: str, executable: str) -> bool:
+        try:
+            tokens = shlex.split(command)
+        except ValueError:
+            return False
+        resolved_executable = Path(executable)
+        if resolved_executable == real_git and tokens and Path(tokens[0]) == real_git:
+            arguments = tokens[1:]
+        elif (
+            len(tokens) >= 2
+            and Path(tokens[0]) in shell_authorities
+            and resolved_executable == shell_authorities[Path(tokens[0])]
+            and Path(tokens[1]) == git_guard
+        ):
+            arguments = tokens[2:]
+        else:
+            return False
+        return arguments in (
+            ["branch", "--show-current"],
+            ["ls-files", "-z", "--cached"],
+            ["ls-files", "-z", "--others", "--exclude-standard"],
+            ["rev-parse", "--is-inside-work-tree"],
+            ["rev-parse", "HEAD"],
+            ["rev-parse", "--short", "HEAD"],
+            ["status", "--porcelain"],
+            ["status", "--short"],
+            ["log", "--oneline", "-5"],
+            [
+                "diff",
+                "--",
+                ":!*.png",
+                ":!*.jpg",
+                ":!*.zip",
+                ":!.premode",
+                ":!.premode/*",
+                ":!.premodeignore",
+            ],
+        )
+
+    for record in monitor.observed.values():
+        pid = int(record.get("pid") or 0)
+        command = str(record.get("command") or "")
+        if not descendant_of(pid, monitor.root_pid):
+            continue
+        if pid == server_pid:
+            classification = "allowed_mcp_server"
+        elif multiprocessing_child_kind(record) == "worker":
+            classification = "allowed_mcp_worker"
+        elif multiprocessing_child_kind(record) == "resource_tracker":
+            classification = "allowed_mcp_resource_tracker"
+        elif descendant_of(pid, server_pid):
+            if allowed_repository_reader(
+                command, str(record.get("executable_path") or "")
+            ):
+                classification = "allowed_repository_reader"
+            else:
+                classification = "unexpected_mcp_descendant"
+                forbidden += 1
+        elif command.startswith("/bin/ps -axo "):
+            monitor_internal_count += 1
+            continue
+        else:
+            classification = "unexpected_descendant"
+            forbidden += 1
+        observations.append(
+            {
+                "pid": pid,
+                "ppid": int(record.get("ppid") or 0),
+                "classification": classification,
+                "executable_name": Path(str(record.get("executable_path") or "")).name.strip("()"),
+                "survived": pid in monitor.after,
+                "command_sha256": hashlib.sha256(command.encode("utf-8")).hexdigest(),
+            }
+        )
+    return {
+        "observation_available": bool(monitor.observation_available),
+        "observations": sorted(observations, key=lambda item: (item["pid"], item["classification"])),
+        "monitor_internal_count": monitor_internal_count,
+        "forbidden_count": forbidden,
+        "server_observed": any(item["classification"] == "allowed_mcp_server" for item in observations),
+        "worker_observed": any(item["classification"] == "allowed_mcp_worker" for item in observations),
+    }
+
+
+def _mcp_protocol_probe(
+    *, pcodex: Path, control_root: Path, base_env: dict[str, str],
+) -> dict[str, Any]:
+    import premode
+    from premode.no_write import GovernedRoot, ProcessMonitor, compare_snapshots, snapshot_roots
+
+    protocol_root = control_root / "installed-mcp-protocol"
+    for path in (
+        protocol_root / "home",
+        protocol_root / "codex-home",
+        protocol_root / "xdg-config",
+        protocol_root / "xdg-cache",
+        protocol_root / "xdg-data",
+        protocol_root / "tmp",
+    ):
+        path.mkdir(parents=True, exist_ok=True)
+    workspace = _repo(protocol_root, "bound workspace β")
+    wrong_cwd = _repo(protocol_root, "wrong launch cwd")
+    (workspace / "src").mkdir()
+    (workspace / "src/bound_probe.py").write_text("BOUND_PROBE = True\n", encoding="utf-8")
+    for index in range(600):
+        (workspace / "src" / f"fixture_{index:04d}.py").write_text(
+            f"FIXTURE_{index} = {index}\n", encoding="utf-8",
+        )
+    secret_canary = "PCODEX_SECRET_CANARY_7dc48065"
+    (workspace / ".premode").mkdir()
+    (workspace / ".premode/pcodex_state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "pcodex.state.v1",
+                "enabled": True,
+                "mode": "on",
+                "algorithm": "literal_symbol",
+                "tuning_profile": None,
+            },
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    (wrong_cwd / ".premode").mkdir()
+    (wrong_cwd / ".premode/pcodex_state.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "pcodex.state.v1",
+                "enabled": False,
+                "mode": "off",
+                "algorithm": "literal_symbol",
+                "tuning_profile": None,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    guard_bin = protocol_root / "guard-bin"
+    guard_bin.mkdir()
+    forbidden_marker = protocol_root / "forbidden-child-process"
+    for name in ("codex", "openclaw"):
+        executable = guard_bin / name
+        executable.write_text(
+            f"#!/bin/sh\nprintf invoked > '{forbidden_marker}'\nexit 97\n",
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+    real_git = shutil.which("git", path=base_env.get("PATH"))
+    if not real_git or not Path(real_git).is_absolute():
+        raise RuntimeError("installed MCP probe requires an absolute git executable")
+    git_guard = guard_bin / "git"
+    allowed_git_arguments = (
+        "branch --show-current",
+        "ls-files -z --cached",
+        "ls-files -z --others --exclude-standard",
+        "rev-parse --is-inside-work-tree",
+        "rev-parse HEAD",
+        "rev-parse --short HEAD",
+        "status --porcelain",
+        "status --short",
+        "log --oneline -5",
+        "diff -- :!*.png :!*.jpg :!*.zip :!.premode :!.premode/* :!.premodeignore",
+    )
+    git_guard.write_text(
+        "#!/bin/sh\ncase \"$*\" in\n"
+        + "  "
+        + "|".join(shlex.quote(value) for value in allowed_git_arguments)
+        + ") i=0; while [ \"$i\" -lt 200000 ]; do i=$((i + 1)); done; "
+        + f"exec {shlex.quote(real_git)} \"$@\" ;;\n"
+        + f"  *) printf '%s\\n' \"$*\" > {shlex.quote(str(forbidden_marker))}; exit 97 ;;\n"
+        + "esac\n",
+        encoding="utf-8",
+    )
+    git_guard.chmod(0o755)
+    env = {
+        "HOME": str(protocol_root / "home"),
+        "CODEX_HOME": str(protocol_root / "codex-home"),
+        "XDG_CONFIG_HOME": str(protocol_root / "xdg-config"),
+        "XDG_CACHE_HOME": str(protocol_root / "xdg-cache"),
+        "XDG_DATA_HOME": str(protocol_root / "xdg-data"),
+        "TMPDIR": str(protocol_root / "tmp"),
+        "PATH": str(guard_bin) + os.pathsep + str(pcodex.parent) + os.pathsep + base_env.get("PATH", ""),
+        "PCODEX_WORKSPACE": str(workspace.resolve()),
+        "PCODEX_SECRET_CANARY": secret_canary,
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    for key in ("LANG", "LC_ALL"):
+        if base_env.get(key):
+            env[key] = base_env[key]
+    governed = {
+        "protocol_root": protocol_root,
+        "workspace": workspace,
+        "wrong_cwd": wrong_cwd,
+        "home": protocol_root / "home",
+        "codex_home": protocol_root / "codex-home",
+        "xdg_config": protocol_root / "xdg-config",
+        "xdg_cache": protocol_root / "xdg-cache",
+        "xdg_data": protocol_root / "xdg-data",
+        "tmp": protocol_root / "tmp",
+        "installed_package": Path(premode.__file__).resolve().parent,
+        "installed_bin": pcodex.parent.resolve(),
+    }
+    governed_roots = [
+        GovernedRoot(name, path, "mcp_no_write")
+        for name, path in governed.items()
+    ]
+    before = snapshot_roots(governed_roots)
+    process_monitor = ProcessMonitor(interval_seconds=0.005)
+    process_monitor.__enter__()
+    process: subprocess.Popen[str] | None = None
+    reader: _McpLineReader | None = None
+    failure_stage: str | None = None
+    failure: Exception | None = None
+    received_response_ids: list[Any] = []
+    initialized: dict[str, Any] = {}
+    listed: dict[str, Any] = {}
+    called: dict[str, Any] = {}
+    strict_schema: dict[str, Any] = {}
+    oversized: dict[str, Any] = {}
+    invalid_json: dict[str, Any] = {}
+    unknown: dict[str, Any] = {}
+    precancelled: dict[str, Any] = {}
+    concurrent: list[dict[str, Any]] = []
+    shutdown: dict[str, Any] = {}
+    return_code: int | None = None
+
+    def read_response(stage: str) -> dict[str, Any]:
+        nonlocal failure_stage
+        failure_stage = stage
+        if reader is None:
+            raise RuntimeError("MCP probe reader is unavailable")
+        response = reader.read()
+        received_response_ids.append(response.get("id"))
+        return response
+
+    try:
+        process = subprocess.Popen(
+            [str(pcodex), "mcp-server"],
+            cwd=wrong_cwd,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        reader = _McpLineReader(process)
+        _write_mcp_line(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "installed-artifact-probe", "version": "1"},
+                },
+            },
+        )
+        initialized = read_response("initialize")
+        _write_mcp_line(process, {"jsonrpc": "2.0", "method": "notifications/initialized"})
+        _write_mcp_line(process, {"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        listed = read_response("tools_list")
+        _write_mcp_line(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 3,
+                "method": "tools/call",
+                "params": {
+                    "name": "pcodex_transform_subagent_prompt",
+                    "arguments": {"subagent_prompt": "Inspect src/bound_probe.py", "dry_run": True},
+                },
+            },
+        )
+        called = read_response("valid_call")
+        _write_mcp_line(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": "pcodex_transform_subagent_prompt",
+                    "arguments": {"subagent_prompt": "x", "unexpected": True},
+                },
+            },
+        )
+        strict_schema = read_response("strict_arguments")
+        _write_mcp_line(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 5,
+                "method": "tools/call",
+                "params": {
+                    "name": "pcodex_transform_subagent_prompt",
+                    "arguments": {"subagent_prompt": "x" * 32_769},
+                },
+            },
+        )
+        oversized = read_response("oversized_task")
+        _write_mcp_line(process, "{invalid JSON")
+        invalid_json = read_response("invalid_json")
+        _write_mcp_line(process, {"jsonrpc": "2.0", "id": 6, "method": "unknown/method"})
+        unknown = read_response("unknown_method")
+        _write_mcp_line(
+            process,
+            {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 8}},
+        )
+        _write_mcp_line(
+            process,
+            {
+                "jsonrpc": "2.0",
+                "id": 8,
+                "method": "tools/call",
+                "params": {
+                    "name": "pcodex_transform_subagent_prompt",
+                    "arguments": {"subagent_prompt": "Inspect src/bound_probe.py", "dry_run": True},
+                },
+            },
+        )
+        precancelled = read_response("precancelled_request")
+        for request_id in range(9, 13):
+            _write_mcp_line(
+                process,
+                {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": "pcodex_transform_subagent_prompt",
+                        "arguments": {
+                            "subagent_prompt": f"Inspect src/fixture_{request_id:04d}.py",
+                            "dry_run": True,
+                        },
+                    },
+                },
+            )
+        # Let the spawned worker reach its stable, observable command before
+        # cancellation; the 600-file fixture keeps the request active.
+        time.sleep(0.2)
+        _write_mcp_line(
+            process,
+            {"jsonrpc": "2.0", "method": "notifications/cancelled", "params": {"requestId": 9}},
+        )
+        concurrent = [read_response("concurrent_requests") for _ in range(4)]
+        _write_mcp_line(process, {"jsonrpc": "2.0", "id": 13, "method": "shutdown"})
+        shutdown = read_response("shutdown")
+        if process.stdin is not None:
+            process.stdin.close()
+        failure_stage = "server_exit"
+        return_code = process.wait(timeout=30)
+        failure_stage = None
+    except Exception as exc:
+        failure = exc
+    finally:
+        if process is not None and process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
+        if process is not None:
+            return_code = process.returncode
+        if reader is not None:
+            reader.close()
+        process_monitor.__exit__(None, None, None)
+    server_stderr = (
+        process.stderr.read()
+        if process is not None and process.stderr is not None
+        else ""
+    )
+    after = snapshot_roots(governed_roots)
+    comparison = compare_snapshots(before, after)
+    process_evidence = _classify_mcp_process_observations(
+        process_monitor,
+        server_pid=process.pid if process is not None else -1,
+        git_guard=git_guard.resolve(),
+        real_git=Path(real_git).resolve(),
+        shell_authorities={
+            shell: shell.resolve()
+            for shell in (Path("/bin/sh"), Path("/bin/bash"))
+            if shell.exists()
+        },
+    )
+    structured = called.get("result", {}).get("structuredContent", {})
+    encoded_responses = json.dumps(
+        [
+            initialized,
+            listed,
+            called,
+            strict_schema,
+            oversized,
+            invalid_json,
+            unknown,
+            precancelled,
+            *concurrent,
+            shutdown,
+        ],
+        sort_keys=True,
+    ) + server_stderr
+    concurrent_by_id = {item.get("id"): item for item in concurrent}
+    checks = {
+        "initialize": initialized.get("id") == 1 and initialized.get("result", {}).get("protocolVersion") == "2024-11-05",
+        "notification_silent": listed.get("id") == 2,
+        "tool_schema": listed.get("result", {}).get("tools", [{}])[0].get("inputSchema", {}).get("additionalProperties") is False,
+        "valid_call": called.get("id") == 3 and isinstance(structured, dict),
+        "workspace_bound_independent_of_cwd": structured.get("enabled") is True,
+        "strict_arguments": strict_schema.get("error", {}).get("code") == -32602,
+        "oversized_rejected": oversized.get("error", {}).get("code") == -32602,
+        "invalid_json": invalid_json.get("error", {}).get("code") == -32700,
+        "unknown_method": unknown.get("error", {}).get("code") == -32601,
+        "precancelled_before_worker": precancelled.get("error", {}).get("code") == -32800,
+        "concurrent_ids_preserved": set(concurrent_by_id) == {9, 10, 11, 12},
+        "active_cancellation": concurrent_by_id.get(9, {}).get("error", {}).get("code") == -32800,
+        "shutdown": shutdown == {"jsonrpc": "2.0", "id": 13, "result": {}} and return_code == 0,
+        "snapshot_complete": bool(before["complete"] and after["complete"]),
+        "filesystem_no_write": comparison["unchanged"],
+        "process_observation_complete": process_evidence["observation_available"],
+        "mcp_server_observed": process_evidence["server_observed"],
+        "mcp_worker_observed": process_evidence["worker_observed"],
+        "forbidden_process_launches": (
+            not forbidden_marker.exists() and process_evidence["forbidden_count"] == 0
+        ),
+        "absolute_roots_hidden": all(str(path.resolve()) not in encoded_responses for path in governed.values()),
+        "secret_canary_hidden": secret_canary not in encoded_responses,
+    }
+    return {
+        "passed": failure is None and all(checks.values()),
+        "failure_stage": failure_stage if failure is not None else None,
+        "error_type": type(failure).__name__ if failure is not None else None,
+        "checks": checks,
+        "filesystem_changes": len(comparison["changes"]),
+        "snapshot_complete": bool(before["complete"] and after["complete"]),
+        "forbidden_process_launches": process_evidence["forbidden_count"] + int(forbidden_marker.exists()),
+        "workspace": "opaque:installed-mcp-workspace",
+        "private_evidence": {
+            "before_snapshot_sha256": before["snapshot_sha256"],
+            "after_snapshot_sha256": after["snapshot_sha256"],
+            "before_complete": before["complete"],
+            "after_complete": after["complete"],
+            "before_errors": before.get("completeness_errors", []),
+            "after_errors": after.get("completeness_errors", []),
+            "exact_changes": comparison["changes"],
+            "process": process_evidence,
+            "received_response_ids": received_response_ids,
+            "failure_message": str(failure) if failure is not None else None,
+        },
+    }
+
+
 def probe(
     *, pcodex: Path, control_root: Path, legacy_fixture: Path | None,
     force_codex_unavailable: bool = False,
@@ -156,9 +721,14 @@ def probe(
         "skills_root": (source_root / "skills").is_dir(),
         "operation_schema_documents_packaged": operation_schema_documents_valid,
     }
+    control_root.mkdir(parents=True, exist_ok=True)
+    protocol_probe = _mcp_protocol_probe(
+        pcodex=pcodex,
+        control_root=control_root,
+        base_env=_env(control_root / "installed-mcp-base"),
+    )
     codex = None if force_codex_unavailable else shutil.which("codex")
     if codex is None:
-        control_root.mkdir(parents=True)
         missing_home = control_root / "missing-codex-env"
         for path in (missing_home / "home", missing_home / "codex-home", missing_home / "tmp"):
             path.mkdir(parents=True)
@@ -213,6 +783,7 @@ def probe(
             ])
         passed = all([
             *static_contract.values(),
+            protocol_probe["passed"],
             preview.get("writes_performed") is False,
             preview_no_write,
             installed.get("status") == "installed_needs_codex",
@@ -255,9 +826,13 @@ def probe(
                 "helper_resolution": static_contract["helper_resolved"],
                 "model_visible_trigger_executed": False,
             },
+            "mcp": {
+                "registration_available": False,
+                "protocol_conformance": protocol_probe,
+            },
             "migration": {"accepted_historical_fixture": exact_migration},
         }
-    control_root.mkdir(parents=True)
+    control_root.mkdir(parents=True, exist_ok=True)
     main_home = control_root / "main-env"
     for path in (main_home / "home", main_home / "codex-home", main_home / "tmp"):
         path.mkdir(parents=True)
@@ -422,6 +997,7 @@ def probe(
     )
     passed = all([
         *static_contract.values(),
+        protocol_probe["passed"],
         preview.get("writes_performed") is False, preview_no_write,
         installed.get("status") == "installed", status_ready.get("readiness") == "READY",
         installed_again.get("status") == "unchanged",
@@ -476,7 +1052,15 @@ def probe(
             "reinstall": reinstalled.get("status"),
         },
         "discovery": {"plugin_list": discovered_ok, "manifest": True, "skills_root": skills_discovered, "helper_resolution": resolved == str(pcodex), "model_visible_trigger_executed": False, "installed_skill_startup_seconds": round(resolver_seconds, 6)},
-        "mcp": {"preview_no_write": mcp_preview_no_write, "registered": mcp_get.get("name") == "pcodex", "workspace_bound": True, "disabled_removed": mcp_absent_while_disabled, "repaired": mcp_repaired.get("status"), "unrelated_preserved": mcp_unrelated_after == mcp_unrelated_before},
+        "mcp": {
+            "preview_no_write": mcp_preview_no_write,
+            "registered": mcp_get.get("name") == "pcodex",
+            "workspace_bound": protocol_probe["checks"]["workspace_bound_independent_of_cwd"],
+            "disabled_removed": mcp_absent_while_disabled,
+            "repaired": mcp_repaired.get("status"),
+            "unrelated_preserved": mcp_unrelated_after == mcp_unrelated_before,
+            "protocol_conformance": protocol_probe,
+        },
         "migration": {
             "preview_no_write": migration_preview_no_write,
             "unknown_legacy_preserved": legacy_preserved,
