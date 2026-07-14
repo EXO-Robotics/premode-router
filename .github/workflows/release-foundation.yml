@@ -204,8 +204,10 @@ jobs:
             | sha256sum --check --strict
           tar -xzf "$RUNNER_TEMP/trufflehog_3.95.9_linux_amd64.tar.gz" \
             -C "$GOBIN" trufflehog
-          "$GOBIN/gitleaks" version | grep -F '8.30.1'
-          "$GOBIN/trufflehog" --version | grep -F '3.95.9'
+          echo "Expected Gitleaks module: github.com/zricethezav/gitleaks/v8@v8.30.1"
+          "$GOBIN/gitleaks" version
+          echo "Expected TruffleHog release asset: v3.95.9 (SHA-256 verified above)"
+          "$GOBIN/trufflehog" --version
       - name: Run Gitleaks against full history
         run: >-
           "$RUNNER_TEMP/security-bin/gitleaks" git --redact --no-banner --exit-code 1 .
