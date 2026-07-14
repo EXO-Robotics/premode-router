@@ -71,9 +71,15 @@
     "upgrade_rollback": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["passed", "post_mutation_rollback", "unsupported_downgrade_fail_closed"],
+      "required": ["passed", "actual_predecessor_state_preserved", "actual_predecessor_check_no_write", "actual_predecessor_apply_status", "receipt_compatibility_check_no_write", "receipt_compatibility_apply", "receipt_compatibility_current_idempotent", "post_mutation_rollback", "unsupported_downgrade_fail_closed"],
       "properties": {
         "passed": {"const": true},
+        "actual_predecessor_state_preserved": {"const": true},
+        "actual_predecessor_check_no_write": {"const": true},
+        "actual_predecessor_apply_status": {"const": "already_current"},
+        "receipt_compatibility_check_no_write": {"const": true},
+        "receipt_compatibility_apply": {"const": "upgraded"},
+        "receipt_compatibility_current_idempotent": {"const": true},
         "post_mutation_rollback": {"const": true},
         "unsupported_downgrade_fail_closed": {"const": true}
       }

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.upgrade-plan.v1.schema.json",
+  "title": "pCodex read-only product-state upgrade plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "current_version",
+    "previous_version",
+    "previous_commit",
+    "package_replacement_policy",
+    "managed_root_hash",
+    "readiness",
+    "components",
+    "planned_actions",
+    "preserved_components",
+    "conflicts",
+    "writes_performed",
+    "next_recommended_action"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.upgrade-plan.v1"},
+    "current_version": {"const": "0.3.0b1"},
+    "previous_version": {"const": "0.2.6.24"},
+    "previous_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "package_replacement_policy": {"const": "explicit_package_upgrade_then_current_receipt_bound_lifecycle"},
+    "managed_root_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "readiness": {"enum": ["READY", "NEEDS_ACTION", "BLOCKED"]},
+    "components": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["managed_state", "codex_plugin", "openclaw", "upgrade_operation"],
+      "properties": {
+        "managed_state": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state", "receipt", "from_version", "to_version"],
+          "properties": {
+            "state": {"enum": ["absent", "blocked", "current", "supported_predecessor"]},
+            "receipt": {"const": ".premode/install-state.json"},
+            "from_version": {"type": ["string", "null"]},
+            "to_version": {"const": "0.3.0b1"}
+          }
+        },
+        "codex_plugin": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state", "legacy"],
+          "properties": {
+            "state": {"enum": ["absent", "blocked", "current", "supported_legacy"]},
+            "legacy": {
+              "type": "array",
+              "items": {
+                "type": "object", "additionalProperties": false,
+                "required": ["path", "classification", "ownership", "will_remove", "requires_manual_action"],
+                "properties": {
+                  "path": {"type": "string", "minLength": 1},
+                  "classification": {"enum": ["legacy_migratable", "legacy_preserve"]},
+                  "ownership": {"enum": ["exact_historical_fingerprint", "unknown"]},
+                  "will_remove": {"type": "boolean"},
+                  "requires_manual_action": {"type": "boolean"}
+                }
+              }
+            }
+          }
+        },
+        "openclaw": {
+          "type": "object", "additionalProperties": false,
+          "required": ["state"],
+          "properties": {"state": {"enum": ["absent", "blocked", "current_preserved"]}}
+        },
+        "upgrade_operation": {
+          "oneOf": [
+            {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "absent"}}},
+            {"type": "object", "additionalProperties": false, "required": ["state"], "properties": {"state": {"const": "blocked"}}},
+            {"type": "object", "additionalProperties": false, "required": ["state", "status"], "properties": {"state": {"const": "terminal"}, "status": {"enum": ["succeeded", "failed"]}}},
+            {"type": "object", "additionalProperties": false, "required": ["state", "status"], "properties": {"state": {"const": "interrupted"}, "status": {"enum": ["started", "failed"]}}},
+            {"type": "object", "additionalProperties": false, "required": ["state", "status", "recovery"], "properties": {"state": {"const": "recovered"}, "status": {"const": "failed"}, "recovery": {"const": "codex_state_reconciled"}}}
+          ]
+        }
+      }
+    },
+    "planned_actions": {"type": "array", "items": {"enum": ["upgrade_managed_install_state", "migrate_supported_legacy_codex_plugin"]}, "uniqueItems": true},
+    "preserved_components": {"type": "array", "items": {"enum": ["codex_plugin", "openclaw"]}, "uniqueItems": true},
+    "conflicts": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["component", "reason"],
+        "properties": {
+          "component": {"enum": ["managed_state", "codex_plugin", "openclaw", "upgrade_operation"]},
+          "reason": {"type": "string", "minLength": 1},
+          "detail": {"type": "string"},
+          "observed_version": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "writes_performed": {"const": false},
+    "next_recommended_action": {"enum": ["none", "pcodex upgrade --apply", "pcodex integrate codex --repair", "review preserved legacy plugin state manually", "resolve reported upgrade conflicts"]}
+  }
+}

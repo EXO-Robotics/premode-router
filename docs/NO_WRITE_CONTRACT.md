@@ -29,6 +29,7 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | `pcodex integrate openclaw --uninstall --dry-run` | `literal_no_write_required` | Preview exact registration and receipt removal while preserving unrelated or modified JSON5 state. |
 | `pcodex repair --dry-run` | `literal_no_write_required` | Read bound lifecycle authority and exact hashes; no repair, migration, operation receipt, or temporary file. |
 | `pcodex uninstall --dry-run` | `literal_no_write_required` | Read receipt and targets with fail-closed ownership rules; no operation receipt or quarantine. |
+| `pcodex upgrade --check` | `literal_no_write_required` | Read the frozen predecessor authority and exact repository/integration receipts without package-manager, filesystem, process, registration, or receipt mutation. |
 | `pcodex cleanup --local-state --dry-run` | `literal_no_write_required` | List bounded generated-state targets without deletion. |
 | `pcodex install` without `--apply` | `literal_no_write_required` | Preview config creation and use advisory diagnostics. |
 | `pcodex first-run --advisory` | `literal_no_write_required` | Emit content-free read-only receipt to stdout. |
@@ -41,7 +42,7 @@ This document refines the lifecycle meanings in `docs/PRODUCT_CONTRACT.md` and t
 | `pcodex tune --validate` | `state_changing` | Validation currently writes a report; it is not advertised as no-write. |
 | `pcodex tune --verify` | `state_changing` | Verification writes validation and verification reports. |
 | `pcodex status` without `--advisory` | `state_changing` | May refresh the repository lock receipt. |
-| install `--apply`, setup/on/off/tuned/tune apply, integration `--write`, plugin init without `--dry-run`, cleanup/repair/uninstall `--yes` | `state_changing` | Require explicit apply authority. |
+| install `--apply`, upgrade `--apply`, setup/on/off/tuned/tune apply, integration `--write`, plugin init without `--dry-run`, cleanup/repair/uninstall `--yes` | `state_changing` | Require explicit apply authority. |
 | setup/off dry-run, review-patch dry-run, plugin migration preview | `unsupported` | No such current authoritative flag is advertised. |
 | legacy private-alpha installer/plugin names | `deprecated` | Compatibility-only; no new guarantee is inferred. |
 | OpenClaw integration `--write`, `--repair`, `--disable`, or `--uninstall` | `state_changing` | Require explicit authority and mutate only the exact receipt-bound registration and lifecycle state. |

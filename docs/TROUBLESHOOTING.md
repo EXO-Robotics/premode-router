@@ -116,6 +116,16 @@ openclaw config validate --json
 openclaw mcp show pcodex --json
 ```
 
+## Upgrade reports `BLOCKED`
+
+Run the literal no-write check and preserve the reported files:
+
+```console
+pcodex upgrade --check --json
+```
+
+The command accepts only the exact predecessor authority. Modified managed files, corrupt or future receipts, unknown legacy plugin state, damaged current integrations, and upgrade receipts with partially completed actions block mutation. Do not delete or rewrite those receipts to force progress. Repair the named current integration when ownership is proven, or retain the evidence for manual recovery.
+
 ## Installed-artifact no-write evidence
 
 Qualification fails closed when filesystem or process observation is unavailable. On macOS, `process_observation=unavailable` usually means the environment denied bounded process-table observation. Rerun the same builder in a controlled environment that permits process monitoring; do not disable monitoring or remove governed roots.

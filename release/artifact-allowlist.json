@@ -67,6 +67,7 @@
     "premode/plugins.py",
     "premode/profiles.py",
     "premode/product_contract.py",
+    "premode/product_upgrade.py",
     "premode/production_ranking.py",
     "premode/production_ranking_incumbent.py",
     "premode/redaction.py",
@@ -95,6 +96,7 @@
     "premode_router-*.data/data/share/premode-router/premode.product.json",
     "premode_router-*.data/data/share/premode-router/schemas/*.json",
     "premode_router-*.data/data/share/premode-router/release/algorithm-handoff.v1.json",
+    "premode_router-*.data/data/share/premode-router/release/previous-supported.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/agent-adapter-v1.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/context-packet-v1.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/context-receipt-v1.json",
@@ -124,6 +126,7 @@
     "openclaw-preflight-receipt-v1.json"
   ],
   "algorithm_handoff_member": "algorithm-handoff.v1.json",
+  "previous_supported_member": "previous-supported.json",
   "plugin_allowed_members": [
     ".codex-plugin/plugin.json",
     "assets/README.md",

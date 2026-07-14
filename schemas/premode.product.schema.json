@@ -8,7 +8,7 @@
     "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
     "supported_runtime", "version_source", "production_package", "phase_boundary", "documentation_contract",
     "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
-    "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "integration_contracts", "install_state_authority", "no_write_authority",
+    "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "integration_contracts", "install_state_authority", "upgrade_authority", "no_write_authority",
     "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
   ],
   "properties": {
@@ -172,6 +172,19 @@
         "preview_is_read_only": {"const": true},
         "unknown_schemas_fail_closed": {"const": true},
         "raw_prompts_or_packets_stored": {"const": false}
+      }
+    },
+    "upgrade_authority": {
+      "type": "object", "additionalProperties": false,
+      "required": ["previous_release", "previous_release_schema", "plan_schema", "operation_schema", "package_replacement", "check_is_literal_no_write", "unknown_versions_fail_closed"],
+      "properties": {
+        "previous_release": {"const": "release/previous-supported.json"},
+        "previous_release_schema": {"const": "schemas/pcodex.previous-supported.v1.schema.json"},
+        "plan_schema": {"const": "schemas/pcodex.upgrade-plan.v1.schema.json"},
+        "operation_schema": {"const": "schemas/pcodex.upgrade-operation.v1.schema.json"},
+        "package_replacement": {"const": "explicit and external"},
+        "check_is_literal_no_write": {"const": true},
+        "unknown_versions_fail_closed": {"const": true}
       }
     },
     "no_write_authority": {

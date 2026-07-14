@@ -23,7 +23,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ROOT / "release" / "artifact-allowlist.json"
-LEGACY_FIXTURE_COMMIT = "99ebc95c9db7f40333c661743920485e0d45c134"
+LEGACY_FIXTURE_COMMIT = "99ebc95c9db7f40333c661743920485e0d45c134"  # pragma: allowlist secret
 LEGACY_FIXTURE_PATHS = (
     ".agents/plugins/plugins/premode-router",
     ".agents/skills/pcodex",
@@ -397,6 +397,7 @@ def validate_sdist_names(names: list[str], policy: dict[str, object]) -> list[st
             if str(member).startswith("premode/")
         ),
         "release/" + str(policy.get("algorithm_handoff_member")),
+        "release/" + str(policy.get("previous_supported_member")),
         *(
             "plugins/pcodex/" + str(member)
             for member in policy.get("plugin_allowed_members", [])
@@ -519,6 +520,74 @@ def validate_required_algorithm_handoff(
     else:
         raise ValueError(f"unsupported archive_kind: {archive_kind}")
     return [] if present else [f"missing_algorithm_handoff:{required}"]
+
+
+def validate_required_previous_supported(
+    names: list[str],
+    policy: dict[str, object],
+    *,
+    archive_kind: str,
+) -> list[str]:
+    """Require the frozen predecessor authority in wheel and sdist."""
+    required = str(policy.get("previous_supported_member") or "")
+    if not required:
+        return ["missing_previous_supported_policy"]
+    normalized = [PurePosixPath(name).as_posix() for name in names]
+    if archive_kind == "wheel":
+        present = any(
+            name.endswith("/share/premode-router/release/" + required)
+            for name in normalized
+        )
+    elif archive_kind == "sdist":
+        present = any(
+            PurePosixPath(*PurePosixPath(name).parts[1:]).as_posix()
+            == "release/" + required
+            for name in normalized
+            if len(PurePosixPath(name).parts) > 1
+        )
+    else:
+        raise ValueError(f"unsupported archive_kind: {archive_kind}")
+    return [] if present else [f"missing_previous_supported:{required}"]
+
+
+def validate_previous_supported_archive_bytes(
+    path: Path,
+    policy: dict[str, object],
+    expected: bytes,
+    *,
+    archive_kind: str,
+) -> list[str]:
+    """Bind the packaged predecessor authority to the committed exact bytes."""
+
+    required = str(policy.get("previous_supported_member") or "")
+    matches: list[bytes] = []
+    if archive_kind == "wheel":
+        with zipfile.ZipFile(path) as archive:
+            matches = [
+                archive.read(name)
+                for name in archive.namelist()
+                if PurePosixPath(name).as_posix().endswith(
+                    "/share/premode-router/release/" + required
+                )
+            ]
+    elif archive_kind == "sdist":
+        with tarfile.open(path, "r:*") as archive:
+            for member in archive.getmembers():
+                parts = PurePosixPath(member.name).parts
+                if (
+                    member.isfile()
+                    and len(parts) > 1
+                    and PurePosixPath(*parts[1:]).as_posix()
+                    == "release/" + required
+                ):
+                    extracted = archive.extractfile(member)
+                    if extracted is not None:
+                        matches.append(extracted.read())
+    else:
+        raise ValueError(f"unsupported archive_kind: {archive_kind}")
+    if len(matches) != 1:
+        return [f"previous_supported_member_count:{len(matches)}"]
+    return [] if matches[0] == expected else ["previous_supported_bytes_mismatch"]
 
 
 def validate_archive_content(path: Path, policy: dict[str, object]) -> list[str]:
@@ -1011,6 +1080,13 @@ def write_release_evidence(
     python_version = run(
         python, "-c", "import platform; print(platform.python_version())"
     )
+    actionable_upgrade_no_write = all(
+        dict(dict(install_smoke.get(key) or {}).get("commands") or {})
+        .get("upgrade_receipt_compatibility_check", {})
+        .get("passed")
+        is True
+        for key in ("wheel_no_write", "sdist_no_write")
+    )
     qualification = {
         "schema_version": "pcodex.release-qualification.v1",
         "status": "passed",
@@ -1038,9 +1114,25 @@ def write_release_evidence(
         },
         "upgrade_rollback": {
             "passed": dict(install_smoke.get("upgrade_rollback") or {}).get("passed"),
+            "actual_predecessor_state_preserved": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("actual_predecessor_state_preserved"),
+            "actual_predecessor_check_no_write": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("actual_predecessor_upgrade_check_no_write"),
+            "actual_predecessor_apply_status": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("actual_predecessor_upgrade_apply_status"),
+            "receipt_compatibility_check_no_write": actionable_upgrade_no_write,
+            "receipt_compatibility_apply": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("receipt_compatibility_apply_status"),
+            "receipt_compatibility_current_idempotent": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("receipt_compatibility_current_idempotent"),
             "post_mutation_rollback": dict(
                 dict(install_smoke.get("upgrade_rollback") or {}).get(
-                    "failed_upgrade_post_mutation_rollback"
+                    "product_upgrade_post_commit_rollback"
                 )
                 or {}
             ).get("passed"),
@@ -1261,6 +1353,9 @@ def run_upgrade_rollback_probe(
     current_version: str,
     env: dict[str, str],
     previous_authority: dict[str, object],
+    no_write_probe_script: Path,
+    commit_sha: str,
+    evidence_timestamp: str,
 ) -> dict[str, object]:
     """Qualify the declared previous beta to current package/lifecycle path."""
     previous_commit = str(previous_authority["previous_commit"])
@@ -1354,11 +1449,17 @@ def run_upgrade_rollback_probe(
         for path in repository.rglob("*")
         if path.is_file()
     }
-    if not previous_install_output.strip() or not any(
-        path.startswith((".premode/", ".pcodex/")) for path in previous_state
+    predecessor_owned_paths = sorted(
+        path
+        for path in previous_state
+        if path.startswith((".premode/", ".pcodex/"))
+    )
+    if (
+        not previous_install_output.strip()
+        or predecessor_owned_paths != [".pcodex/config.toml"]
     ):
         raise RuntimeError(
-            "previous supported beta did not create managed lifecycle state"
+            "previous supported beta emitted an unexpected repository-state surface"
         )
 
     broken_dir = temp / "broken-upgrade"
@@ -1404,29 +1505,198 @@ def run_upgrade_rollback_probe(
             "supported package upgrade did not install the current version"
         )
 
-    rollback_root = temp / "post-mutation-upgrade-rollback"
+    actual_no_write, actual_no_write_rc = run_json_probe(
+        str(upgrade_python),
+        str(no_write_probe_script),
+        "--pcodex",
+        str(pcodex),
+        "--repository",
+        str(repository),
+        "--control-root",
+        str(temp / "actual-predecessor-no-write-control"),
+        "--commit-sha",
+        commit_sha,
+        "--timestamp",
+        evidence_timestamp,
+        output=output,
+        label="actual-predecessor-no-write",
+        cwd=temp,
+        env=upgrade_env,
+    )
+    actual_no_write_summary = persist_no_write_probe(
+        output, "actual-predecessor", actual_no_write
+    )
+    require_probe_passed(
+        "actual predecessor no-write", actual_no_write, actual_no_write_rc
+    )
+    actual_check_no_write = (
+        dict(actual_no_write_summary.get("commands") or {})
+        .get("upgrade_check", {})
+        .get("passed")
+        is True
+    )
+    if not actual_check_no_write:
+        raise RuntimeError(
+            "actual predecessor upgrade check lacked full no-write evidence"
+        )
+
+    actual_predecessor_check = json.loads(
+        run(
+            str(pcodex),
+            "upgrade",
+            "--check",
+            "--json",
+            "--repo-root",
+            str(repository),
+            cwd=repository,
+            env=upgrade_env,
+        )
+    )
+    actual_after_check = {
+        path.relative_to(repository).as_posix(): sha256(path)
+        for path in repository.rglob("*")
+        if path.is_file()
+    }
+    if (
+        actual_after_check != previous_state
+        or actual_predecessor_check.get("writes_performed") is not False
+        or actual_predecessor_check.get("readiness") == "BLOCKED"
+    ):
+        raise RuntimeError(
+            "current upgrade check did not preserve actual predecessor-created state"
+        )
+    actual_predecessor_apply = json.loads(
+        run(
+            str(pcodex),
+            "upgrade",
+            "--apply",
+            "--json",
+            "--repo-root",
+            str(repository),
+            cwd=repository,
+            env=upgrade_env,
+        )
+    )
+    actual_after_apply = {
+        path.relative_to(repository).as_posix(): sha256(path)
+        for path in repository.rglob("*")
+        if path.is_file()
+    }
+    if (
+        actual_after_apply != previous_state
+        or actual_predecessor_apply.get("status") != "already_current"
+        or actual_predecessor_apply.get("writes_performed") is not False
+    ):
+        raise RuntimeError(
+            "actual predecessor-created state was not preserved after package replacement"
+        )
+    product_upgrade_root = temp / "receipt-compatibility upgrade with spaces"
+    run(
+        str(upgrade_python),
+        "-c",
+        "import hashlib,json,sys; from pathlib import Path; "
+        "from premode.managed_state import DEFAULT_INSTALL_STATE_RELATIVE_PATH as R, install_managed_file, product_install_marker_content; "
+        "from premode.product_upgrade import _previous_install_marker_content as prior_marker; "
+        "root=Path(sys.argv[1]).resolve(); root.mkdir(); (root/'.git').mkdir(); "
+        "install_managed_file(root,'.premode/pcodex-install.json',product_install_marker_content(),receipt_path=root/R); "
+        "marker=root/'.premode/pcodex-install.json'; marker.write_bytes(prior_marker()); "
+        "receipt=root/R; payload=json.loads(receipt.read_text()); payload['product_version']=sys.argv[2]; "
+        "item=next(item for item in payload['items'] if item['owned_path']=='.premode/pcodex-install.json'); "
+        "digest=hashlib.sha256(marker.read_bytes()).hexdigest(); item['installed_hash']=digest; item['current_hash']=digest; "
+        "receipt.write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n')",
+        str(product_upgrade_root),
+        previous_version,
+        cwd=temp,
+        env=upgrade_env,
+    )
+    before_product_check = {
+        path.relative_to(product_upgrade_root).as_posix(): sha256(path)
+        for path in product_upgrade_root.rglob("*")
+        if path.is_file()
+    }
+    product_check = json.loads(
+        run(
+            str(pcodex),
+            "upgrade",
+            "--check",
+            "--json",
+            "--repo-root",
+            str(product_upgrade_root),
+            cwd=product_upgrade_root,
+            env=upgrade_env,
+        )
+    )
+    after_product_check = {
+        path.relative_to(product_upgrade_root).as_posix(): sha256(path)
+        for path in product_upgrade_root.rglob("*")
+        if path.is_file()
+    }
+    if (
+        before_product_check != after_product_check
+        or product_check.get("readiness") != "NEEDS_ACTION"
+        or product_check.get("planned_actions") != ["upgrade_managed_install_state"]
+        or product_check.get("writes_performed") is not False
+    ):
+        raise RuntimeError("installed product upgrade check was not literal no-write")
+    product_apply = json.loads(
+        run(
+            str(pcodex),
+            "upgrade",
+            "--apply",
+            "--json",
+            "--repo-root",
+            str(product_upgrade_root),
+            cwd=product_upgrade_root,
+            env=upgrade_env,
+        )
+    )
+    product_current = json.loads(
+        run(
+            str(pcodex),
+            "upgrade",
+            "--apply",
+            "--json",
+            "--repo-root",
+            str(product_upgrade_root),
+            cwd=product_upgrade_root,
+            env=upgrade_env,
+        )
+    )
+    if (
+        product_apply.get("status") != "upgraded"
+        or product_apply.get("operation", {}).get("status") != "succeeded"
+        or product_current.get("status") != "already_current"
+        or product_current.get("writes_performed") is not False
+    ):
+        raise RuntimeError(
+            "installed product state upgrade did not complete idempotently"
+        )
+
+    rollback_root = temp / "product-upgrade-post-commit-rollback"
     rollback_payload = json.loads(
         run(
             str(upgrade_python),
             "-c",
             "import hashlib,json,sys; from pathlib import Path; "
-            "from premode.managed_state import DEFAULT_INSTALL_STATE_RELATIVE_PATH as R, "
-            "OWNERSHIP_MARKER_RELATIVE_PATH as M, install_managed_file, lifecycle_status; "
-            "root=Path(sys.argv[1]).resolve(); root.mkdir(); (root/'.git').mkdir(); rel='.premode/upgrade-fixture.txt'; "
-            "old=b'previous supported bytes\\n'; new=b'current release bytes\\n'; receipt=root/R; "
-            "install_managed_file(root,rel,old,receipt_path=receipt); "
-            "before={rel:(root/rel).read_bytes(),R:receipt.read_bytes(),M:(root/M).read_bytes()}; "
-            "fail=lambda stage: (_ for _ in ()).throw(RuntimeError('injected post-mutation failure')) "
-            "if stage=='after_target_write_before_receipt' else None; "
+            "from premode.managed_state import DEFAULT_INSTALL_STATE_RELATIVE_PATH as R, install_managed_file, product_install_marker_content; "
+            "from premode.product_upgrade import UPGRADE_OPERATION_RELATIVE_PATH as O, _previous_install_marker_content as prior_marker, apply_product_upgrade; "
+            "root=Path(sys.argv[1]).resolve(); root.mkdir(); (root/'.git').mkdir(); rel='.premode/pcodex-install.json'; receipt=root/R; "
+            "install_managed_file(root,rel,product_install_marker_content(),receipt_path=receipt); "
+            "marker=root/rel; marker.write_bytes(prior_marker()); payload=json.loads(receipt.read_text()); payload['product_version']=sys.argv[2]; "
+            "item=next(item for item in payload['items'] if item['owned_path']==rel); digest=hashlib.sha256(marker.read_bytes()).hexdigest(); "
+            "item['installed_hash']=digest; item['current_hash']=digest; receipt.write_text(json.dumps(payload,indent=2,sort_keys=True)+'\\n'); "
+            "before={rel:marker.read_bytes(),R:receipt.read_bytes()}; "
+            "fail=lambda stage: (_ for _ in ()).throw(RuntimeError('injected product upgrade failure')) if stage=='managed_state_committed' else None; "
             "caught=False; "
-            "\ntry: install_managed_file(root,rel,new,receipt_path=receipt,operation_type='reinstall',fault_injector=fail)"
+            "\ntry: apply_product_upgrade(root,fault_injector=fail)"
             "\nexcept RuntimeError: caught=True"
-            "\nafter={rel:(root/rel).read_bytes(),R:receipt.read_bytes(),M:(root/M).read_bytes()}; "
-            "ready=lifecycle_status(root,receipt,expected_content={rel:old})['readiness']; "
-            "assert caught and before==after and ready=='READY'; "
-            "print(json.dumps({'passed':True,'failure_injected_after_target_mutation':True,"
-            "'prior_target_and_authority_restored':True,'final_readiness':ready}))",
+            "\nafter={rel:marker.read_bytes(),R:receipt.read_bytes()}; operation=json.loads((root/O).read_text()); "
+            "assert caught and before==after and operation['status']=='failed' and operation['rollback_or_recovery_status']=='managed_state_rolled_back'; "
+            "retry=apply_product_upgrade(root); assert retry['status']=='upgraded'; "
+            "print(json.dumps({'passed':True,'failure_injected_after_product_state_commit':True,"
+            "'exact_predecessor_target_and_authority_restored':True,'failed_receipt_truthful':True,'deterministic_retry_status':retry['status']}))",
             str(rollback_root),
+            previous_version,
             cwd=temp,
             env=upgrade_env,
         )
@@ -1468,12 +1738,18 @@ def run_upgrade_rollback_probe(
             env=upgrade_env,
         )
     )
+    preserved_predecessor_state = all(
+        (repository / relative).is_file()
+        and sha256(repository / relative) == digest
+        for relative, digest in previous_state.items()
+    )
     if (
         install.get("status") not in {"installed", "already_installed"}
         or reinstall.get("status") not in {"installed", "already_installed"}
         or reinstall.get("writes_performed") is not False
         or status.get("writes_performed") is not False
         or dict(status.get("lifecycle") or {}).get("readiness") != "READY"
+        or not preserved_predecessor_state
     ):
         raise RuntimeError(
             "upgraded lifecycle did not preserve explicit-write boundaries: "
@@ -1584,9 +1860,15 @@ def run_upgrade_rollback_probe(
         "previous_version": previous_version,
         "current_version": current_version,
         "failed_upgrade_preflight_rejected": True,
-        "failed_upgrade_rollback_claimed": True,
-        "failed_upgrade_post_mutation_rollback": rollback_payload,
-        "supported_upgrade": True,
+        "product_upgrade_post_commit_rollback": rollback_payload,
+        "package_replacement_supported": True,
+        "actual_predecessor_state_preserved": True,
+        "actual_predecessor_upgrade_check_no_write": actual_check_no_write,
+        "actual_predecessor_state_paths": predecessor_owned_paths,
+        "actual_predecessor_upgrade_apply_status": actual_predecessor_apply.get("status"),
+        "receipt_compatibility_check_no_write": True,
+        "receipt_compatibility_apply_status": product_apply.get("status"),
+        "receipt_compatibility_current_idempotent": True,
         "idempotent_current_install": True,
         "unsupported_downgrade_advisory_returncode": downgraded_status.returncode,
         "unsupported_downgrade_advisory_no_write": True,
@@ -1648,6 +1930,15 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
         previous_authority = json.loads(
             previous_authority_path.read_text(encoding="utf-8")
         )
+        previous_authority_schema = json.loads(
+            (
+                source / "schemas" / "pcodex.previous-supported.v1.schema.json"
+            ).read_text(encoding="utf-8")
+        )
+        from jsonschema import Draft202012Validator
+
+        Draft202012Validator.check_schema(previous_authority_schema)
+        Draft202012Validator(previous_authority_schema).validate(previous_authority)
         if previous_authority.get("schema_version") != "pcodex.previous-supported.v1":
             raise RuntimeError("previous supported authority schema is invalid")
         if previous_authority.get("current_version") != "0.3.0b1":
@@ -1789,6 +2080,19 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
                         item_members, policy, archive_kind="wheel"
                     )
                 )
+                allowlist_failures.extend(
+                    validate_required_previous_supported(
+                        item_members, policy, archive_kind="wheel"
+                    )
+                )
+                allowlist_failures.extend(
+                    validate_previous_supported_archive_bytes(
+                        artifact,
+                        policy,
+                        previous_authority_path.read_bytes(),
+                        archive_kind="wheel",
+                    )
+                )
             if artifact.name.endswith((".tar.gz", ".tgz")):
                 allowlist_failures.extend(validate_sdist_names(item_members, policy))
                 allowlist_failures.extend(
@@ -1804,6 +2108,19 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
                 allowlist_failures.extend(
                     validate_required_algorithm_handoff(
                         item_members, policy, archive_kind="sdist"
+                    )
+                )
+                allowlist_failures.extend(
+                    validate_required_previous_supported(
+                        item_members, policy, archive_kind="sdist"
+                    )
+                )
+                allowlist_failures.extend(
+                    validate_previous_supported_archive_bytes(
+                        artifact,
+                        policy,
+                        previous_authority_path.read_bytes(),
+                        archive_kind="sdist",
                     )
                 )
             allowlist_failures.extend(validate_archive_content(artifact, policy))
@@ -2407,6 +2724,9 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             current_version=str(installed_contract["release_target"]),
             env=env,
             previous_authority=previous_authority,
+            no_write_probe_script=source / "scripts" / "installed_no_write_probe.py",
+            commit_sha=commit_sha,
+            evidence_timestamp=evidence_timestamp,
         )
         write_json(
             output / "receipts" / "known-limitations.json",

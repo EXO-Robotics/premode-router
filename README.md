@@ -100,6 +100,7 @@ It registers one immutable-workspace `premode_preflight` tool and preserves unre
 - One canonical packet and one production ranking-provider seam.
 - Literal no-write advisory, preview, and dry-run operations.
 - Receipt-bound setup, repair, migration, disable, uninstall, and reinstall.
+- Literal no-write `pcodex upgrade --check`; after explicit qualified package replacement, `pcodex upgrade --apply` preserves the actual `0.2.6.24` `.pcodex` state and changes only separately proven receipt-owned or supported legacy-plugin state.
 - Qualified wheel and sdist lifecycle on macOS and Linux with Python 3.11-3.13.
 - Canonical Codex plugin lifecycle with Codex `0.143.x`.
 - Receipt-bound production OpenClaw adapter for OpenClaw `2026.4.14`.

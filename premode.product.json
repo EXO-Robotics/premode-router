@@ -64,6 +64,8 @@
       "managed_lifecycle": [
         "pcodex install",
         "pcodex install --apply",
+        "pcodex upgrade --check",
+        "pcodex upgrade --apply",
         "pcodex repair --dry-run",
         "pcodex uninstall --dry-run",
         "pcodex uninstall --yes"
@@ -81,6 +83,7 @@
     "pcodex status",
     "pcodex run",
     "pcodex doctor",
+    "pcodex upgrade",
     "pcodex review",
     "pcodex off",
     "pcodex cleanup",
@@ -226,6 +229,15 @@
     "unknown_schemas_fail_closed": true,
     "raw_prompts_or_packets_stored": false
   },
+  "upgrade_authority": {
+    "previous_release": "release/previous-supported.json",
+    "previous_release_schema": "schemas/pcodex.previous-supported.v1.schema.json",
+    "plan_schema": "schemas/pcodex.upgrade-plan.v1.schema.json",
+    "operation_schema": "schemas/pcodex.upgrade-operation.v1.schema.json",
+    "package_replacement": "explicit and external",
+    "check_is_literal_no_write": true,
+    "unknown_versions_fail_closed": true
+  },
   "no_write_authority": {
     "schema_version": "pcodex.no-write-evidence.v1",
     "schema": "schemas/pcodex.no-write-evidence.schema.json",
@@ -244,7 +256,7 @@
     {"surface": "premode production package", "classification": "public_core", "kind": "package"},
     {"surface": "canonical_core_v1 packet renderer", "classification": "public_core", "kind": "renderer"},
     {"surface": "ProductionRankingProviderV1", "classification": "public_core", "kind": "provider_interface"},
-    {"surface": "pcodex install/setup/status/run/doctor/review/off/cleanup/repair/uninstall", "classification": "public_codex", "kind": "commands"},
+    {"surface": "pcodex install/setup/status/run/doctor/upgrade/review/off/cleanup/repair/uninstall", "classification": "public_codex", "kind": "commands"},
     {"surface": "plugins/pcodex skills", "classification": "public_codex", "kind": "codex_plugin_assets"},
     {"surface": "pcodex first-run/on/tuned/tune/ui/compile/integrate", "classification": "advanced", "kind": "commands"},
     {"surface": "pcodex MCP server", "classification": "advanced", "kind": "integration"},
@@ -290,6 +302,9 @@
     },
     {
       "surface": "reinstall validation receipt", "location": ".premode/reinstall-validation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "successful install or reinstall validation", "read_behavior": "bind exact healthy managed items to the current install-state authority hash", "write_behavior": "atomic after managed-state validation", "sensitivity": "private", "schema_version": "pcodex.reinstall-validation.v1", "cleanup_policy": "retain as lifecycle and bounded marker-recovery evidence", "repair_policy": "overwrite only a self-bound receipt with matching ownership", "uninstall_policy": "not deletion authority by itself", "conflict_policy": "unrelated or malformed output blocks validation", "user_modification_policy": "preserve and require manual action"
+    },
+    {
+      "surface": "product-state upgrade operation receipt", "location": ".premode/upgrade-operation.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit pcodex upgrade --apply after current package installation", "read_behavior": "bind planned and completed separately proven compatible transitions without prompts or packets", "write_behavior": "no-follow atomic journal and terminal receipt with hash-checked replacement", "sensitivity": "private_metadata", "schema_version": "pcodex.upgrade-operation.v1", "cleanup_policy": "retain as lifecycle evidence", "repair_policy": "interrupted completed actions fail closed for explicit recovery", "uninstall_policy": "not deletion authority by itself", "conflict_policy": "malformed, unrelated, future, or interrupted authority blocks mutation", "user_modification_policy": "preserve and require manual action"
     },
     {
       "surface": "managed install marker", "location": ".premode/pcodex-install.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit pcodex install --apply", "read_behavior": "verify deterministic product-owned lifecycle content", "write_behavior": "private staged atomic replacement only with receipt authority", "sensitivity": "public_safe", "schema_version": "pcodex.managed-install.v1", "cleanup_policy": "remove only when receipt-proven and unmodified", "repair_policy": "restore missing exact expected content only", "uninstall_policy": "receipt-bound removal with hash recheck and quarantine", "conflict_policy": "preserve modified or alternate filesystem objects", "user_modification_policy": "preserve and require manual action"

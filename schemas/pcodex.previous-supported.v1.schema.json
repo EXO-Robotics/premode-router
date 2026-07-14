@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.previous-supported.v1.schema.json",
+  "title": "pCodex frozen previous supported release authority",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product",
+    "current_version",
+    "previous_version",
+    "previous_commit",
+    "upgrade_policy",
+    "downgrade_policy",
+    "publication_authorized"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.previous-supported.v1"},
+    "product": {"const": "premode-router"},
+    "current_version": {"const": "0.3.0b1"},
+    "previous_version": {"const": "0.2.6.24"},
+    "previous_commit": {"const": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"},
+    "upgrade_policy": {"const": "explicit_package_upgrade_then_current_receipt_bound_lifecycle"},
+    "downgrade_policy": {"const": "unsupported_fail_closed_for_future_or_unknown_receipts"},
+    "publication_authorized": {"const": false}
+  }
+}

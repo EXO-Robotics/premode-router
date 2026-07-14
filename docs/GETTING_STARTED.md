@@ -81,6 +81,18 @@ pcodex --help
 
 This is a developer fallback, not a public package installation claim.
 
+## Upgrade from the supported beta
+
+Verify and install the qualified replacement artifact with the same Python environment first. pCodex never downloads or replaces its own package. Then preview the frozen predecessor boundary and apply only separately proven receipt-owned or supported legacy-plugin state. The actual `0.2.6.24` `.pcodex` user configuration is preserved:
+
+```console
+pcodex upgrade --check --json
+pcodex upgrade --apply --json
+pcodex status --advisory --json
+```
+
+`--check` is literal no-write. A modified, partial, future, unknown, or interrupted receipt reports `BLOCKED` and is preserved.
+
 ## Remove it
 
 Preview and remove integration state before removing the Python environment:

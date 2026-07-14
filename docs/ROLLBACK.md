@@ -26,6 +26,8 @@ Install the authorized replacement with the same environment, then inspect and r
 
 ```console
 "$HOME/.pcodex-beta/bin/python" -m pip install --no-index --no-deps /path/to/authorized-replacement.whl
+pcodex upgrade --check --json
+pcodex upgrade --apply --json
 pcodex integrate codex --status --json
 pcodex integrate codex --repair --dry-run --json
 pcodex integrate codex --repair --json
@@ -42,7 +44,7 @@ the reversible rollback surface: it removes only the exact receipt-proven
 authority, malformed/future receipts, and interrupted uncertain state fail
 closed and require the exact action reported by status.
 
-The release matrix covers the declared previous beta, existing canonical and legacy plugins, partial installs, modified managed files, corrupt/future receipts, interrupted upgrades, caught upgrade failure rollback, unsupported downgrade, uninstall after failure, and reinstall after rollback.
+The current source and installed-artifact matrix proves package replacement from the declared previous beta, byte-preservation of its actual `.pcodex` state, preflight rejection of a corrupt replacement, current-version idempotency, and unsupported downgrade refusal. The product-state command additionally proves literal no-write preview, defensive receipt compatibility, exact restoration after a caught managed-state commit failure, deterministic retry, modified/future authority preservation, and truthful interruption receipts. A partially mutated Codex legacy migration is detected and requires its bounded integration recovery rather than being described as automatically rolled back. Final release-candidate fan-out remains G5 qualification work.
 
 ## Failure behavior
 

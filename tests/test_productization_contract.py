@@ -33,6 +33,8 @@ from scripts.build_release_artifacts import (
     validate_archive_structure,
     validate_names,
     validate_required_contract_goldens,
+    validate_required_previous_supported,
+    validate_previous_supported_archive_bytes,
     validate_required_plugin_resources,
     validate_sdist_names,
     validated_python_interpreter,
@@ -173,6 +175,50 @@ def test_release_allowlist_requires_exact_contract_golden_set() -> None:
     assert validate_sdist_names([sdist_prefix + "raw-task.json"], policy) == [
         "unexpected_sdist_member:contracts/goldens/raw-task.json"
     ]
+
+
+def test_release_allowlist_requires_frozen_previous_supported_authority() -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    member = policy["previous_supported_member"]
+    wheel_name = (
+        "premode_router-0.3.0b1.data/data/share/premode-router/release/" + member
+    )
+    sdist_name = "premode_router-0.3.0b1/release/" + member
+
+    assert (
+        validate_required_previous_supported([wheel_name], policy, archive_kind="wheel")
+        == []
+    )
+    assert (
+        validate_required_previous_supported([sdist_name], policy, archive_kind="sdist")
+        == []
+    )
+    assert validate_required_previous_supported([], policy, archive_kind="wheel") == [
+        f"missing_previous_supported:{member}"
+    ]
+
+
+def test_packaged_previous_supported_authority_requires_exact_bytes(
+    tmp_path: Path,
+) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    expected = (ROOT / "release/previous-supported.json").read_bytes()
+    member = (
+        "premode_router-0.3.0b1.data/data/share/premode-router/release/"
+        + policy["previous_supported_member"]
+    )
+    wheel = tmp_path / "fixture.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(member, expected)
+    assert (
+        validate_previous_supported_archive_bytes(
+            wheel, policy, expected, archive_kind="wheel"
+        )
+        == []
+    )
+    assert validate_previous_supported_archive_bytes(
+        wheel, policy, b"different\n", archive_kind="wheel"
+    ) == ["previous_supported_bytes_mismatch"]
 
 
 def test_builder_requires_an_absolute_validated_python_interpreter() -> None:
@@ -617,15 +663,21 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(
     installed = {
         "wheel_lifecycle": {"passed": True},
         "sdist_lifecycle": {"passed": True},
-        "wheel_no_write": {"passed": True},
-        "sdist_no_write": {"passed": True},
+        "wheel_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
+        "sdist_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "sdist_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "upgrade_rollback": {
             "passed": True,
-            "failed_upgrade_post_mutation_rollback": {"passed": True},
+            "actual_predecessor_state_preserved": True,
+            "actual_predecessor_upgrade_check_no_write": True,
+            "actual_predecessor_upgrade_apply_status": "already_current",
+            "receipt_compatibility_check_no_write": True,
+            "receipt_compatibility_apply_status": "upgraded",
+            "receipt_compatibility_current_idempotent": True,
+            "product_upgrade_post_commit_rollback": {"passed": True},
             "unsupported_downgrade_fail_closed": True,
         },
     }
@@ -695,15 +747,21 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
     installed = {
         "wheel_lifecycle": {"passed": True},
         "sdist_lifecycle": {"passed": True},
-        "wheel_no_write": {"passed": True},
-        "sdist_no_write": {"passed": True},
+        "wheel_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
+        "sdist_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "sdist_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
         "upgrade_rollback": {
             "passed": True,
-            "failed_upgrade_post_mutation_rollback": {"passed": True},
+            "actual_predecessor_state_preserved": True,
+            "actual_predecessor_upgrade_check_no_write": True,
+            "actual_predecessor_upgrade_apply_status": "already_current",
+            "receipt_compatibility_check_no_write": True,
+            "receipt_compatibility_apply_status": "upgraded",
+            "receipt_compatibility_current_idempotent": True,
+            "product_upgrade_post_commit_rollback": {"passed": True},
             "unsupported_downgrade_fail_closed": True,
         },
     }

@@ -9,8 +9,14 @@ import subprocess
 import sys
 
 import premode
+from premode.managed_state import (
+    DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+    install_managed_file,
+    product_install_marker_content,
+)
 from premode.no_write import evidence_receipt, governed_roots_from_product, verify_no_write
 from premode.product_contract import validate_payload_against_schema
+from premode.product_upgrade import _previous_install_marker_content, load_previous_authority
 
 
 def _run(command: list[str], *, cwd: Path, env: dict[str, str]) -> dict[str, object]:
@@ -94,11 +100,47 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
     migration_roots = governed_roots_from_product(
         migration_repository, home=home, temp_root=temp_root, environ=env,
     )
+    upgrade_repository = control_root / "receipt-compatibility-upgrade"
+    upgrade_repository.mkdir()
+    (upgrade_repository / ".git").mkdir()
+    install_managed_file(
+        upgrade_repository,
+        ".premode/pcodex-install.json",
+        product_install_marker_content(),
+        receipt_path=upgrade_repository / DEFAULT_INSTALL_STATE_RELATIVE_PATH,
+    )
+    predecessor_version = str(load_previous_authority()["previous_version"])
+    upgrade_marker = upgrade_repository / ".premode/pcodex-install.json"
+    upgrade_marker.write_bytes(
+        _previous_install_marker_content()
+    )
+    upgrade_marker_hash = __import__("hashlib").sha256(
+        upgrade_marker.read_bytes()
+    ).hexdigest()
+    upgrade_receipt = upgrade_repository / DEFAULT_INSTALL_STATE_RELATIVE_PATH
+    upgrade_payload = json.loads(upgrade_receipt.read_text(encoding="utf-8"))
+    upgrade_payload["product_version"] = predecessor_version
+    upgrade_item = next(
+        item
+        for item in upgrade_payload["items"]
+        if item["owned_path"] == ".premode/pcodex-install.json"
+    )
+    upgrade_item["installed_hash"] = upgrade_marker_hash
+    upgrade_item["current_hash"] = upgrade_marker_hash
+    upgrade_receipt.write_text(
+        json.dumps(upgrade_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    upgrade_roots = governed_roots_from_product(
+        upgrade_repository, home=home, temp_root=temp_root, environ=env,
+    )
     commands = {
         "status_advisory": [str(pcodex), "status", "--advisory", "--json", "--repo-root", str(repository)],
         "doctor_advisory": [str(pcodex), "doctor", "--advisory", "--json", "--repo-root", str(repository)],
         "repair_preview": [str(pcodex), "repair", "--dry-run", "--json", "--repo-root", str(damaged_repository)],
         "uninstall_preview": [str(pcodex), "uninstall", "--dry-run", "--json", "--repo-root", str(repository)],
+        "upgrade_check": [str(pcodex), "upgrade", "--check", "--json", "--repo-root", str(repository)],
+        "upgrade_receipt_compatibility_check": [str(pcodex), "upgrade", "--check", "--json", "--repo-root", str(upgrade_repository)],
         "run_dry_run": [str(pcodex), "run", "Installed exact task", "--dry-run", "--json", "--repo", str(repository)],
         "integrate_codex_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--json", "--repo-root", str(repository)],
         "integrate_codex_migration_preview": [str(pcodex), "integrate", "codex", "--dry-run", "--migrate", "--json", "--repo-root", str(migration_repository)],
@@ -120,6 +162,7 @@ def probe(*, pcodex: Path, repository: Path, control_root: Path, commit_sha: str
         "integrate_codex_migration_preview": (migration_repository, migration_roots),
         "integrate_codex_repair_preview": (damaged_plugin_repository, damaged_plugin_roots),
         "integrate_codex_uninstall_preview": (uninstall_plugin_repository, uninstall_plugin_roots),
+        "upgrade_receipt_compatibility_check": (upgrade_repository, upgrade_roots),
     }
     for name, command in commands.items():
         command_repository, command_roots = command_contexts.get(name, (repository, roots))

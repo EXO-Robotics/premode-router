@@ -2865,7 +2865,7 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(
         dest="command",
         required=True,
-        metavar="{install,setup,status,doctor,repair,uninstall,run,review,off,cleanup}",
+        metavar="{install,setup,status,doctor,upgrade,repair,uninstall,run,review,off,cleanup}",
     )
     doctor_parser = sub.add_parser("doctor", help="Check local pCodex readiness.")
     doctor_parser.add_argument(
@@ -2954,6 +2954,29 @@ def _parser() -> argparse.ArgumentParser:
         "--json", action="store_true", help="Print machine-readable uninstall result."
     )
     uninstall_parser.add_argument(
+        "--repo-root",
+        default=None,
+        help="Repository root. Defaults to the current repo.",
+    )
+    upgrade_parser = sub.add_parser(
+        "upgrade",
+        help="Check the frozen predecessor boundary and reconcile only proven state.",
+    )
+    upgrade_mode = upgrade_parser.add_mutually_exclusive_group()
+    upgrade_mode.add_argument(
+        "--check",
+        action="store_true",
+        help="Preview the receipt-bound product-state upgrade without writing.",
+    )
+    upgrade_mode.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply only receipt-proven or supported legacy state transitions.",
+    )
+    upgrade_parser.add_argument(
+        "--json", action="store_true", help="Print machine-readable upgrade result."
+    )
+    upgrade_parser.add_argument(
         "--repo-root",
         default=None,
         help="Repository root. Defaults to the current repo.",
@@ -3263,6 +3286,8 @@ def validate_pcodex_namespace(args: argparse.Namespace) -> list[str]:
         errors.append("pcodex repair requires --dry-run or --yes")
     elif args.command == "uninstall" and not args.dry_run and not args.yes:
         errors.append("pcodex uninstall requires --dry-run or --yes")
+    elif args.command == "upgrade" and not args.check and not args.apply:
+        errors.append("pcodex upgrade requires --check or --apply")
     elif args.command == "integrate":
         if args.integrate_command not in {"codex", "openclaw"}:
             errors.append("unsupported integrate target")
@@ -3446,6 +3471,52 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(format_cleanup(payload))
         return 0
+    if args.command == "upgrade":
+        from .product_upgrade import (
+            ProductUpgradeError,
+            apply_product_upgrade,
+            plan_product_upgrade,
+        )
+
+        try:
+            payload = (
+                plan_product_upgrade(repo_root)
+                if args.check
+                else apply_product_upgrade(repo_root)
+            )
+        except (ProductUpgradeError, ManagedStateError, OSError) as exc:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "error": str(exc),
+                        "codex_launch": "not_executed",
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+                file=sys.stderr,
+            )
+            return 2
+        payload["dry_run"] = bool(args.check)
+        payload["codex_launch"] = "not_executed"
+        if args.json:
+            print(json.dumps(payload, indent=2, sort_keys=True))
+        else:
+            print(f"pCodex upgrade {payload.get('status', payload['readiness'])}:")
+            print(f"- from: {payload['previous_version']}")
+            print(f"- to: {payload['current_version']}")
+            print(f"- planned actions: {len(payload.get('planned_actions') or [])}")
+            print(f"- conflicts: {len(payload.get('conflicts') or [])}")
+            print(f"- next: {payload['next_recommended_action']}")
+        return (
+            0
+            if (
+                (args.check and payload.get("readiness") != "BLOCKED")
+                or payload.get("status") in {"upgraded", "already_current"}
+            )
+            else 2
+        )
     if args.command == "repair":
         managed_root = (
             Path(args.managed_root).expanduser() if args.managed_root else repo_root

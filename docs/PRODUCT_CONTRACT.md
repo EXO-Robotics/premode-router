@@ -43,12 +43,14 @@ pcodex cleanup --local-state --dry-run
 pcodex cleanup --local-state --yes
 pcodex repair --dry-run
 pcodex repair --yes
+pcodex upgrade --check
+pcodex upgrade --apply
 pcodex uninstall --dry-run
 pcodex uninstall --yes
 premode review-patch --since-compile
 ```
 
-`pcodex install` previews the repository-local installation; `pcodex install --apply` creates the deterministic product-owned lifecycle marker and its authority receipt, while preserving the existing explicit user-config behavior. `cleanup --local-state` is the legacy bounded cleanup surface for known repo-local generated state. `repair` and `uninstall` are receipt-driven lifecycle surfaces: previews are pure reads, repair restores only missing known content with exact authority, and uninstall removes only state whose ownership and installed hash are proven. Neither command is a broad directory repairer or cleaner.
+`pcodex install` previews the repository-local installation; `pcodex install --apply` creates the deterministic product-owned lifecycle marker and its authority receipt, while preserving the existing explicit user-config behavior. Package replacement remains an explicit package-manager action bound to the qualified artifact hash. After replacement, `pcodex upgrade --check` is literal no-write and `pcodex upgrade --apply` preserves the actual frozen predecessor's `.pcodex` user state while reconciling only separately proven compatible receipts or supported historical plugin fingerprints. Unknown, future, modified, partial, or interrupted authority fails closed. `cleanup --local-state` is the legacy bounded cleanup surface for known repo-local generated state. `repair` and `uninstall` are receipt-driven lifecycle surfaces: previews are pure reads, repair restores only missing known content with exact authority, and uninstall removes only state whose ownership and installed hash are proven. None of these commands is a broad directory repairer or cleaner.
 
 `first-run`, `on`, `tuned`, `tune`, `ui`, `compile`, `integrate codex`, MCP, plugin initialization, benchmarks, stress tools, labs, hooks, and tuning internals are advanced, internal, or research surfaces as classified in `docs/PUBLIC_SURFACES.md` and `premode.product.json`.
 
@@ -104,6 +106,7 @@ The beta does not promise universal task coverage, universal token or cost savin
 - Ranking seam: `docs/ALGORITHM_INTEGRATION_INTERFACE.md`, `src/premode/production_ranking.py`, and its JSON schema.
 - Canonical packet: `src/premode/core_packet.py` plus characterization tests.
 - Install-state receipt: `src/premode/managed_state.py` and `schemas/pcodex.install-state.schema.json`.
+- Upgrade plans and receipts: `src/premode/product_upgrade.py`, `schemas/pcodex.upgrade-plan.v1.schema.json`, and `schemas/pcodex.upgrade-operation.v1.schema.json`.
 - Repair/uninstall plans and operation receipts: `src/premode/managed_state.py` and `schemas/pcodex.*-plan.schema.json`, `schemas/pcodex.*-operation.schema.json`.
 - First run: `docs/GETTING_STARTED.md`.
 - Claims: `docs/KNOWN_LIMITATIONS.md`.

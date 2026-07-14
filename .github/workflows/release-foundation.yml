@@ -148,6 +148,12 @@ jobs:
           assert qualification["no_write"] == {"wheel": True, "sdist": True}
           assert qualification["upgrade_rollback"] == {
               "passed": True,
+              "actual_predecessor_state_preserved": True,
+              "actual_predecessor_check_no_write": True,
+              "actual_predecessor_apply_status": "already_current",
+              "receipt_compatibility_check_no_write": True,
+              "receipt_compatibility_apply": "upgraded",
+              "receipt_compatibility_current_idempotent": True,
               "post_mutation_rollback": True,
               "unsupported_downgrade_fail_closed": True,
           }
@@ -183,9 +189,9 @@ jobs:
       - name: Lint and format qualification-critical Python
         run: |
           ruff check --select E9,F63,F7,F82 src/premode scripts tests
-          ruff format --check src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py scripts/installed_openclaw_adapter_probe.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
+          ruff format --check src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py src/premode/product_upgrade.py scripts/installed_openclaw_adapter_probe.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
       - name: Type-check versioned product contracts
-        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py
+        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/product_upgrade.py src/premode/production_ranking.py src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py
       - name: Validate frozen production algorithm handoff
         run: PYTHONPATH=src python scripts/validate_algorithm_handoff.py
       - name: Run Python security analyzers
@@ -196,7 +202,7 @@ jobs:
             -r requirements/release-build.lock
           # Exact hash-authority field names are evidence, not credentials. Python
           # hash constants carry per-line allowlist pragmas and remain scanned.
-          detect-secrets scan --exclude-lines '^(?:\s*"(?:sha256|commit_sha|tree_sha|freeze_sha256|provider_freeze_sha256|approved_algorithm_commit)"\s*:\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})",?\s*|\s*"(?:approved_algorithm_commit|commit_sha|tree_sha|freeze_sha256)"\s*:\s*\{"const":\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})"\},?\s*)$' \
+          detect-secrets scan --exclude-lines '^(?:\s*"(?:sha256|commit_sha|tree_sha|freeze_sha256|provider_freeze_sha256|approved_algorithm_commit|previous_commit)"\s*:\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})",?\s*|\s*"(?:approved_algorithm_commit|commit_sha|tree_sha|freeze_sha256|previous_commit)"\s*:\s*\{"const":\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})"\},?\s*)$' \
             .github requirements schemas README.md premode.product.json \
             docs/GETTING_STARTED.md docs/CODEX_INTEGRATION.md \
             docs/OPENCLAW_INTEGRATION.md docs/TROUBLESHOOTING.md \
@@ -208,9 +214,11 @@ jobs:
             src/premode/openclaw_contracts.py src/premode/openclaw_integration.py \
             src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py \
             src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py \
-            src/premode/algorithm_handoff.py scripts/validate_algorithm_handoff.py \
+            src/premode/algorithm_handoff.py src/premode/product_upgrade.py \
+            scripts/validate_algorithm_handoff.py \
+            scripts/build_release_artifacts.py scripts/installed_no_write_probe.py \
             scripts/installed_openclaw_adapter_probe.py \
-            release/algorithm-handoff.v1.json \
+            release/algorithm-handoff.v1.json release/previous-supported.json \
             > "$RUNNER_TEMP/detect-secrets.json"
           python -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/detect-secrets.json')); assert not d.get('results'), d.get('results')"
           semgrep scan --error --metrics=off --config security/semgrep-release.yml src/premode scripts

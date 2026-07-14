@@ -31,7 +31,10 @@ premode = []
 [tool.setuptools.data-files]
 "share/premode-router" = ["premode.product.json"]
 "share/premode-router/schemas" = ["schemas/*.json"]
-"share/premode-router/release" = ["release/algorithm-handoff.v1.json"]
+"share/premode-router/release" = [
+  "release/algorithm-handoff.v1.json",
+  "release/previous-supported.json",
+]
 "share/premode-router/contracts/goldens" = [
   "contracts/goldens/agent-adapter-v1.json",
   "contracts/goldens/context-packet-v1.json",

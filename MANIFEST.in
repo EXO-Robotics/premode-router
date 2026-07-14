@@ -4,6 +4,7 @@ include pyproject.toml
 include premode.product.json
 recursive-include schemas *.json
 include release/algorithm-handoff.v1.json
+include release/previous-supported.json
 include contracts/goldens/agent-adapter-v1.json
 include contracts/goldens/context-packet-v1.json
 include contracts/goldens/context-receipt-v1.json

@@ -25,6 +25,7 @@ UNINSTALL_PLAN_SCHEMA_VERSION = "pcodex.uninstall-plan.v1"
 UNINSTALL_OPERATION_SCHEMA_VERSION = "pcodex.uninstall-operation.v2"
 LEGACY_UNINSTALL_OPERATION_SCHEMA_VERSION = "pcodex.uninstall-operation.v1"
 OWNERSHIP_MARKER_SCHEMA_VERSION = "pcodex.managed-state-owner.v1"
+_AUTHORITY_FSTAT = os.fstat
 OWNERSHIP_MARKER_RELATIVE_PATH = ".premode/managed-state-owner.json"
 DEFAULT_INSTALL_STATE_RELATIVE_PATH = ".premode/install-state.json"
 DEFAULT_REPAIR_OPERATION_RELATIVE_PATH = ".premode/repair-operation.json"
@@ -160,19 +161,55 @@ def _ownership_marker_path(root: Path) -> Path:
     return resolve_managed_path(root, OWNERSHIP_MARKER_RELATIVE_PATH)
 
 
+def _read_exclusive_regular_json(path: Path, label: str) -> Any:
+    try:
+        entry = path.lstat()
+    except FileNotFoundError as exc:
+        raise ManagedStateError(f"{label} is missing") from exc
+    if not stat.S_ISREG(entry.st_mode) or entry.st_nlink != 1:
+        raise ManagedStateError(
+            f"{label} must be an exclusively linked regular file"
+        )
+    descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        before = _AUTHORITY_FSTAT(descriptor)
+        with os.fdopen(os.dup(descriptor), "rb") as handle:
+            content = handle.read()
+        after = _AUTHORITY_FSTAT(descriptor)
+        current = path.lstat()
+    finally:
+        os.close(descriptor)
+    identity = (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or before.st_nlink != 1
+        or identity != (after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns)
+        or identity
+        != (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns)
+    ):
+        raise ManagedStateError(f"{label} changed during inspection")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise ManagedStateError(f"{label} is corrupt") from exc
+
+
 def _read_owner_marker(root: Path) -> dict[str, Any]:
     path = _ownership_marker_path(root)
-    if not path.exists():
-        raise ManagedStateError("managed-state ownership marker is missing")
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
+        payload = _read_exclusive_regular_json(path, "managed-state ownership marker")
+    except OSError as exc:
         raise ManagedStateError("managed-state ownership marker is corrupt") from exc
     required = {
         "schema_version", "product_name", "ownership_id", "managed_root_hash",
         "install_state_receipt",
     }
-    if set(payload) != required or payload.get("schema_version") != OWNERSHIP_MARKER_SCHEMA_VERSION or payload.get("product_name") != "pCodex":
+    if (
+        not isinstance(payload, dict)
+        or set(payload) != required
+        or payload.get("schema_version") != OWNERSHIP_MARKER_SCHEMA_VERSION
+        or payload.get("product_name") != "pCodex"
+    ):
         raise ManagedStateError("managed-state ownership marker is invalid")
     if payload.get("managed_root_hash") != sha256_bytes(str(root).encode("utf-8")):
         raise ManagedStateError("managed-state ownership marker root mismatch")
@@ -523,6 +560,8 @@ def validate_install_state_receipt(payload: Any) -> dict[str, Any]:
         raise ManagedStateError("install-state receipt contains unsupported fields")
     if payload.get("operation_type") not in {"setup", "repair", "migration", "reinstall"}:
         raise ManagedStateError("unsupported install-state operation_type")
+    if not isinstance(payload.get("product_version"), str) or not payload["product_version"]:
+        raise ManagedStateError("install-state product_version must be non-empty")
     if not isinstance(payload.get("items"), list):
         raise ManagedStateError("install-state items must be an array")
     if not isinstance(payload.get("ownership_id"), str) or not payload["ownership_id"]:
@@ -537,15 +576,20 @@ def validate_install_state_receipt(payload: Any) -> dict[str, Any]:
 
 def read_install_state_receipt(path: Path | str) -> dict[str, Any]:
     receipt_path = Path(path)
-    if not receipt_path.exists():
+    if not receipt_path.exists() and not receipt_path.is_symlink():
         return {"status": "missing", "path": str(receipt_path), "payload": None, "error": None}
     try:
-        raw = json.loads(receipt_path.read_text(encoding="utf-8"))
+        raw = _read_exclusive_regular_json(receipt_path, "install-state receipt")
         payload = validate_install_state_receipt(raw)
-    except json.JSONDecodeError as exc:
-        return {"status": "corrupt", "path": str(receipt_path), "payload": None, "error": str(exc)}
     except (OSError, ManagedStateError) as exc:
-        status = "unknown_schema" if "future install-state schema" in str(exc) else "invalid"
+        message = str(exc)
+        status = (
+            "unknown_schema"
+            if "future install-state schema" in message
+            else "corrupt"
+            if "is corrupt" in message
+            else "invalid"
+        )
         return {"status": status, "path": str(receipt_path), "payload": None, "error": str(exc)}
     return {"status": "loaded", "path": str(receipt_path), "payload": payload, "error": None}
 
