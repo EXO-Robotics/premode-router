@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import hashlib
 import gzip
 from fnmatch import fnmatch
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -239,20 +240,46 @@ def validate_archive_content(path: Path, policy: dict[str, object]) -> list[str]
         for name, values in dict(policy.get("content_allowed_signatures_by_member", {})).items()
     }
     failures: list[str] = []
+
+    def archive_members(name: str, data: bytes) -> list[tuple[str, bytes]] | None:
+        if name.endswith((".whl", ".zip")):
+            with zipfile.ZipFile(io.BytesIO(data)) as archive:
+                return [(item.filename, archive.read(item)) for item in archive.infolist() if not item.is_dir()]
+        if name.endswith((".tar.gz", ".tgz")):
+            result: list[tuple[str, bytes]] = []
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as archive:
+                for item in archive.getmembers():
+                    if not item.isfile():
+                        continue
+                    extracted = archive.extractfile(item)
+                    if extracted is not None:
+                        result.append((item.name, extracted.read()))
+            return result
+        return None
+
+    root_members = archive_members(path.name, path.read_bytes())
+    if root_members is None:
+        return [f"unsupported_archive:{path.name}"]
     payloads: list[tuple[str, bytes]] = []
-    if path.suffix in {".whl", ".zip"}:
-        with zipfile.ZipFile(path) as archive:
-            payloads = [(item.filename, archive.read(item)) for item in archive.infolist() if not item.is_dir()]
-    elif path.name.endswith((".tar.gz", ".tgz")):
-        with tarfile.open(path, "r:gz") as archive:
-            payloads = [(item.name, archive.extractfile(item).read()) for item in archive.getmembers() if item.isfile() and archive.extractfile(item) is not None]
+    pending = [(name, data, 1) for name, data in root_members]
+    while pending:
+        name, data, depth = pending.pop()
+        nested = archive_members(name, data)
+        if nested is None:
+            payloads.append((name, data))
+            continue
+        if depth >= 4:
+            failures.append(f"archive_nesting_exceeded:{name}")
+            continue
+        pending.extend((f"{name}!{member}", payload, depth + 1) for member, payload in nested)
     for name, data in payloads:
+        logical_name = name.rsplit("!", 1)[-1]
         member_signatures = tuple(
             signature
             for member, signatures in allowed_signatures.items()
-            if name == member
-            or name.endswith("/" + member)
-            or (member.startswith("premode/") and name.endswith("/src/" + member))
+            if logical_name == member
+            or logical_name.endswith("/" + member)
+            or (member.startswith("premode/") and logical_name.endswith("/src/" + member))
             for signature in signatures
         )
         for signature in member_signatures:

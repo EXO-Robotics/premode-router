@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import sys
 import zipfile
+import io
 
 from scripts.check_public_hygiene import scan
 from scripts.build_release_artifacts import (
@@ -222,3 +223,25 @@ def test_artifact_exact_signature_allowance_handles_sdist_prefix_without_hiding_
 
     assert any(item.startswith("prohibited_content:") for item in failures)
     assert any(item.startswith("prohibited_secret:") for item in failures)
+
+
+def test_tester_bundle_scans_nested_members_not_opaque_archive_bytes(tmp_path: Path) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    nested_bytes = io.BytesIO()
+    with zipfile.ZipFile(nested_bytes, "w", compression=zipfile.ZIP_STORED) as nested:
+        # The identity-like string exists only in container metadata. Artifact
+        # member names are validated separately; content scanning must inspect
+        # the clean payload rather than treating compressed bytes as text.
+        nested.writestr("metadata/person" + "@private.example", b"clean payload")
+    bundle = tmp_path / "bundle.zip"
+    with zipfile.ZipFile(bundle, "w") as outer:
+        outer.writestr("artifacts/fixture.zip", nested_bytes.getvalue())
+
+    assert validate_archive_content(bundle, policy) == []
+
+    leaking_bytes = io.BytesIO()
+    with zipfile.ZipFile(leaking_bytes, "w") as nested:
+        nested.writestr("payload.txt", b"person" + b"@private.example")
+    with zipfile.ZipFile(bundle, "w") as outer:
+        outer.writestr("artifacts/fixture.zip", leaking_bytes.getvalue())
+    assert any(item.startswith("prohibited_email:") for item in validate_archive_content(bundle, policy))
