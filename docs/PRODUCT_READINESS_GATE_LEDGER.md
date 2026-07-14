@@ -1,9 +1,9 @@
 # Product-Readiness Gate Ledger
 
-Status date: 2026-07-13
+Status date: 2026-07-14
 Campaign branch: `product/codex-beta-v1`
 Accepted campaign baseline: `88b459ca79ebd04149bb0719405656df2c904292`
-Current integrated milestone implementation: `d86b7f6cbf1d30b4afbb40202ae489fd568bc998`
+Current integrated milestone implementation: `a96d5055be6a8593a007487c8a4f30ce7fadfeb5`
 
 The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate for an earlier failed gate.
 
@@ -22,11 +22,11 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 | --- | --- | --- | --- | --- | --- | --- |
 | G0 — product contract and scope | `premode.product.json`, `docs/PRODUCT_CONTRACT.md`, `docs/ROADMAP_TO_90.md` | complete | contract/schema tests pass | none | none | passed |
 | G1 — product and CLI consolidation | public parser tests, strict doctor, lifecycle tests, first-run fixtures | complete | automated journeys pass | five-person external study not executed | median activation evidence | substantially_complete |
-| G2-core | canonical packet, `ProductionRankingProviderV1`, managed state, repair/uninstall | complete | full repository suite and clean artifact lifecycle pass | none | algorithm lane may retain incumbent | passed |
+| G2-core | canonical packet, `ProductionRankingProviderV1`, frozen incumbent handoff, managed state, repair/uninstall | complete | full repository suite, clean artifact lifecycle, and nine-case production behavior freeze pass | none | later algorithm promotion must use the immutable handoff contract | passed |
 | G2-security | no-write receipts, containment, ownership, scanners | complete | macOS/Linux and Python 3.11-3.13 CI and Stage 2 clean-artifact proof pass | none | broader adversarial review continues | passed |
-| G3 — production Codex integration | canonical plugin lifecycle and Codex 0.143 discovery | substantially complete | wheel/sdist lifecycle, live discovery, and optional MCP registration lifecycle pass | optional MCP runtime does not yet enforce its registered `PCODEX_WORKSPACE`; full protocol, containment, cancellation, shutdown, and sensitive-error conformance remain | broader Codex versions are unsupported | substantially_complete |
+| G3 — production Codex integration | canonical plugin lifecycle, bounded optional MCP, and Codex 0.143 discovery | complete | macOS/Linux wheel/sdist lifecycle, live discovery, workspace binding, protocol, containment, cancellation, shutdown, and sensitive-error checks pass | none | broader Codex versions are unsupported | passed |
 | G4 — production OpenClaw adapter | experimental detection/policy only | not started | not started | product lifecycle, containment, compatibility, and 20-task acceptance set absent | full G4 scope | not_started |
-| G5 — distribution and release engineering | workflows `29301111990` and `29302610473`, reproducible wheel/sdist, SBOM, provenance, rollback | substantially complete | macOS/Linux × Python 3.11-3.13 passed twice, including the Stage 2 contract boundary | product-level upgrade check/apply commands and final RC evidence remain | Windows not supported | substantially_complete |
+| G5 — distribution and release engineering | workflows `29301111990`, `29302610473`, and `29311089717`; reproducible wheel/sdist, SBOM, provenance, rollback | substantially complete | macOS/Linux × Python 3.11-3.13 and frozen-algorithm artifact authorities pass | product-level upgrade check/apply commands and final RC evidence remain | Windows not supported | substantially_complete |
 | G6 — held-out product proof | protocol foundations only | not started | not started | frozen 10-repository/100-task corpus and case studies absent | external/model execution | not_started |
 
 ## Milestone receipts
@@ -70,3 +70,33 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Remote evidence: workflow `29305106614`; six test jobs, six artifact jobs, reproducibility, release evidence, static quality, and history scanning passed. Dependency review was correctly skipped for manual dispatch.
 - External evidence: `docs/FIRST_RUN_STUDY_PROTOCOL.md` freezes the five-person study and reconciled activation thresholds. No tester result is inferred from automation.
 - Current blocker: five eligible human tester receipts have not been collected.
+
+### G3 — Canonical Codex Plugin and Optional MCP Closure
+
+- Classification: passed.
+- Canonical plugin implementation SHA: `a2095ab28bb0f3b9b563c6d6357f18f09cc57275`.
+- Diagnostic evidence preservation SHA: `72cd619`.
+- Linux process-observation repair SHA: `8167f0e`.
+- Qualification: canonical plugin preview/install/status/repair/disable/uninstall/reinstall; legacy migration; exact registration ownership; optional MCP disabled by default; immutable workspace binding; initialization, tool schema, invocation, invalid input, traversal, symlink, concurrency, cancellation, shutdown, and sensitive-error checks.
+- Installed-artifact evidence: wheel and sdist lifecycle and literal no-write probes passed on macOS and Linux with Codex `0.143.x`.
+- Independent review: three read-only lanes ended at P0=0/P1=0 after fixes.
+- Remote evidence: workflow `29309004411`; six test jobs, six artifact jobs, reproducibility, release evidence, static quality, and history scanning passed. Dependency review was correctly skipped for manual dispatch while pinned `pip-audit` passed.
+- Supported claim: production Codex integration is qualified for the declared Codex `0.143.x`, macOS/Linux, and Python 3.11-3.13 matrix.
+- Unsupported claim: broader Codex-version compatibility or marketplace publication.
+
+### Stage 4 — Production Algorithm Handoff and Integration
+
+- Classification: passed with the incumbent retained; no algorithm behavior changed.
+- Starting SHA: `8167f0e`.
+- Implementation SHA: `688697e6b6303d03b644e960a4cad4b06b3deaeb`.
+- CI security corrective SHA: `a96d5055be6a8593a007487c8a4f30ce7fadfeb5`.
+- Promotion decision: `no_candidate_promoted`; the incumbent baseline remains `b9aede455c8d49217ef0a67e8dec0c8cf2c565a6` with tree `8120490deb23457d19299b09d5291783753f2066`.
+- Production freeze: nine real compile/provider cases covering narrow, broad, five representative abstention shapes, and explicit provider-returned fallback; exact task appears once; SHA-256 `f4499af2b068a8802d3abaadbd360e804facebf4afc5dc6f461ee3fd12e2714c`.
+- Native evidence accounting: 36 complete receipts and 6 preserved exclusions. All 11 aggregate evidence authorities, disclosure classes, qualification scopes/dimensions, supported/prohibited claims, and known limitations are exact-bound without opening private evidence.
+- Tests: 1,335 passed and 5 intentional skips in the final local full suite; focused algorithm/productization suites, Ruff, mypy, compilation, schema validation, documentation validation, product-manifest validation, public hygiene, Bandit, Detect Secrets, Semgrep, pip-audit, Gitleaks, and TruffleHog passed locally or in the remote matrix.
+- Independent review: three read-only lanes ended at P0=0/P1=0. The CI secret-exclusion correction received a separate P0=0/P1=0 re-review and credential-shaped negative regression probes.
+- Artifacts: wheel SHA-256 `f337ecc1ccff0328ac4edb66d313b72f143f85ac71f63560a7ad831e38f7ff4f`; sdist SHA-256 `d118f8fe445bfd7b1e3533544477ad6ebc1aa1884a79e84f85786820bcdac18b`; handoff SHA-256 `9aec0dc9b800cc7869b2ab61b0eb7b6eb4de3f7a578acbe617272f9ae8e8553a`; handoff-schema SHA-256 `06ed2871b4e898a374d3853c6235422e48c856fdc6c4be84b03e81fc6e7cde5d`.
+- Installed-artifact evidence: wheel/sdist no-write, lifecycle, Codex discovery, upgrade/rollback, archive safety, package allowlist, parity, SBOM, provenance, standalone handoff authorities, and package removal passed from the clean corrective commit.
+- Remote evidence: workflow `29311089717`; six test jobs, six artifact jobs, reproducibility, release evidence, static quality/security, and full-history scanning passed. Dependency review was correctly skipped for manual dispatch while pinned `pip-audit` passed.
+- Supported claim: one frozen, qualified incumbent production path exists behind `ProductionRankingProviderV1`, with explicit abstention/fallback contract compatibility and no experiment identifiers in public artifacts.
+- Unsupported claim: a newly promoted algorithm, universal savings, or final held-out release qualification.
