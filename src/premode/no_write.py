@@ -18,7 +18,9 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
+
+from .openclaw_integration import resolve_openclaw_config_authority
 
 
 SCHEMA_VERSION = "pcodex.no-write-evidence.v1"
@@ -40,6 +42,8 @@ REQUIRED_GOVERNED_ROOTS = {
     "codex_marketplace_external": "integration_state",
     "codex_marketplace": "integration_state",
     "codex_mcp": "external_config",
+    "openclaw_config": "external_config",
+    "openclaw_state": "integration_state",
     "xdg_config": "user_state",
     "xdg_cache": "cache",
     "xdg_data": "user_state",
@@ -47,9 +51,19 @@ REQUIRED_GOVERNED_ROOTS = {
 }
 
 PUBLIC_SAFE_ARGUMENT_FLAGS = {
-    "--advisory", "--apply", "--dry-run", "--json", "--local-marketplace",
-    "--local-state", "--no-mcp", "--no-record", "--no-save", "--repo",
-    "--repo-root", "--skip-tune", "--yes",
+    "--advisory",
+    "--apply",
+    "--dry-run",
+    "--json",
+    "--local-marketplace",
+    "--local-state",
+    "--no-mcp",
+    "--no-record",
+    "--no-save",
+    "--repo",
+    "--repo-root",
+    "--skip-tune",
+    "--yes",
 }
 
 
@@ -74,26 +88,41 @@ def _root_manifest_sha256(roots: Sequence[GovernedRoot]) -> str:
         {
             "root_id": root.root_id,
             "category": root.category,
-            "resolved_path": str(root.path.expanduser().absolute().resolve(strict=False)),
+            "resolved_path": str(
+                root.path.expanduser().absolute().resolve(strict=False)
+            ),
         }
         for root in roots
     ]
-    return _sha256_bytes(json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    return _sha256_bytes(
+        json.dumps(rows, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    )
 
 
 class GovernedRootSet(Sequence[GovernedRoot]):
     """Immutable, factory-bound root and resolved-path authority manifest."""
 
-    __slots__ = ("_roots", "_manifest_sha256")
+    __slots__ = ("_roots", "_manifest_sha256", "_revalidator")
     authority = "premode.product.v2"
 
-    def __init__(self, roots: Sequence[GovernedRoot], *, _token: object | None = None) -> None:
+    def __init__(
+        self,
+        roots: Sequence[GovernedRoot],
+        *,
+        _token: object | None = None,
+        _revalidator: Callable[[], "GovernedRootSet"] | None = None,
+    ) -> None:
         if _token is not _ROOT_AUTHORITY_TOKEN:
-            raise TypeError("GovernedRootSet must be created by governed_roots_from_product")
+            raise TypeError(
+                "GovernedRootSet must be created by governed_roots_from_product"
+            )
         self._roots = tuple(roots)
         self._manifest_sha256 = _root_manifest_sha256(self._roots)
+        self._revalidator = _revalidator
 
-    def __getitem__(self, index: int | slice) -> GovernedRoot | tuple[GovernedRoot, ...]:
+    def __getitem__(
+        self, index: int | slice
+    ) -> GovernedRoot | tuple[GovernedRoot, ...]:
         return self._roots[index]
 
     def __len__(self) -> int:
@@ -102,6 +131,12 @@ class GovernedRootSet(Sequence[GovernedRoot]):
     @property
     def manifest_sha256(self) -> str:
         return self._manifest_sha256
+
+    def authority_is_current(self) -> bool:
+        if self._revalidator is None:
+            return True
+        current = self._revalidator()
+        return current.manifest_sha256 == self.manifest_sha256
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -135,7 +170,13 @@ def _hash_regular_file(path: Path, size: int, policy: SnapshotPolicy) -> dict[st
                 "bytes_hashed": size,
                 "atime_protection": atime_protection,
             }
-        offsets = sorted({0, max(0, size // 2 - policy.sample_size // 2), max(0, size - policy.sample_size)})
+        offsets = sorted(
+            {
+                0,
+                max(0, size // 2 - policy.sample_size // 2),
+                max(0, size - policy.sample_size),
+            }
+        )
         digest = hashlib.sha256()
         hashed = 0
         for offset in offsets:
@@ -166,7 +207,9 @@ def _xattrs(path: Path) -> dict[str, Any]:
     for name in names:
         try:
             value = os.getxattr(path, name, follow_symlinks=False)
-            entries.append({"name": name, "size": len(value), "sha256": _sha256_bytes(value)})
+            entries.append(
+                {"name": name, "size": len(value), "sha256": _sha256_bytes(value)}
+            )
         except (OSError, TypeError) as exc:
             entries.append({"name": name, "error": type(exc).__name__})
     return {"supported": True, "entries": entries}
@@ -190,11 +233,17 @@ def _entry_type(mode: int) -> str:
     return "other"
 
 
-def _snapshot_entry(path: Path, relative_path: str, policy: SnapshotPolicy) -> dict[str, Any]:
+def _snapshot_entry(
+    path: Path, relative_path: str, policy: SnapshotPolicy
+) -> dict[str, Any]:
     try:
         info = path.lstat()
     except OSError as exc:
-        return {"path": relative_path, "entry_type": "unreadable", "error": type(exc).__name__}
+        return {
+            "path": relative_path,
+            "entry_type": "unreadable",
+            "error": type(exc).__name__,
+        }
     entry: dict[str, Any] = {
         "path": relative_path,
         "resolved_path": str(path.resolve(strict=False)),
@@ -207,7 +256,9 @@ def _snapshot_entry(path: Path, relative_path: str, policy: SnapshotPolicy) -> d
         "gid": getattr(info, "st_gid", None),
         "mtime_ns": getattr(info, "st_mtime_ns", int(info.st_mtime * 1_000_000_000)),
         "ctime_ns": getattr(info, "st_ctime_ns", int(info.st_ctime * 1_000_000_000)),
-        "birthtime_ns": int(info.st_birthtime * 1_000_000_000) if hasattr(info, "st_birthtime") else None,
+        "birthtime_ns": int(info.st_birthtime * 1_000_000_000)
+        if hasattr(info, "st_birthtime")
+        else None,
         "hard_link_count": getattr(info, "st_nlink", None),
         "extended_attributes": _xattrs(path),
     }
@@ -224,32 +275,50 @@ def _snapshot_entry(path: Path, relative_path: str, policy: SnapshotPolicy) -> d
     return entry
 
 
-def _walk_no_follow(root: Path, traversal_errors: list[dict[str, str]]) -> Iterable[tuple[Path, str]]:
+def _walk_no_follow(
+    root: Path, traversal_errors: list[dict[str, str]]
+) -> Iterable[tuple[Path, str]]:
     yield root, "."
     try:
         root_info = root.lstat()
     except OSError as exc:
-        traversal_errors.append({"path": ".", "operation": "lstat", "error": type(exc).__name__})
+        traversal_errors.append(
+            {"path": ".", "operation": "lstat", "error": type(exc).__name__}
+        )
         return
-    stack: list[tuple[Path, str]] = [(root, ".")] if stat.S_ISDIR(root_info.st_mode) and not stat.S_ISLNK(root_info.st_mode) else []
+    stack: list[tuple[Path, str]] = (
+        [(root, ".")]
+        if stat.S_ISDIR(root_info.st_mode) and not stat.S_ISLNK(root_info.st_mode)
+        else []
+    )
     while stack:
         directory, relative = stack.pop()
         try:
             with os.scandir(directory) as iterator:
                 children = sorted(iterator, key=lambda item: os.fsencode(item.name))
         except OSError as exc:
-            traversal_errors.append({"path": relative, "operation": "scandir", "error": type(exc).__name__})
+            traversal_errors.append(
+                {"path": relative, "operation": "scandir", "error": type(exc).__name__}
+            )
             continue
         directories: list[tuple[Path, str]] = []
         for child in children:
             child_path = directory / child.name
-            child_relative = child.name if relative == "." else f"{relative}/{child.name}"
+            child_relative = (
+                child.name if relative == "." else f"{relative}/{child.name}"
+            )
             yield child_path, child_relative
             try:
                 if child.is_dir(follow_symlinks=False):
                     directories.append((child_path, child_relative))
             except OSError as exc:
-                traversal_errors.append({"path": child_relative, "operation": "classify", "error": type(exc).__name__})
+                traversal_errors.append(
+                    {
+                        "path": child_relative,
+                        "operation": "classify",
+                        "error": type(exc).__name__,
+                    }
+                )
                 continue
         stack.extend(reversed(directories))
 
@@ -272,22 +341,57 @@ def snapshot_roots(
         }
         if record["exists"]:
             traversal_errors: list[dict[str, str]] = []
-            record["entries"] = [_snapshot_entry(item, relative, policy) for item, relative in _walk_no_follow(path, traversal_errors)]
+            record["entries"] = [
+                _snapshot_entry(item, relative, policy)
+                for item, relative in _walk_no_follow(path, traversal_errors)
+            ]
             record["traversal_errors"] = traversal_errors
             membership = [entry["path"] for entry in record["entries"]]
-            record["directory_membership_sha256"] = _sha256_bytes(json.dumps(membership, ensure_ascii=False).encode("utf-8"))
+            record["directory_membership_sha256"] = _sha256_bytes(
+                json.dumps(membership, ensure_ascii=False).encode("utf-8")
+            )
         else:
             record["traversal_errors"] = []
         root_records.append(record)
     completeness_errors = []
     for root in root_records:
-        completeness_errors.extend({"root_id": root["root_id"], **error} for error in root["traversal_errors"])
+        completeness_errors.extend(
+            {"root_id": root["root_id"], **error} for error in root["traversal_errors"]
+        )
         for entry in root["entries"]:
-            if entry.get("entry_type") == "unreadable" or entry.get("content_error") or entry.get("symlink_target_error"):
-                completeness_errors.append({"root_id": root["root_id"], "path": entry["path"], "operation": "entry", "error": str(entry.get("error") or entry.get("content_error") or entry.get("symlink_target_error"))})
-            xattrs = entry.get("extended_attributes") if isinstance(entry.get("extended_attributes"), dict) else {}
-            if xattrs.get("error") or any(item.get("error") for item in xattrs.get("entries", [])):
-                completeness_errors.append({"root_id": root["root_id"], "path": entry["path"], "operation": "xattr", "error": "unreadable_xattr"})
+            if (
+                entry.get("entry_type") == "unreadable"
+                or entry.get("content_error")
+                or entry.get("symlink_target_error")
+            ):
+                completeness_errors.append(
+                    {
+                        "root_id": root["root_id"],
+                        "path": entry["path"],
+                        "operation": "entry",
+                        "error": str(
+                            entry.get("error")
+                            or entry.get("content_error")
+                            or entry.get("symlink_target_error")
+                        ),
+                    }
+                )
+            xattrs = (
+                entry.get("extended_attributes")
+                if isinstance(entry.get("extended_attributes"), dict)
+                else {}
+            )
+            if xattrs.get("error") or any(
+                item.get("error") for item in xattrs.get("entries", [])
+            ):
+                completeness_errors.append(
+                    {
+                        "root_id": root["root_id"],
+                        "path": entry["path"],
+                        "operation": "xattr",
+                        "error": "unreadable_xattr",
+                    }
+                )
     payload = {
         "snapshot_format": "pcodex.no-write-snapshot.v1",
         "policy": asdict(policy),
@@ -300,8 +404,14 @@ def snapshot_roots(
 
 
 def snapshot_hash(snapshot: dict[str, Any]) -> str:
-    normalized = {key: value for key, value in snapshot.items() if key != "snapshot_sha256"}
-    return _sha256_bytes(json.dumps(normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+    normalized = {
+        key: value for key, value in snapshot.items() if key != "snapshot_sha256"
+    }
+    return _sha256_bytes(
+        json.dumps(
+            normalized, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    )
 
 
 def compare_snapshots(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
@@ -315,12 +425,24 @@ def compare_snapshots(before: dict[str, Any], after: dict[str, Any]) -> dict[str
             right = after_roots.get(root_id)
             if left == right:
                 continue
-            left_entries = {item["path"]: item for item in (left or {}).get("entries", [])}
-            right_entries = {item["path"]: item for item in (right or {}).get("entries", [])}
+            left_entries = {
+                item["path"]: item for item in (left or {}).get("entries", [])
+            }
+            right_entries = {
+                item["path"]: item for item in (right or {}).get("entries", [])
+            }
             for relative in sorted(set(left_entries) | set(right_entries)):
                 if left_entries.get(relative) != right_entries.get(relative):
-                    kind = "created" if relative not in left_entries else "deleted" if relative not in right_entries else "modified"
-                    changes.append({"root_id": root_id, "path": relative, "change": kind})
+                    kind = (
+                        "created"
+                        if relative not in left_entries
+                        else "deleted"
+                        if relative not in right_entries
+                        else "modified"
+                    )
+                    changes.append(
+                        {"root_id": root_id, "path": relative, "change": kind}
+                    )
     return {"unchanged": unchanged, "changes": changes}
 
 
@@ -329,7 +451,7 @@ def governed_roots_from_product(
     *,
     home: Path | None = None,
     temp_root: Path | None = None,
-    environ: dict[str, str] | None = None,
+    environ: Mapping[str, str] | None = None,
 ) -> GovernedRootSet:
     """Return bounded roots from premode.product.v2 state authority; never the full home."""
     env = os.environ if environ is None else environ
@@ -338,31 +460,131 @@ def governed_roots_from_product(
         GovernedRoot("repository", repo_root, "repository"),
         GovernedRoot("repository_premode", repo_root / ".premode", "managed_state"),
         GovernedRoot("repository_pcodex", repo_root / ".pcodex", "user_state"),
-        GovernedRoot("repository_codex_home", repo_root / ".premode" / "pcodex_codex_home", "integration_state"),
-        GovernedRoot("repository_codex_plugins", repo_root / "plugins" / "pcodex", "integration_state"),
-        GovernedRoot("repository_marketplace", repo_root / ".agents" / "plugins" / "marketplace.json", "integration_state"),
+        GovernedRoot(
+            "repository_codex_home",
+            repo_root / ".premode" / "pcodex_codex_home",
+            "integration_state",
+        ),
+        GovernedRoot(
+            "repository_codex_plugins",
+            repo_root / "plugins" / "pcodex",
+            "integration_state",
+        ),
+        GovernedRoot(
+            "repository_marketplace",
+            repo_root / ".agents" / "plugins" / "marketplace.json",
+            "integration_state",
+        ),
     ]
     codex_home = Path(env.get("CODEX_HOME", home / ".codex"))
     candidates = [
         GovernedRoot("user_pcodex", home / ".pcodex", "user_state"),
         GovernedRoot("source_install", home / ".pcodex-alpha", "package_state"),
         GovernedRoot("codex_config", codex_home / "config.toml", "external_config"),
-        GovernedRoot("codex_plugins", codex_home / "plugins" / "pcodex", "integration_state"),
-        GovernedRoot("codex_marketplace_external", codex_home / "plugins" / "marketplace.json", "integration_state"),
-        GovernedRoot("codex_marketplace", home / ".agents" / "plugins" / "marketplace.json", "integration_state"),
+        GovernedRoot(
+            "codex_plugins", codex_home / "plugins" / "pcodex", "integration_state"
+        ),
+        GovernedRoot(
+            "codex_marketplace_external",
+            codex_home / "plugins" / "marketplace.json",
+            "integration_state",
+        ),
+        GovernedRoot(
+            "codex_marketplace",
+            home / ".agents" / "plugins" / "marketplace.json",
+            "integration_state",
+        ),
         GovernedRoot("codex_mcp", codex_home / "mcp.json", "external_config"),
-        GovernedRoot("xdg_config", Path(env.get("XDG_CONFIG_HOME", home / ".config")) / "pcodex", "user_state"),
-        GovernedRoot("xdg_cache", Path(env.get("XDG_CACHE_HOME", home / ".cache")) / "pcodex", "cache"),
-        GovernedRoot("xdg_data", Path(env.get("XDG_DATA_HOME", home / ".local/share")) / "pcodex", "user_state"),
+        GovernedRoot(
+            "xdg_config",
+            Path(env.get("XDG_CONFIG_HOME", home / ".config")) / "pcodex",
+            "user_state",
+        ),
+        GovernedRoot(
+            "xdg_cache",
+            Path(env.get("XDG_CACHE_HOME", home / ".cache")) / "pcodex",
+            "cache",
+        ),
+        GovernedRoot(
+            "xdg_data",
+            Path(env.get("XDG_DATA_HOME", home / ".local/share")) / "pcodex",
+            "user_state",
+        ),
     ]
     roots.extend(candidates)
     for index, variable in enumerate(("PCODEX_CONFIG", "PCODEX_CONFIG_PATH"), start=1):
         if env.get(variable):
-            roots.append(GovernedRoot(f"explicit_pcodex_config_{index}", Path(env[variable]), "external_config"))
-    if env.get("OPENCLAW_HOME"):
-        roots.append(GovernedRoot("openclaw_config", Path(env["OPENCLAW_HOME"]) / "config.json", "external_config"))
-    roots.append(GovernedRoot("designated_temp", temp_root or Path(env.get("TMPDIR", tempfile.gettempdir())), "temporary_state"))
-    return GovernedRootSet(roots, _token=_ROOT_AUTHORITY_TOKEN)
+            roots.append(
+                GovernedRoot(
+                    f"explicit_pcodex_config_{index}",
+                    Path(env[variable]),
+                    "external_config",
+                )
+            )
+    openclaw = resolve_openclaw_config_authority(environ=env, home=home)
+    roots.append(
+        GovernedRoot("openclaw_config", openclaw.config_path, "external_config")
+    )
+    for index, path in enumerate(
+        (
+            candidate
+            for candidate in openclaw.config_candidates
+            if candidate != openclaw.config_path
+        ),
+        start=1,
+    ):
+        roots.append(
+            GovernedRoot(f"openclaw_config_alternate_{index}", path, "external_config")
+        )
+    for index, path in enumerate(openclaw.state_candidates):
+        roots.append(
+            GovernedRoot(
+                "openclaw_state" if index == 0 else f"openclaw_state_candidate_{index}",
+                path,
+                "integration_state",
+            )
+        )
+    for index, path in enumerate(openclaw.dotenv_paths, start=1):
+        roots.append(
+            GovernedRoot(f"openclaw_runtime_dotenv_{index}", path, "external_config")
+        )
+    for index, path in enumerate(openclaw.config_target_candidates, start=1):
+        roots.append(
+            GovernedRoot(f"openclaw_config_target_{index}", path, "external_config")
+        )
+    for index, path in enumerate(openclaw.state_target_candidates, start=1):
+        roots.append(
+            GovernedRoot(f"openclaw_state_target_{index}", path, "integration_state")
+        )
+    for index, path in enumerate(openclaw.dotenv_target_paths, start=1):
+        roots.append(
+            GovernedRoot(
+                f"openclaw_runtime_dotenv_target_{index}", path, "external_config"
+            )
+        )
+    for index, path in enumerate(openclaw.nested_state_target_candidates, start=1):
+        roots.append(
+            GovernedRoot(
+                f"openclaw_nested_state_target_{index}", path, "integration_state"
+            )
+        )
+    roots.append(
+        GovernedRoot(
+            "designated_temp",
+            temp_root or Path(env.get("TMPDIR", tempfile.gettempdir())),
+            "temporary_state",
+        )
+    )
+    return GovernedRootSet(
+        roots,
+        _token=_ROOT_AUTHORITY_TOKEN,
+        _revalidator=lambda: governed_roots_from_product(
+            repo_root,
+            home=home,
+            temp_root=temp_root,
+            environ=env,
+        ),
+    )
 
 
 class _KqueueFilesystemActivityMonitor:
@@ -370,7 +592,9 @@ class _KqueueFilesystemActivityMonitor:
 
     def __init__(self, snapshot: dict[str, Any]) -> None:
         self.snapshot = snapshot
-        self.available = hasattr(select, "kqueue") and hasattr(select, "KQ_FILTER_VNODE")
+        self.available = hasattr(select, "kqueue") and hasattr(
+            select, "KQ_FILTER_VNODE"
+        )
         self.events: list[dict[str, Any]] = []
         self.errors: list[str] = []
         self._kqueue: Any = None
@@ -400,11 +624,17 @@ class _KqueueFilesystemActivityMonitor:
                         candidates.append((parent, "<missing-root-parent>"))
                 for path, relative in candidates:
                     try:
-                        descriptor = os.open(path, getattr(os, "O_EVTONLY", os.O_RDONLY) | getattr(os, "O_CLOEXEC", 0))
+                        descriptor = os.open(
+                            path,
+                            getattr(os, "O_EVTONLY", os.O_RDONLY)
+                            | getattr(os, "O_CLOEXEC", 0),
+                        )
                         event = select.kevent(
                             descriptor,
                             filter=select.KQ_FILTER_VNODE,
-                            flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,
+                            flags=select.KQ_EV_ADD
+                            | select.KQ_EV_ENABLE
+                            | select.KQ_EV_CLEAR,
                             fflags=(
                                 select.KQ_NOTE_WRITE
                                 | select.KQ_NOTE_EXTEND
@@ -418,12 +648,18 @@ class _KqueueFilesystemActivityMonitor:
                         self._fds.append(descriptor)
                         self._fd_records[descriptor] = (root["root_id"], relative)
                     except OSError as exc:
-                        self.errors.append(f"{root['root_id']}:{relative}:{type(exc).__name__}")
+                        self.errors.append(
+                            f"{root['root_id']}:{relative}:{type(exc).__name__}"
+                        )
             if self.errors:
                 self.available = False
                 self._close()
                 return self
-            self._thread = threading.Thread(target=self._poll, name="pcodex-no-write-filesystem-monitor", daemon=True)
+            self._thread = threading.Thread(
+                target=self._poll,
+                name="pcodex-no-write-filesystem-monitor",
+                daemon=True,
+            )
             self._thread.start()
         except (OSError, ValueError) as exc:
             self.available = False
@@ -441,8 +677,12 @@ class _KqueueFilesystemActivityMonitor:
                 self.available = False
                 return
             for event in events:
-                root_id, relative = self._fd_records.get(int(event.ident), ("unknown", "unknown"))
-                self.events.append({"root_id": root_id, "path": relative, "flags": int(event.fflags)})
+                root_id, relative = self._fd_records.get(
+                    int(event.ident), ("unknown", "unknown")
+                )
+                self.events.append(
+                    {"root_id": root_id, "path": relative, "flags": int(event.fflags)}
+                )
 
     def __exit__(self, *_: object) -> None:
         self._stop.set()
@@ -670,19 +910,38 @@ def _read_process_table() -> dict[int, dict[str, Any]]:
                     executable_path = os.readlink(item / "exe")
                 except OSError:
                     executable_path = command.split()[0] if command else None
-                records[int(item.name)] = {"pid": int(item.name), "ppid": int(suffix[1]), "start_time": suffix[19], "executable_path": executable_path, "command": command, "argv": argv}
+                records[int(item.name)] = {
+                    "pid": int(item.name),
+                    "ppid": int(suffix[1]),
+                    "start_time": suffix[19],
+                    "executable_path": executable_path,
+                    "command": command,
+                    "argv": argv,
+                }
             except (OSError, ValueError, IndexError):
                 continue
         return records
     try:
-        completed = subprocess.run(["/bin/ps", "-axo", "pid=,ppid=,lstart=,command="], text=True, capture_output=True, check=False, timeout=2)
+        completed = subprocess.run(
+            ["/bin/ps", "-axo", "pid=,ppid=,lstart=,command="],
+            text=True,
+            capture_output=True,
+            check=False,
+            timeout=2,
+        )
     except (OSError, subprocess.SubprocessError):
         return records
     for line in completed.stdout.splitlines():
         parts = line.strip().split(None, 7)
         if len(parts) < 8 or not parts[0].isdigit() or not parts[1].isdigit():
             continue
-        records[int(parts[0])] = {"pid": int(parts[0]), "ppid": int(parts[1]), "start_time": " ".join(parts[2:7]), "executable_path": parts[7].split()[0] if parts[7] else None, "command": parts[7]}
+        records[int(parts[0])] = {
+            "pid": int(parts[0]),
+            "ppid": int(parts[1]),
+            "start_time": " ".join(parts[2:7]),
+            "executable_path": parts[7].split()[0] if parts[7] else None,
+            "command": parts[7],
+        }
     return records
 
 
@@ -702,15 +961,27 @@ def classify_process(command: str, executable_path: str | None = None) -> str | 
             if module_index < len(tokens):
                 candidates.append(tokens[module_index].lower())
         elif "-c" not in tokens:
-            target = next((token for token in tokens[1:] if token and not token.startswith("-")), None)
+            target = next(
+                (token for token in tokens[1:] if token and not token.startswith("-")),
+                None,
+            )
             if target:
                 candidates.append(Path(target).name.lower())
     elif first in script_wrappers:
-        target = next((token for token in tokens[1:] if token and not token.startswith("-")), None)
+        target = next(
+            (token for token in tokens[1:] if token and not token.startswith("-")), None
+        )
         if target:
             candidates.append(Path(target).name.lower())
     elif first == "env":
-        target = next((token for token in tokens[1:] if token and not token.startswith("-") and "=" not in token), None)
+        target = next(
+            (
+                token
+                for token in tokens[1:]
+                if token and not token.startswith("-") and "=" not in token
+            ),
+            None,
+        )
         if target:
             candidates.append(Path(target).name.lower())
     normalized: list[str] = []
@@ -761,12 +1032,16 @@ class ProcessMonitor:
     def _record_observation(self, record: dict[str, Any]) -> None:
         key = (int(record["pid"]), str(record["start_time"]))
         existing = self.observed.get(key)
-        if existing is None or self._record_quality(record) > self._record_quality(existing):
+        if existing is None or self._record_quality(record) > self._record_quality(
+            existing
+        ):
             self.observed[key] = record
 
     def __enter__(self) -> "ProcessMonitor":
         self.before = _read_process_table()
-        self._thread = threading.Thread(target=self._poll, name="pcodex-no-write-process-monitor", daemon=True)
+        self._thread = threading.Thread(
+            target=self._poll, name="pcodex-no-write-process-monitor", daemon=True
+        )
         self._thread.start()
         return self
 
@@ -792,7 +1067,11 @@ class ProcessMonitor:
     @property
     def forbidden(self) -> list[dict[str, Any]]:
         findings = []
-        process_index = {**self.before, **{record["pid"]: record for record in self.observed.values()}, **self.after}
+        process_index = {
+            **self.before,
+            **{record["pid"]: record for record in self.observed.values()},
+            **self.after,
+        }
 
         def is_descendant(record: dict[str, Any]) -> bool:
             seen: set[int] = set()
@@ -808,9 +1087,18 @@ class ProcessMonitor:
             return False
 
         for record in self.observed.values():
-            classification = classify_process(str(record.get("command") or ""), str(record.get("executable_path") or "") or None)
+            classification = classify_process(
+                str(record.get("command") or ""),
+                str(record.get("executable_path") or "") or None,
+            )
             if classification and is_descendant(record):
-                findings.append({**record, "classification": classification, "survived": record["pid"] in self.after})
+                findings.append(
+                    {
+                        **record,
+                        "classification": classification,
+                        "survived": record["pid"] in self.after,
+                    }
+                )
         return sorted(findings, key=lambda item: (item["pid"], item["classification"]))
 
 
@@ -833,13 +1121,19 @@ def verify_no_write(
     try:
         if monitor_filesystem:
             filesystem_monitor.__enter__()
-            filesystem_observation = "complete" if filesystem_monitor.available else "unavailable"
+            filesystem_observation = (
+                "complete" if filesystem_monitor.available else "unavailable"
+            )
         try:
             if monitor_processes:
                 with ProcessMonitor() as process_monitor:
                     value = operation()
                 forbidden = process_monitor.forbidden
-                process_observation = "complete" if process_monitor.observation_available else "unavailable"
+                process_observation = (
+                    "complete"
+                    if process_monitor.observation_available
+                    else "unavailable"
+                )
             else:
                 value = operation()
                 forbidden = []
@@ -847,17 +1141,26 @@ def verify_no_write(
             if monitor_filesystem:
                 filesystem_monitor.__exit__(None, None, None)
                 transient_filesystem_events = filesystem_monitor.events
-                filesystem_observation = "complete" if filesystem_monitor.available and not filesystem_monitor.errors else "unavailable"
+                filesystem_observation = (
+                    "complete"
+                    if filesystem_monitor.available and not filesystem_monitor.errors
+                    else "unavailable"
+                )
     except BaseException as exc:
         exceptions.append(type(exc).__name__)
         if monitor_processes:
             forbidden = process_monitor.forbidden
-            process_observation = "complete" if process_monitor.observation_available else "unavailable"
+            process_observation = (
+                "complete" if process_monitor.observation_available else "unavailable"
+            )
         else:
             forbidden = []
     elapsed = time.perf_counter() - started
     after = snapshot_roots(roots, policy=policy)
     comparison = compare_snapshots(before, after)
+    root_authority_current = (
+        roots.authority_is_current() if isinstance(roots, GovernedRootSet) else True
+    )
     return {
         "before": before,
         "after": after,
@@ -871,15 +1174,27 @@ def verify_no_write(
             roots.authority
             if isinstance(roots, GovernedRootSet)
             and roots.manifest_sha256 == _root_manifest_sha256(roots)
+            and root_authority_current
             else None
         ),
         "root_authority_manifest_sha256": (
             roots.manifest_sha256
             if isinstance(roots, GovernedRootSet)
             and roots.manifest_sha256 == _root_manifest_sha256(roots)
+            and root_authority_current
             else None
         ),
-        "passed": bool(roots) and len({root.root_id for root in roots}) == len(roots) and comparison["unchanged"] and before.get("complete", False) and after.get("complete", False) and not forbidden and not transient_filesystem_events and not exceptions and (not monitor_processes or process_observation == "complete") and (not monitor_filesystem or filesystem_observation == "complete"),
+        "passed": bool(roots)
+        and len({root.root_id for root in roots}) == len(roots)
+        and comparison["unchanged"]
+        and before.get("complete", False)
+        and after.get("complete", False)
+        and not forbidden
+        and not transient_filesystem_events
+        and not exceptions
+        and root_authority_current
+        and (not monitor_processes or process_observation == "complete")
+        and (not monitor_filesystem or filesystem_observation == "complete"),
         "elapsed_seconds": elapsed,
         "value": value,
     }
@@ -891,9 +1206,13 @@ def _sanitize_arguments(arguments: Sequence[str]) -> list[str]:
         if argument.startswith("-") and "=" in argument:
             flag, value = argument.split("=", 1)
             if flag in PUBLIC_SAFE_ARGUMENT_FLAGS:
-                sanitized.append(f"{flag}=opaque:{_sha256_bytes(value.encode('utf-8'))[:12]}")
+                sanitized.append(
+                    f"{flag}=opaque:{_sha256_bytes(value.encode('utf-8'))[:12]}"
+                )
             else:
-                sanitized.append(f"opaque:{_sha256_bytes(argument.encode('utf-8'))[:12]}")
+                sanitized.append(
+                    f"opaque:{_sha256_bytes(argument.encode('utf-8'))[:12]}"
+                )
         elif argument in PUBLIC_SAFE_ARGUMENT_FLAGS:
             sanitized.append(argument)
         else:
@@ -917,7 +1236,11 @@ def evidence_receipt(
     comparison = verification["comparison"]
     root_rows = before.get("roots", [])
     governed = [
-        {"root_id": item["root_id"], "category": item["category"], "exists": item["exists"]}
+        {
+            "root_id": item["root_id"],
+            "category": item["category"],
+            "exists": item["exists"],
+        }
         for item in root_rows
     ]
     forbidden_processes = verification["forbidden_processes_launched"]
@@ -932,14 +1255,26 @@ def evidence_receipt(
         ]
     root_categories = {item["root_id"]: item["category"] for item in root_rows}
     external_categories = {"external_config", "integration_state", "package_state"}
-    external_governed = any(category in external_categories for category in root_categories.values())
-    temporary_governed = "temporary_state" in root_categories.values()
-    coverage_complete = (
-        verification.get("root_authority") == "premode.product.v2"
-        and all(root_categories.get(root_id) == category for root_id, category in REQUIRED_GOVERNED_ROOTS.items())
+    external_governed = any(
+        category in external_categories for category in root_categories.values()
     )
-    external_changes = [change for change in comparison["changes"] if root_categories.get(change["root_id"]) in external_categories]
-    temporary_changes = [change for change in comparison["changes"] if root_categories.get(change["root_id"]) == "temporary_state"]
+    temporary_governed = "temporary_state" in root_categories.values()
+    coverage_complete = verification.get(
+        "root_authority"
+    ) == "premode.product.v2" and all(
+        root_categories.get(root_id) == category
+        for root_id, category in REQUIRED_GOVERNED_ROOTS.items()
+    )
+    external_changes = [
+        change
+        for change in comparison["changes"]
+        if root_categories.get(change["root_id"]) in external_categories
+    ]
+    temporary_changes = [
+        change
+        for change in comparison["changes"]
+        if root_categories.get(change["root_id"]) == "temporary_state"
+    ]
     safe_command = command
     if sanitized and re.fullmatch(r"[a-z0-9_.-]+", command) is None:
         safe_command = f"opaque:{_sha256_bytes(command.encode('utf-8'))[:12]}"
@@ -950,8 +1285,16 @@ def evidence_receipt(
     evidence_exceptions = [
         *list(verification.get("exceptions") or []),
         *([] if coverage_complete else ["incomplete_governed_root_coverage"]),
-        *([] if verification.get("process_observation") == "complete" else ["incomplete_process_observation"]),
-        *([] if verification.get("filesystem_observation") == "complete" else ["incomplete_filesystem_observation"]),
+        *(
+            []
+            if verification.get("process_observation") == "complete"
+            else ["incomplete_process_observation"]
+        ),
+        *(
+            []
+            if verification.get("filesystem_observation") == "complete"
+            else ["incomplete_filesystem_observation"]
+        ),
     ]
     receipt = {
         "schema_version": SCHEMA_VERSION if sanitized else PRIVATE_SCHEMA_VERSION,
@@ -963,22 +1306,35 @@ def evidence_receipt(
         "governed_roots": governed,
         "before_snapshot_hash": snapshot_hash(before),
         "after_snapshot_hash": snapshot_hash(after),
-        "filesystem_unchanged": comparison["unchanged"] and not verification.get("transient_filesystem_events"),
+        "filesystem_unchanged": comparison["unchanged"]
+        and not verification.get("transient_filesystem_events"),
         "external_config_unchanged": external_governed and not external_changes,
         "temporary_state_unchanged": temporary_governed and not temporary_changes,
         "forbidden_processes_launched": forbidden_processes,
         "network_attempted_if_measurable": "not_measured",
-        "result": "pass" if verification["passed"] and coverage_complete and observations_complete else "fail",
+        "result": "pass"
+        if verification["passed"] and coverage_complete and observations_complete
+        else "fail",
         "exceptions": evidence_exceptions,
         "snapshot_complete": bool(before.get("complete") and after.get("complete")),
         "process_observation": verification.get("process_observation", "unknown"),
         "filesystem_observation": verification.get("filesystem_observation", "unknown"),
         "coverage_complete": coverage_complete,
         "transient_filesystem_events": [
-            {"root_id": item.get("root_id"), "path": item.get("path"), "flags": item.get("flags")}
+            {
+                "root_id": item.get("root_id"),
+                "path": item.get("path"),
+                "flags": item.get("flags"),
+            }
             for item in verification.get("transient_filesystem_events", [])
-        ] if not sanitized else [
-            {"root_id": item.get("root_id"), "path_id": f"opaque:{_sha256_bytes(str(item.get('path')).encode())[:12]}", "flags": item.get("flags")}
+        ]
+        if not sanitized
+        else [
+            {
+                "root_id": item.get("root_id"),
+                "path_id": f"opaque:{_sha256_bytes(str(item.get('path')).encode())[:12]}",
+                "flags": item.get("flags"),
+            }
             for item in verification.get("transient_filesystem_events", [])
         ],
         "platform": platform.platform(),
@@ -987,7 +1343,9 @@ def evidence_receipt(
     }
     if not sanitized:
         receipt["detailed_changes"] = comparison["changes"]
-        receipt["governed_root_paths"] = {item["root_id"]: item["resolved_path"] for item in root_rows}
+        receipt["governed_root_paths"] = {
+            item["root_id"]: item["resolved_path"] for item in root_rows
+        }
     return receipt
 
 
@@ -1000,11 +1358,33 @@ def write_evidence_receipts(
     resolved_output = output_dir.expanduser().resolve(strict=False)
     for root in verification.get("before", {}).get("roots", []):
         resolved_root = Path(root["resolved_path"]).resolve(strict=False)
-        if resolved_output == resolved_root or resolved_root in resolved_output.parents or resolved_output in resolved_root.parents:
-            raise ValueError(f"evidence output overlaps governed root: {root['root_id']}")
+        if (
+            resolved_output == resolved_root
+            or resolved_root in resolved_output.parents
+            or resolved_output in resolved_root.parents
+        ):
+            raise ValueError(
+                f"evidence output overlaps governed root: {root['root_id']}"
+            )
     output_dir.mkdir(parents=True, exist_ok=True)
     private_path = output_dir / "no-write-evidence.private.json"
     public_path = output_dir / "no-write-evidence.sanitized.json"
-    private_path.write_text(json.dumps(evidence_receipt(verification, sanitized=False, **receipt_fields), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    public_path.write_text(json.dumps(evidence_receipt(verification, sanitized=True, **receipt_fields), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    private_path.write_text(
+        json.dumps(
+            evidence_receipt(verification, sanitized=False, **receipt_fields),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    public_path.write_text(
+        json.dumps(
+            evidence_receipt(verification, sanitized=True, **receipt_fields),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return private_path, public_path

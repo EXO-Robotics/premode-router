@@ -49,6 +49,7 @@
     "premode/metrics.py",
     "premode/no_write.py",
     "premode/openclaw_adapter.py",
+    "premode/openclaw_integration.py",
     "premode/packet_schema.py",
     "premode/paths.py",
     "premode/pcodex_bootstrap.py",
