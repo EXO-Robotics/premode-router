@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": [
     "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
-    "supported_runtime", "version_source", "production_package", "phase_boundary",
+    "supported_runtime", "version_source", "production_package", "phase_boundary", "documentation_contract",
     "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
     "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "install_state_authority", "no_write_authority",
     "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
@@ -27,8 +27,31 @@
       "properties": {
         "phase_a": {"type": "string", "minLength": 1},
         "phase_b": {"type": "string", "minLength": 1},
-        "roadmap_authority": {"type": "string", "minLength": 1},
+        "roadmap_authority": {"const": "docs/ROADMAP_TO_90.md"},
         "phase_b_remains_required": {"const": true}
+      }
+    },
+    "documentation_contract": {
+      "type": "object", "additionalProperties": false,
+      "required": ["canonical_docs", "current_product_version", "supported_codex_versions", "declared_legacy_product_versions", "required_journeys"],
+      "properties": {
+        "canonical_docs": {
+          "type": "array", "minItems": 10, "maxItems": 10, "uniqueItems": true,
+          "items": {"enum": ["README.md", "docs/GETTING_STARTED.md", "docs/CODEX_INTEGRATION.md", "docs/OPENCLAW_INTEGRATION.md", "docs/TROUBLESHOOTING.md", "docs/PRIVACY_AND_SAFETY.md", "docs/KNOWN_LIMITATIONS.md", "docs/MIGRATION.md", "docs/ROLLBACK.md", "docs/UNINSTALL.md"]}
+        },
+        "current_product_version": {"const": "0.3.0b1"},
+        "supported_codex_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": "0.143.x"}},
+        "declared_legacy_product_versions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": "0.2.6.24"}},
+        "required_journeys": {
+          "type": "object", "additionalProperties": false,
+          "required": ["first_value", "codex_lifecycle", "migration", "managed_lifecycle"],
+          "properties": {
+            "first_value": {"$ref": "#/$defs/commandList"},
+            "codex_lifecycle": {"$ref": "#/$defs/commandList"},
+            "migration": {"$ref": "#/$defs/commandList"},
+            "managed_lifecycle": {"$ref": "#/$defs/commandList"}
+          }
+        }
       }
     },
     "production_branch_policy": {
@@ -176,5 +199,11 @@
       }
     },
     "known_beta_debt": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "commandList": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
   }
 }

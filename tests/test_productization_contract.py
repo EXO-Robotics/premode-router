@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -149,18 +151,77 @@ def test_failed_json_probe_preserves_structured_receipts(tmp_path: Path) -> None
         raise AssertionError("failed probe unexpectedly accepted")
 
 
-def test_tester_bundle_preserves_resolver_executable_mode(tmp_path: Path) -> None:
+def test_blind_tester_bundle_contains_only_wheel_checksum_and_canonical_docs(tmp_path: Path) -> None:
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    wheel_buffer = io.BytesIO()
+    with zipfile.ZipFile(wheel_buffer, "w") as wheel_archive:
+        wheel_archive.writestr("fixture.dist-info/METADATA", "Version: 0.3.0b1\n")
+    wheel_bytes = wheel_buffer.getvalue()
+    (artifacts / "fixture.whl").write_bytes(wheel_bytes)
+    output = tmp_path / "out"
+    output.mkdir()
+    bundle = write_tester_bundle(ROOT, output, artifacts)
+    with zipfile.ZipFile(bundle) as archive:
+        names = set(archive.namelist())
+        checksum = archive.read("artifacts/SHA256SUMS").decode()
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    expected = {
+        "artifacts/fixture.whl",
+        "artifacts/SHA256SUMS",
+        *manifest["documentation_contract"]["canonical_docs"],
+    }
+    assert names == expected
+    assert checksum == f"{hashlib.sha256(wheel_bytes).hexdigest()}  fixture.whl\n"
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    assert validate_archive_structure(bundle, policy) == []
+    assert validate_names(
+        sorted(names),
+        allowed_prefixes=list(policy["bundle_allowed_prefixes"]),
+        policy=policy,
+    ) == []
+    assert validate_archive_content(bundle, policy) == []
+
+
+def test_blind_tester_bundle_rejects_noncanonical_manifest_list(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
+    manifest_path = source / "premode.product.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["documentation_contract"]["canonical_docs"][-1] = "docs/FIRST_RUN.md"
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     (artifacts / "fixture.whl").write_bytes(b"wheel")
     output = tmp_path / "out"
     output.mkdir()
-    bundle = write_tester_bundle(ROOT, output, artifacts)
-    with zipfile.ZipFile(bundle) as archive:
-        resolver = archive.getinfo("plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh")
-        skill = archive.getinfo("plugins/pcodex/skills/pcodex/SKILL.md")
-    assert resolver.external_attr >> 16 == 0o755
-    assert skill.external_attr >> 16 == 0o644
+
+    with pytest.raises(RuntimeError, match="exact canonical set"):
+        write_tester_bundle(source, output, artifacts)
+
+
+def test_blind_tester_bundle_rejects_symlinked_canonical_document(tmp_path: Path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    (source / "premode.product.json").write_text(json.dumps(manifest), encoding="utf-8")
+    outside = tmp_path / "outside.md"
+    outside.write_text("must not be bundled", encoding="utf-8")
+    for relative in manifest["documentation_contract"]["canonical_docs"]:
+        path = source / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if relative == "docs/GETTING_STARTED.md":
+            path.symlink_to(outside)
+        else:
+            path.write_text(relative, encoding="utf-8")
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "fixture.whl").write_bytes(b"wheel")
+    output = tmp_path / "out"
+    output.mkdir()
+
+    with pytest.raises(RuntimeError, match="symbolic link"):
+        write_tester_bundle(source, output, artifacts)
 
 
 def test_source_distribution_prunes_test_and_release_script_trees() -> None:

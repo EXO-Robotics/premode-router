@@ -1,5 +1,7 @@
 # Product Roadmap — Pre-mode Router
 
+Status: historical implementation roadmap. The authoritative 90/100 release program is `docs/ROADMAP_TO_90.md`; current decisions are recorded in `docs/PRODUCT_READINESS_GATE_LEDGER.md`.
+
 ## Product identity
 
 Pre-mode Router is a local-first deterministic preflight, context-control, and patch-governance layer for AI coding agents.

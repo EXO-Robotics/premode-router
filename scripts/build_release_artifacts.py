@@ -31,6 +31,18 @@ LEGACY_FIXTURE_PATHS = (
     ".agents/skills/pcodex-status",
     ".agents/skills/pcodex-tune",
 )
+CANONICAL_TESTER_DOCS = (
+    "README.md",
+    "docs/GETTING_STARTED.md",
+    "docs/CODEX_INTEGRATION.md",
+    "docs/OPENCLAW_INTEGRATION.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/PRIVACY_AND_SAFETY.md",
+    "docs/KNOWN_LIMITATIONS.md",
+    "docs/MIGRATION.md",
+    "docs/ROLLBACK.md",
+    "docs/UNINSTALL.md",
+)
 
 
 def run(*args: str, cwd: Path = ROOT, env: dict[str, str] | None = None) -> str:
@@ -814,41 +826,47 @@ def write_release_evidence(
     )
 
 
+def _read_bounded_regular_file(source: Path, relative: str) -> bytes:
+    candidate = Path(relative)
+    if candidate.is_absolute() or ".." in candidate.parts:
+        raise RuntimeError(f"bundle path is absolute or contains traversal: {relative}")
+    path = source / candidate
+    if path.is_symlink():
+        raise RuntimeError(f"bundle source must not be a symbolic link: {relative}")
+    resolved_source = source.resolve()
+    resolved = path.resolve()
+    if resolved_source not in resolved.parents or not resolved.is_file():
+        raise RuntimeError(f"bundle source escapes checkout or is not regular: {relative}")
+    return resolved.read_bytes()
+
+
 def write_tester_bundle(source: Path, output: Path, artifacts: Path) -> Path:
     bundle = output / "pcodex-private-tester-bundle.zip"
-    entries: list[tuple[Path, str]] = []
-    for artifact in sorted(artifacts.iterdir()):
-        entries.append((artifact, f"artifacts/{artifact.name}"))
-    plugin_root = source / "plugins" / "pcodex"
-    for path in sorted(plugin_root.rglob("*")):
-        if path.is_file():
-            entries.append(
-                (path, f"plugins/pcodex/{path.relative_to(plugin_root).as_posix()}")
-            )
-    for root_name in ("release", "receipts"):
-        evidence_root = output / root_name
-        if evidence_root.exists():
-            for path in sorted(evidence_root.rglob("*")):
-                if path.is_file():
-                    entries.append(
-                        (
-                            path,
-                            f"{root_name}/{path.relative_to(evidence_root).as_posix()}",
-                        )
-                    )
-    for name in ("MIGRATION.md", "ROLLBACK.md", "UNINSTALL.md", "KNOWN_LIMITATIONS.md"):
-        path = source / "docs" / name
-        if path.is_file():
-            entries.append((path, f"docs/{name}"))
+    entries: list[tuple[bytes, str]] = []
+    wheels = sorted(artifacts.glob("*.whl"))
+    if len(wheels) != 1 or wheels[0].is_symlink() or not wheels[0].is_file():
+        raise RuntimeError("blind tester bundle requires exactly one regular wheel")
+    wheel = wheels[0]
+    wheel_bytes = wheel.read_bytes()
+    entries.append((wheel_bytes, f"artifacts/{wheel.name}"))
+    checksum = f"{hashlib.sha256(wheel_bytes).hexdigest()}  {wheel.name}\n".encode()
+    entries.append((checksum, "artifacts/SHA256SUMS"))
+    product_manifest = json.loads(
+        (source / "premode.product.json").read_text(encoding="utf-8")
+    )
+    canonical_docs = tuple(product_manifest["documentation_contract"]["canonical_docs"])
+    if canonical_docs != CANONICAL_TESTER_DOCS:
+        raise RuntimeError("tester documentation authority differs from the exact canonical set")
+    for relative in CANONICAL_TESTER_DOCS:
+        entries.append((_read_bounded_regular_file(source, relative), relative))
     with zipfile.ZipFile(
         bundle, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
     ) as archive:
-        for path, name in entries:
+        for payload, name in entries:
             info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            mode = 0o755 if name == "plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh" else 0o644
-            info.external_attr = mode << 16
-            archive.writestr(info, path.read_bytes())
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, payload)
     return bundle
 
 
@@ -1764,8 +1782,8 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             policy_hashes=policy_hashes,
             wheel_sdist_parity=wheel_sdist_parity,
         )
-        # Rebuild once after all successful qualification evidence exists so the
-        # deterministic tester bundle contains the final receipts and metadata.
+        # Rebuild after qualification to confirm the blind tester payload stays
+        # deterministic and independent from coordinator-only receipts.
         bundle = write_tester_bundle(source, output, artifacts)
         bundle_failures = validate_archive_structure(bundle, policy)
         if not bundle_failures:

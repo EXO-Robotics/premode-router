@@ -1,6 +1,6 @@
-# Private-Beta Tester Packet
+# Historical Private-Beta Tester Packet
 
-This is the canonical tester-facing checklist for the source-visible proprietary Private-Beta. It consolidates the install, first-run, dry-run, cleanup, and reporting flow that is otherwise described across `README.md`, `AI_START_HERE.md`, `docs/FIRST_RUN.md`, `docs/DAILY_USE.md`, `docs/PRIVATE_ALPHA_INSTALL.md`, and the pasteable bootstrap docs.
+This document preserves the older source-checkout tester flow for history and compatibility only. It is not canonical and must not be given to new invited-beta testers. Use `docs/GETTING_STARTED.md` and the canonical set declared in `premode.product.json`.
 
 pCodex is a local context compiler wrapper around Pre-mode. It does not replace Codex, does not publish packages, does not provide native `/pcodex` slash commands, and does not prove hosted/internal Codex subagent interception.
 

@@ -1,6 +1,6 @@
 # pCodex First Run
 
-This is the canonical Private-Beta first-run path for pCodex from a current source checkout. For a tester-facing checklist, see `docs/PRIVATE_BETA_TESTER_PACKET.md`.
+Status: compatibility/developer source-install guide. The canonical invited-beta journey is `docs/GETTING_STARTED.md`.
 
 pCodex is a local context compiler wrapper. It does not replace Codex, does not publish packages, does not require MCP for first value, and does not require tuning for first value.
 
@@ -32,7 +32,7 @@ The installer builds from the current checkout into `~/.pcodex-alpha` by default
 
 The manifest records version, install channel, source branch/head/dirty status, install root, Python version, console scripts, plugin packages, installer version, and warnings. It does not claim PyPI, pipx, or public package availability.
 
-## Blessed First-Run Path
+## Historical Compatibility First-Run Path
 
 In the target repo:
 
@@ -122,7 +122,7 @@ premode compile --plugin literal_symbol --no-record "Hypothetical setup verifica
 
 ## Generated State
 
-Normal first-run and dry-run commands may create repo-local generated state:
+State-changing setup, install apply, and real compile/run operations may create repo-local generated state:
 
 - `.premode/pcodex_state.json`
 - `.premode/lcc.lock.json`
@@ -131,7 +131,7 @@ Normal first-run and dry-run commands may create repo-local generated state:
 - `.premode/topology/repo_topology.json`
 - `.premode/pcodex_codex_home/` when isolated MCP registration is used
 
-These files are generated/runtime state. They should stay ignored unless explicitly reviewed and intentionally versioned.
+Advisory, preview, and `pcodex run --dry-run` do not create or refresh these files. Generated/runtime state should stay ignored unless explicitly reviewed and intentionally versioned.
 
 ## Cleanup
 
@@ -177,7 +177,7 @@ This removes the isolated install root created by that installer. It does not ed
 - If `pcodex` is not found, add the install root `bin` directory to `PATH` or call `~/.pcodex-alpha/bin/pcodex`.
 - If `pcodex cleanup --dry-run --json` fails, rerun the scoped supported form: `pcodex cleanup --local-state --dry-run --json`.
 - If `doctor` reports missing Codex CLI, first-run receipt and dry-run still work, but real Codex runs need Codex CLI repaired.
-- If inventory or topology is missing/stale, `pcodex run --dry-run` refreshes local generated state before spending tokens.
+- If inventory or topology is missing/stale, literal dry-run reports the condition without refreshing it. Use the recommended explicit setup or state-changing action only after reviewing it.
 - If support only needs a paste-safe receipt, use `pcodex status --advisory --json`; it reports missing/stale state without repairing it.
 - If a real run fails, inspect the repo diff before debugging pCodex.
 

@@ -12,7 +12,7 @@ pCodex is a context-selection and routing product. It is not a planner, local re
 
 Phase A is Codex-first `0.3.0b1` beta readiness. The supported runtime is the local Codex CLI terminal workflow. The production package is `premode-router`, requires Python 3.11 or newer, and is currently source-visible proprietary beta software. No package-registry publication, production readiness, or universal platform support is asserted.
 
-Phase B remains the post-beta program to the full 90/100 roadmap in `docs/PRODUCT_ROADMAP.md`. It still requires production OpenClaw integration, broader platform and lifecycle proof, a frozen 10-repository/100-task held-out corpus, reproducible public evidence, and three reproducible case studies. Phase A does not weaken or replace those gates.
+Phase B remains the post-beta program to the full 90/100 roadmap in `docs/ROADMAP_TO_90.md`. It still requires production OpenClaw integration, broader platform and lifecycle proof, a frozen 10-repository/100-task held-out corpus, reproducible public evidence, and three reproducible case studies. Phase A does not weaken or replace those gates.
 
 OpenClaw is advanced and experimental in `0.3.0b1`; it is not production-supported. Existing profiles, templates, fixtures, and research remain available but do not constitute an OpenClaw execution integration.
 
@@ -79,7 +79,7 @@ The uninstall executor can remove regular single-link files created through the 
 
 Crash recovery is bounded in this beta. Caught exceptions restore verified bytes before returning. A process death can leave an ownership- and receipt-hash-bound uninstall quarantine journal with per-item target mappings; status reports `interrupted_uninstall`, and later uninstall attempts fail closed without deleting or trusting that staging. Automatic crash resume is not supported: preserve the journal and inspect it manually. Repair uses atomic leaf commits and rolls back caught exceptions, but arbitrary power-loss journaling is not claimed.
 
-The release-qualified evidence backend is macOS. There, replacement of an existing owned lifecycle receipt uses an atomic filesystem swap followed by validation of the displaced receipt and atomic swap-back on mismatch. Other platforms retain descriptor-relative validation but are not claimed to close the same final-component concurrent-swap window until separately qualified.
+The release-qualified evidence backends are macOS and Linux. macOS uses an atomic filesystem swap followed by validation of the displaced receipt and atomic swap-back on mismatch. Linux uses the qualified `renameat2(RENAME_EXCHANGE)` equivalent with the same displaced-receipt validation and swap-back behavior. Unsupported platforms are not claimed to close the same final-component concurrent-swap window.
 
 Status and doctor expose `READY`, `NEEDS_ACTION`, or `BLOCKED`, one recommended action, and the lifecycle exit-code meaning (`0`, `1`, or `2`) in versioned JSON. Their established command exit remains informational for compatibility. Advisory forms are literal no-write and never repair automatically.
 
@@ -90,12 +90,13 @@ The beta does not promise universal task coverage, universal token or cost savin
 ## Authority map
 
 - Product promise, scope, lifecycle: this document and `premode.product.json`.
+- Literal 90/100 release gates and reconciled status: `docs/ROADMAP_TO_90.md` and `docs/PRODUCT_READINESS_GATE_LEDGER.md`.
 - Surface and state classification: `premode.product.json`, summarized by `docs/PUBLIC_SURFACES.md`.
 - Ranking seam: `docs/ALGORITHM_INTEGRATION_INTERFACE.md`, `src/premode/production_ranking.py`, and its JSON schema.
 - Canonical packet: `src/premode/core_packet.py` plus characterization tests.
 - Install-state receipt: `src/premode/managed_state.py` and `schemas/pcodex.install-state.schema.json`.
 - Repair/uninstall plans and operation receipts: `src/premode/managed_state.py` and `schemas/pcodex.*-plan.schema.json`, `schemas/pcodex.*-operation.schema.json`.
-- First run: `docs/FIRST_RUN.md`.
-- Claims: `docs/CLAIMS_AND_LIMITATIONS.md`.
+- First run: `docs/GETTING_STARTED.md`.
+- Claims: `docs/KNOWN_LIMITATIONS.md`.
 - Version: root `pyproject.toml`, mirrored by `src/premode/__init__.py` and checked by tests.
 - Historical material: `docs/history/`; never current operating authority.

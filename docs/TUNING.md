@@ -1,6 +1,6 @@
 # Tuning
 
-This is the canonical tuning guide for AI operators. It explains how to compare, select, validate, and safely commit repo-local Pre-mode/pCodex tuning behavior.
+This is a research/developer compatibility guide, not canonical product onboarding. It explains historical repo-local Pre-mode/pCodex tuning behavior; the production algorithm lane is separate from the product-readiness campaign.
 
 ## 1. Purpose
 

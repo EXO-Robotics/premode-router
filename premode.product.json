@@ -11,8 +11,53 @@
   "phase_boundary": {
     "phase_a": "Codex-first 0.3.0b1 beta readiness",
     "phase_b": "Post-beta completion to the full 90/100 roadmap",
-    "roadmap_authority": "docs/PRODUCT_ROADMAP.md",
+    "roadmap_authority": "docs/ROADMAP_TO_90.md",
     "phase_b_remains_required": true
+  },
+  "documentation_contract": {
+    "canonical_docs": [
+      "README.md",
+      "docs/GETTING_STARTED.md",
+      "docs/CODEX_INTEGRATION.md",
+      "docs/OPENCLAW_INTEGRATION.md",
+      "docs/TROUBLESHOOTING.md",
+      "docs/PRIVACY_AND_SAFETY.md",
+      "docs/KNOWN_LIMITATIONS.md",
+      "docs/MIGRATION.md",
+      "docs/ROLLBACK.md",
+      "docs/UNINSTALL.md"
+    ],
+    "current_product_version": "0.3.0b1",
+    "supported_codex_versions": ["0.143.x"],
+    "declared_legacy_product_versions": ["0.2.6.24"],
+    "required_journeys": {
+      "first_value": [
+        "pcodex doctor --advisory --json",
+        "pcodex status --advisory --json",
+        "pcodex run --dry-run \"Fix the failing test\""
+      ],
+      "codex_lifecycle": [
+        "pcodex integrate codex --dry-run",
+        "pcodex integrate codex --write",
+        "pcodex integrate codex --status",
+        "pcodex integrate codex --repair --dry-run",
+        "pcodex integrate codex --repair",
+        "pcodex integrate codex --disable",
+        "pcodex integrate codex --uninstall --dry-run",
+        "pcodex integrate codex --uninstall"
+      ],
+      "migration": [
+        "pcodex integrate codex --dry-run --migrate --repo-root /path/to/repository",
+        "pcodex integrate codex --write --migrate --repo-root /path/to/repository"
+      ],
+      "managed_lifecycle": [
+        "pcodex install",
+        "pcodex install --apply",
+        "pcodex repair --dry-run",
+        "pcodex uninstall --dry-run",
+        "pcodex uninstall --yes"
+      ]
+    }
   },
   "production_branch_policy": {
     "authority": "origin/Private-Beta",
@@ -228,13 +273,16 @@
       "surface": "source installer root and provenance manifest", "location": "$HOME/.pcodex-alpha/ and install_manifest.json", "classification": "public_codex", "owner": "pcodex", "creation_trigger": "explicit current source installer", "read_behavior": "read install-root provenance and ownership metadata", "write_behavior": "installer-managed", "sensitivity": "private", "schema_version": "pcodex.install_manifest.v1", "cleanup_policy": "source installer --uninstall after manifest/root/Python validation", "repair_policy": "reinstall explicitly", "uninstall_policy": "current install-root authority; separate from per-file managed integration receipt", "conflict_policy": "fail closed", "user_modification_policy": "preserve"
     },
     {
+      "surface": "invited-beta Python environment", "location": "$HOME/.pcodex-beta/", "classification": "public_codex", "owner": "user", "creation_trigger": "explicit canonical venv and controlled wheel install", "read_behavior": "console-script and package execution", "write_behavior": "Python environment manager only", "sensitivity": "private", "schema_version": "external Python environment", "cleanup_policy": "remove only after package and integration uninstall", "repair_policy": "reinstall the exact qualified wheel", "uninstall_policy": "same-environment package manager followed by user-authorized environment removal", "conflict_policy": "checksum mismatch or unknown package fails closed", "user_modification_policy": "preserve"
+    },
+    {
       "surface": "temporary files", "location": "same-directory atomic temporary files", "classification": "internal", "owner": "pcodex", "creation_trigger": "atomic state write", "read_behavior": "never authoritative", "write_behavior": "create, fsync, replace, cleanup", "sensitivity": "matches target", "schema_version": "none", "cleanup_policy": "remove interrupted temporary file", "repair_policy": "retry operation", "uninstall_policy": "never scan broad temp directories", "conflict_policy": "ignore unknown sibling temp files", "user_modification_policy": "preserve unknown files"
     },
     {
       "surface": "runtime logs", "location": "explicit pCodex or Pre-mode log outputs", "classification": "internal", "owner": "mixed", "creation_trigger": "explicit diagnostic or harness operation", "read_behavior": "diagnostic inspection only", "write_behavior": "command-specific", "sensitivity": "private", "schema_version": "component-versioned or plain text", "cleanup_policy": "never scan or delete by filename alone", "repair_policy": "do not synthesize", "uninstall_policy": "remove only exact receipt-proven logs", "conflict_policy": "preserve unknown logs", "user_modification_policy": "preserve"
     },
     {
-      "surface": "plugin lifecycle and migration authority", "location": ".pcodex/codex-plugin-state.json and .pcodex/codex-plugin-operation.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit plugin lifecycle or migration apply", "read_behavior": "version, ownership, file, registration, phase, and completion checks", "write_behavior": "atomic operation journal followed by final authority receipt", "sensitivity": "private_metadata", "schema_version": "pcodex.codex-plugin-state.v1 and pcodex.codex-plugin-operation.v1", "cleanup_policy": "receipt-driven", "repair_policy": "unknown versions fail closed", "uninstall_policy": "remove only after exact owned-state cleanup", "conflict_policy": "partial or interrupted state never reports ready", "user_modification_policy": "preserve"
+      "surface": "plugin lifecycle and migration authority", "location": ".pcodex/codex-plugin-state.json and .pcodex/codex-plugin-operation.json and .pcodex/codex-native-state.json", "classification": "internal", "owner": "pcodex", "creation_trigger": "explicit plugin lifecycle or migration apply", "read_behavior": "version, ownership, file, registration, phase, and completion checks", "write_behavior": "atomic operation journal followed by final authority receipt", "sensitivity": "private_metadata", "schema_version": "pcodex.codex-plugin-state.v1 and pcodex.codex-plugin-operation.v1 and pcodex.codex-native-state.v1", "cleanup_policy": "receipt-driven", "repair_policy": "unknown versions fail closed", "uninstall_policy": "remove only after exact owned-state cleanup", "conflict_policy": "partial or interrupted state never reports ready", "user_modification_policy": "preserve"
     },
     {
       "surface": "legacy plugin state", "location": "legacy .agents or .pcodex integration assets", "classification": "deprecated", "owner": "unresolved", "creation_trigger": "historical installers", "read_behavior": "inspection only", "write_behavior": "none by normal beta commands", "sensitivity": "private", "schema_version": "legacy", "cleanup_policy": "manual after inspection", "repair_policy": "migrate only with explicit receipt", "uninstall_policy": "deferred", "conflict_policy": "unknown owner", "user_modification_policy": "preserve"

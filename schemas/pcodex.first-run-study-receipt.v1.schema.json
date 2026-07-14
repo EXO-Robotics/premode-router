@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.first-run-study-receipt.v1.schema.json",
+  "title": "pCodex private first-run study receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "anonymous_tester_id", "no_prior_knowledge_attested", "attestation_evidence_sha256",
+    "artifact", "runtime", "fixture", "timing", "commands",
+    "undocumented_help", "failures", "lifecycle", "documentation",
+    "completed"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.first-run-study-receipt.v1"},
+    "anonymous_tester_id": {"type": "string", "pattern": "^tester-[a-z0-9]{8,32}$"},
+    "no_prior_knowledge_attested": {"const": true},
+    "attestation_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["filename", "sha256", "product_version", "candidate_commit"],
+      "properties": {
+        "filename": {"type": "string", "pattern": "^[^/]+\\.whl$"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "product_version": {"const": "0.3.0b1"},
+        "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "runtime": {
+      "type": "object", "additionalProperties": false,
+      "required": ["platform", "architecture", "python_version", "codex_version"],
+      "properties": {
+        "platform": {"enum": ["macos", "linux"]},
+        "architecture": {"type": "string", "minLength": 1},
+        "python_version": {"pattern": "^3\\.(11|12|13)(\\.|$)", "type": "string"},
+        "codex_version": {"type": "string", "pattern": "^(absent|0\\.143\\.[0-9]+)$"}
+      }
+    },
+    "fixture": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "sha256"],
+      "properties": {
+        "id": {"enum": ["fixture-01", "fixture-02", "fixture-03", "fixture-04", "fixture-05"]},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "timing": {
+      "type": "object", "additionalProperties": false,
+      "required": ["first_use_seconds", "completion_seconds"],
+      "properties": {
+        "first_use_seconds": {"type": "number", "minimum": 0},
+        "completion_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "undocumented_help": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "failures": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["category", "repair"],
+        "properties": {
+          "category": {"type": "string", "minLength": 1},
+          "repair": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "lifecycle": {
+      "type": "object", "additionalProperties": false,
+      "required": ["first_dry_run", "install_twice", "uninstall", "reinstall", "unrelated_state_preserved"],
+      "properties": {
+        "first_dry_run": {"type": "boolean"},
+        "install_twice": {"type": "boolean"},
+        "uninstall": {"type": "boolean"},
+        "reinstall": {"type": "boolean"},
+        "unrelated_state_preserved": {"type": "boolean"}
+      }
+    },
+    "documentation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sufficient", "missing_instruction"],
+      "properties": {
+        "sufficient": {"type": "boolean"},
+        "missing_instruction": {"type": ["string", "null"]}
+      }
+    },
+    "completed": {"type": "boolean"}
+  }
+}

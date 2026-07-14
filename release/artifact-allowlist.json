@@ -127,7 +127,7 @@
     "src/premode/live_token_harness.py",
     "src/premode/sharded_runner.py"
   ],
-  "bundle_allowed_prefixes": ["artifacts/", "plugins/pcodex/", "receipts/", "release/", "docs/"],
+  "bundle_allowed_prefixes": ["README.md", "artifacts/", "plugins/pcodex/", "receipts/", "release/", "docs/"],
   "prohibited_parts": [
     ".git", ".venv", ".premode", ".pcodex", "__MACOSX", "__pycache__",
     "observer", "transcript", "audit.db", "worktree"

@@ -1,5 +1,6 @@
 {
-  "name": "premode-router",
+  "name": "pCodex",
+  "package": "premode-router",
   "status": "source-visible proprietary Private-Beta",
   "license_mode": "source-visible-permission-required",
   "python": ">=3.11",
@@ -9,17 +10,12 @@
     "codex_wrapper": "pcodex"
   },
   "current_install": {
-    "canonical_first_run_doc": "docs/FIRST_RUN.md",
+    "canonical_first_run_doc": "docs/GETTING_STARTED.md",
     "public_source": [
-      "cd premode-router",
       "scripts/install_pcodex_from_source.sh",
       "export PATH=\"$HOME/.pcodex-alpha/bin:$PATH\"",
-      "pcodex doctor",
-      "pcodex setup",
-      "pcodex on",
-      "pcodex status",
-      "pcodex first-run",
-      "pcodex first-run --json",
+      "pcodex doctor --advisory --json",
+      "pcodex status --advisory --json",
       "pcodex run --dry-run \"Hypothetical setup verification task. Do not modify files.\""
     ],
     "development_editable": [
@@ -34,22 +30,20 @@
     "status": "future/not active unless package publication exists"
   },
   "setup": [
-    "pcodex doctor",
-    "pcodex doctor --json",
-    "pcodex setup",
-    "pcodex on",
-    "pcodex status",
-    "pcodex status --json",
-    "pcodex first-run",
-    "pcodex first-run --json",
-    "pcodex status --advisory --json",
     "pcodex doctor --advisory --json",
-    "pcodex first-run --advisory --json"
+    "pcodex status --advisory --json",
+    "pcodex install",
+    "pcodex install --apply",
+    "pcodex setup",
+    "pcodex status",
+    "pcodex integrate codex --dry-run",
+    "pcodex integrate codex --write",
+    "pcodex integrate codex --status"
   ],
   "primary_workflow": [
     "pcodex run --dry-run \"<task>\"",
     "pcodex run \"<task>\"",
-    "premode review-patch --since-compile"
+    "pcodex review --since-compile"
   ],
   "cleanup": [
     "pcodex cleanup --local-state --dry-run",
@@ -96,15 +90,15 @@
     "AI_START_HERE.md",
     "AGENTS.md",
     "README.md",
-    "docs/FIRST_RUN.md",
-    "docs/PRIVATE_BETA_TESTER_PACKET.md",
-    "docs/TUNING.md",
-    "docs/INCREMENTAL_TUNING.md",
-    "docs/CONTENT_FREE_TELEMETRY.md",
-    "docs/DAILY_USE.md",
-    "docs/PASTEABLE_CODEX_BOOTSTRAP.md",
-    "docs/CLAIMS_AND_LIMITATIONS.md",
-    "docs/TESTING_GATES.md"
+    "docs/GETTING_STARTED.md",
+    "docs/CODEX_INTEGRATION.md",
+    "docs/OPENCLAW_INTEGRATION.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/PRIVACY_AND_SAFETY.md",
+    "docs/KNOWN_LIMITATIONS.md",
+    "docs/MIGRATION.md",
+    "docs/ROLLBACK.md",
+    "docs/UNINSTALL.md"
   ],
   "do_not_edit_by_default": [
     ".premode/out/",
@@ -125,8 +119,7 @@
     ".premode/inventory/files.json",
     ".premode/topology/repo_topology.json",
     ".premode/out/cache_manifest.json",
-    ".pcodex/",
-    "PCODEX_SETUP_REPORT.md"
+    ".pcodex/"
   ],
   "experimental_or_deferred": [
     "native /pcodex slash-command support",
@@ -141,9 +134,7 @@
       "pcodex status --advisory",
       "pcodex status --advisory --json",
       "pcodex doctor --advisory",
-      "pcodex doctor --advisory --json",
-      "pcodex first-run --advisory",
-      "pcodex first-run --advisory --json"
+      "pcodex doctor --advisory --json"
     ],
     "write_policy": "advisory",
     "writes_performed": false,

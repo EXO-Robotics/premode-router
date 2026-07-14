@@ -1196,6 +1196,25 @@ def doctor(cwd: Path | None = None, *, advisory: bool = False) -> dict[str, Any]
         "algorithm": PCODEX_PACKET_STRATEGY,
         "secrets_printed": False,
     }
+    strict_failures: list[str] = []
+    if not payload["premode_executable_available"]:
+        strict_failures.append("premode_executable_missing")
+    if not payload["pcodex_executable_available"]:
+        strict_failures.append("pcodex_executable_missing")
+    if not payload["codex_executable_available"]:
+        strict_failures.append("codex_executable_missing")
+    elif codex_cli.get("version_warning") and not advisory:
+        strict_failures.append("codex_version_unsupported_or_unverified")
+    if not payload["plugin_alias_available"]:
+        strict_failures.append("production_plugin_alias_missing")
+    if not payload["git_repo"]:
+        strict_failures.append("repository_not_git")
+    if str(config.source).endswith(":invalid"):
+        strict_failures.append("invalid_pcodex_configuration")
+    if lifecycle.get("readiness") != "READY":
+        strict_failures.append("managed_lifecycle_not_ready")
+    payload["strict_ready"] = not strict_failures
+    payload["strict_failures"] = strict_failures
     if advisory:
         return paste_safe_receipt(
             payload,
@@ -2328,6 +2347,7 @@ def _parser() -> argparse.ArgumentParser:
     doctor_parser = sub.add_parser("doctor", help="Check local pCodex readiness.")
     doctor_parser.add_argument("--json", action="store_true", help="Print machine-readable doctor result.")
     doctor_parser.add_argument("--advisory", action="store_true", help="Read-only, no-write, paste-safe advisory receipt.")
+    doctor_parser.add_argument("--strict", action="store_true", help="Return nonzero when required product readiness checks fail.")
     doctor_parser.add_argument("--repo-root", default=None, help="Repository root. Defaults to the current repo.")
     first_run_parser = sub.add_parser("first-run")
     first_run_parser.add_argument("--json", action="store_true", help="Print machine-readable first-run receipt.")
@@ -2436,6 +2456,41 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def validate_pcodex_namespace(args: argparse.Namespace) -> list[str]:
+    """Validate command combinations without performing product or filesystem work."""
+
+    errors: list[str] = []
+    if args.command == "cleanup":
+        if not args.local_state:
+            errors.append("pcodex cleanup requires --local-state")
+        if not args.dry_run and not args.yes:
+            errors.append("pcodex cleanup --local-state requires --dry-run or --yes")
+    elif args.command == "repair" and not args.dry_run and not args.yes:
+        errors.append("pcodex repair requires --dry-run or --yes")
+    elif args.command == "uninstall" and not args.dry_run and not args.yes:
+        errors.append("pcodex uninstall requires --dry-run or --yes")
+    elif args.command == "integrate":
+        if args.integrate_command != "codex":
+            errors.append("unsupported integrate target")
+        elif args.uninstall and any(
+            (args.write, args.status, args.repair, args.disable, args.migrate, args.with_mcp)
+        ):
+            errors.append("--uninstall supports only the optional --dry-run mode")
+        elif args.repair and any(
+            (args.write, args.status, args.disable, args.migrate, args.with_mcp)
+        ):
+            errors.append("--repair supports only the optional --dry-run mode")
+        elif args.status and any((args.migrate, args.with_mcp)):
+            errors.append("--status does not accept --migrate or --with-mcp")
+        elif args.disable and any((args.migrate, args.with_mcp)):
+            errors.append("--disable does not accept --migrate or --with-mcp")
+    elif args.command == "plugin" and (
+        args.plugin_command != "init" or not args.local_marketplace
+    ):
+        errors.append("plugin init requires --local-marketplace")
+    return errors
+
+
 def _lifecycle_preview_receipt(plan: dict[str, Any], operation_type: str) -> dict[str, Any]:
     canonical = json.dumps(plan, sort_keys=True, separators=(",", ":"))
     planned_keys = (
@@ -2479,6 +2534,21 @@ def main(argv: list[str] | None = None) -> int:
         args = _parser().parse_args(sys.argv[1:] if argv is None else argv)
     except SystemExit as exc:
         return int(exc.code or 0)
+    semantic_errors = validate_pcodex_namespace(args)
+    if semantic_errors:
+        print(
+            json.dumps(
+                {
+                    "status": "error",
+                    "error": semantic_errors[0],
+                    "codex_launch": "not_executed",
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            file=sys.stderr,
+        )
+        return 2
     cwd = Path.cwd()
     repo_arg = getattr(args, "repo", None) or getattr(args, "repo_root", None)
     repo_root = _repo_root(Path(repo_arg).resolve() if repo_arg else cwd)
@@ -2488,6 +2558,12 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True))
         else:
             print(format_doctor(payload))
+        if args.strict:
+            failures = payload.get("strict_failures")
+            if payload.get("schema_version") == "pcodex.advisory_receipt.v1":
+                readiness = payload.get("readiness")
+                return 0 if readiness == "READY" else 2
+            return 0 if isinstance(failures, list) and not failures else 2
         return 0
     if args.command == "first-run":
         payload = first_run_receipt(repo_root, advisory=True) if args.advisory else first_run(repo_root, advisory=False)
@@ -2497,20 +2573,6 @@ def main(argv: list[str] | None = None) -> int:
             print(format_first_run_receipt(payload) if args.advisory else format_first_run(payload))
         return 0
     if args.command == "cleanup":
-        if not args.local_state:
-            print(
-                json.dumps(
-                    {
-                        "status": "error",
-                        "error": "pcodex cleanup requires --local-state",
-                        "codex_launch": "not_executed",
-                    },
-                    indent=2,
-                    sort_keys=True,
-                ),
-                file=sys.stderr,
-            )
-            return 2
         try:
             payload = cleanup_local_state(
                 repo_root,
@@ -2529,12 +2591,6 @@ def main(argv: list[str] | None = None) -> int:
             print(format_cleanup(payload))
         return 0
     if args.command == "repair":
-        if not args.dry_run and not args.yes:
-            print(
-                json.dumps({"status": "error", "error": "pcodex repair requires --dry-run or --yes", "codex_launch": "not_executed"}, indent=2, sort_keys=True),
-                file=sys.stderr,
-            )
-            return 2
         managed_root = Path(args.managed_root).expanduser() if args.managed_root else repo_root
         receipt_path = Path(args.state_receipt).expanduser() if args.state_receipt else managed_root / DEFAULT_INSTALL_STATE_RELATIVE_PATH
         try:
@@ -2565,12 +2621,6 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"- {key}: {len(payload.get(key) or [])}")
         return 0 if args.dry_run or payload.get("applied") or payload.get("status") in {"already_healthy", "complete_uninstall"} else 2
     if args.command == "uninstall":
-        if not args.dry_run and not args.yes:
-            print(
-                json.dumps({"status": "error", "error": "pcodex uninstall requires --dry-run or --yes", "codex_launch": "not_executed"}, indent=2, sort_keys=True),
-                file=sys.stderr,
-            )
-            return 2
         managed_root = Path(args.managed_root).expanduser() if args.managed_root else repo_root
         receipt_path = Path(args.state_receipt).expanduser() if args.state_receipt else managed_root / ".premode" / "install-state.json"
         try:
@@ -2686,9 +2736,6 @@ def main(argv: list[str] | None = None) -> int:
 
         return pcodex_mcp_server.serve()
     if args.command == "integrate":
-        if args.integrate_command != "codex":
-            print(json.dumps({"status": "error", "error": "unsupported integrate target"}, indent=2, sort_keys=True), file=sys.stderr)
-            return 2
         from .codex_plugin import (
             apply_integration,
             disable_integration,
@@ -2699,15 +2746,6 @@ def main(argv: list[str] | None = None) -> int:
             uninstall_integration,
             uninstall_preview,
         )
-
-        if args.uninstall and any((args.write, args.status, args.repair, args.disable, args.migrate, args.with_mcp)):
-            payload = {"status": "error", "error": "--uninstall supports only the optional --dry-run mode"}
-            print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
-            return 2
-        if args.repair and any((args.write, args.status, args.disable, args.migrate, args.with_mcp)):
-            payload = {"status": "error", "error": "--repair supports only the optional --dry-run mode"}
-            print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
-            return 2
 
         if args.status:
             payload = plugin_status(repo_root, native=True)
@@ -2738,9 +2776,6 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         return 0
     if args.command == "plugin":
-        if args.plugin_command != "init" or not args.local_marketplace:
-            print(json.dumps({"status": "error", "error": "plugin init requires --local-marketplace"}, indent=2, sort_keys=True), file=sys.stderr)
-            return 2
         payload = plugin_init_local_marketplace(repo_root, dry_run=bool(args.dry_run))
         if args.json:
             print(json.dumps(payload, indent=2, sort_keys=True))

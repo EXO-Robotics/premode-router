@@ -1,6 +1,6 @@
 # Known Limitations
 
-The `0.3.0b1` foundation is qualified locally on macOS with Codex `0.143.0`. Linux and Python 3.12-3.13 are supported claims only after the release-foundation matrix passes on the exact candidate commit.
+The `0.3.0b1` foundation has CI-backed qualification on macOS and Linux with Python 3.11-3.13. The supported Codex line is `0.143.x`, with canonical live discovery qualified on `0.143.0`; other Codex minor versions are unsupported unless separately declared and tested.
 
 The following are not current release claims:
 

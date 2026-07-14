@@ -3,6 +3,24 @@
 `plugins/pcodex` is the only supported source tree. Wheel and sdist artifacts
 install the same files under `share/premode-router/plugins/pcodex`; lifecycle
 code locates installed data without assuming a checkout or current directory.
+The qualified and supported Codex line is `0.143.x`; live qualification used
+Codex `0.143.0`.
+
+The complete supported lifecycle is:
+
+```console
+pcodex integrate codex --dry-run
+pcodex integrate codex --write
+pcodex integrate codex --status
+pcodex integrate codex --repair --dry-run
+pcodex integrate codex --repair
+pcodex integrate codex --disable
+pcodex integrate codex --write
+pcodex integrate codex --uninstall --dry-run
+pcodex integrate codex --uninstall
+pcodex integrate codex --write
+pcodex integrate codex --status
+```
 
 Use `pcodex integrate codex --dry-run` first. `--write` installs canonical
 files and one repo marketplace entry, registers the marketplace and plugin
@@ -26,6 +44,23 @@ MCP is absent by default. `--with-mcp` explicitly creates a plugin-local,
 workspace-bound descriptor and an exact Codex MCP registration resolved through
 the installed Python artifact. Disable removes the owned active MCP entry and
 repair restores it. Full server-containment qualification remains deferred.
+
+For the assigned optional-MCP first-run fixture, use this exact lifecycle:
+
+```console
+pcodex integrate codex --dry-run --with-mcp
+pcodex integrate codex --write --with-mcp
+pcodex integrate codex --status
+pcodex integrate codex --disable
+pcodex integrate codex --repair --dry-run
+pcodex integrate codex --repair
+pcodex integrate codex --uninstall --dry-run
+pcodex integrate codex --uninstall
+```
+
+The status, disable, repair, and uninstall operations derive optional-MCP
+authority from the exact installation receipt; they do not accept
+`--with-mcp` as an ignored modifier.
 Hooks, slash commands, automatic subagent interception, automatic
 MCP invocation, public marketplace publication, production approval, and
 OpenClaw production integration are unsupported.

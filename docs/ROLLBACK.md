@@ -10,3 +10,27 @@ pcodex integrate codex --status --json --repo-root /path/to/repository
 Use the single recommended action returned by status. Do not delete `.premode`, `.pcodex`, plugin, marketplace, Codex configuration, or quarantine paths by hand. User-modified, unrelated, malformed, and future-schema state is preserved rather than normalized.
 
 Rollback means restoring the last receipt-proven state during the same operation. It does not claim arbitrary power-loss recovery or support package downgrade from `0.3.0b1`.
+
+## Upgrade procedure
+
+Before installing a replacement invited-beta artifact, capture read-only state and remove no owned integration files:
+
+```console
+pcodex status --advisory --json
+pcodex integrate codex --status --json
+```
+
+Install the authorized replacement with the same environment, then inspect and repair only proven-owned state:
+
+```console
+"$HOME/.pcodex-beta/bin/python" -m pip install --no-index --no-deps /path/to/authorized-replacement.whl
+pcodex integrate codex --status --json
+pcodex integrate codex --repair --dry-run --json
+pcodex integrate codex --repair --json
+```
+
+The release matrix covers the declared previous beta, existing canonical and legacy plugins, partial installs, modified managed files, corrupt/future receipts, interrupted upgrades, caught upgrade failure rollback, unsupported downgrade, uninstall after failure, and reinstall after rollback.
+
+## Failure behavior
+
+On a caught failure, pCodex restores verified prior bytes before returning and does not issue a false completion receipt. If status reports an interrupted journal or uncertain ownership, automatic recovery stops. Preserve the evidence and follow the exact manual action; do not attempt package downgrade or delete staging paths.

@@ -242,19 +242,41 @@ def test_status_and_doctor_include_first_run_readiness_and_install_provenance(tm
     assert "Install provenance:" in pcodex.format_doctor(doctor)
 
 
+def test_doctor_strict_returns_nonzero_for_blockers_and_zero_when_ready(
+    monkeypatch: Any, capsys: Any
+) -> None:
+    monkeypatch.setattr(
+        pcodex,
+        "doctor",
+        lambda _root, advisory=False: {
+            "strict_ready": False,
+            "strict_failures": ["managed_lifecycle_not_ready"],
+        },
+    )
+    assert pcodex.main(["doctor", "--strict", "--json"]) == 2
+    capsys.readouterr()
+
+    monkeypatch.setattr(
+        pcodex,
+        "doctor",
+        lambda _root, advisory=False: {"strict_ready": True, "strict_failures": []},
+    )
+    assert pcodex.main(["doctor", "--strict", "--json"]) == 0
+
+
 def test_docs_and_manifest_point_to_canonical_first_run_and_future_package_boundary() -> None:
     root = Path(__file__).resolve().parents[1]
-    first_run = (root / "docs" / "FIRST_RUN.md").read_text(encoding="utf-8")
+    first_run = (root / "docs" / "GETTING_STARTED.md").read_text(encoding="utf-8")
     readme = (root / "README.md").read_text(encoding="utf-8")
     ai_start = (root / "AI_START_HERE.md").read_text(encoding="utf-8")
     manifest = json.loads((root / "premode.ai.json").read_text(encoding="utf-8"))
 
-    assert "pcodex first-run --json" in first_run
-    assert "pipx install premode-router" in first_run
-    assert "future or unproven" in first_run
-    assert "docs/FIRST_RUN.md" in readme
-    assert "docs/FIRST_RUN.md" in ai_start
-    assert manifest["current_install"]["canonical_first_run_doc"] == "docs/FIRST_RUN.md"
+    assert "pcodex doctor --advisory --json" in first_run
+    assert "premode_router-0.3.0b1-py3-none-any.whl" in first_run
+    assert "not a public package installation claim" in first_run
+    assert "docs/GETTING_STARTED.md" in readme
+    assert "docs/GETTING_STARTED.md" in ai_start
+    assert manifest["current_install"]["canonical_first_run_doc"] == "docs/GETTING_STARTED.md"
     assert "pcodex cleanup --local-state --dry-run" in manifest["cleanup"]
 
 

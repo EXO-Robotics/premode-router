@@ -57,6 +57,8 @@ jobs:
               json.loads(path.read_text(encoding="utf-8"))
           PY
           python -c "from premode.product_contract import validate_installed_product_contract as v; assert v()['status']=='valid'"
+      - name: Validate canonical documentation without executing examples
+        run: python scripts/validate_documentation.py --root . --json
       - name: Run focused product, lifecycle, no-write, plugin, and packaging suites
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
@@ -65,6 +67,8 @@ jobs:
           tests/test_product_contract.py
           tests/test_package_layout.py
           tests/test_productization_contract.py
+          tests/test_documentation_contract.py
+          tests/test_first_run_study.py
           tests/test_public_lifecycle.py
           tests/test_lab73dt_codex_native_ux_surface.py
           tests/no_write
@@ -159,7 +163,7 @@ jobs:
       - name: Lint and format qualification-critical Python
         run: |
           ruff check --select E9,F63,F7,F82 src/premode scripts tests
-          ruff format --check scripts/validate_release_metadata.py scripts/compare_release_artifacts.py
+          ruff format --check scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
       - name: Type-check versioned product contracts
         run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py
       - name: Run Python security analyzers
@@ -169,8 +173,11 @@ jobs:
             --format json --output "$RUNNER_TEMP/pip-audit.json" \
             -r requirements/release-build.lock
           detect-secrets scan \
-            .github requirements schemas \
-            docs/ROLLBACK.md docs/UNINSTALL.md docs/KNOWN_LIMITATIONS.md \
+            .github requirements schemas README.md premode.product.json \
+            docs/GETTING_STARTED.md docs/CODEX_INTEGRATION.md \
+            docs/OPENCLAW_INTEGRATION.md docs/TROUBLESHOOTING.md \
+            docs/PRIVACY_AND_SAFETY.md docs/KNOWN_LIMITATIONS.md \
+            docs/MIGRATION.md docs/ROLLBACK.md docs/UNINSTALL.md \
             src/premode/no_write.py src/premode/managed_state.py \
             src/premode/cli.py src/premode/production_ranking.py \
             > "$RUNNER_TEMP/detect-secrets.json"

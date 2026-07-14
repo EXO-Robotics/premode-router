@@ -28,8 +28,12 @@ def _tree(root: Path) -> dict[str, str]:
 def _repo(parent: Path, name: str) -> Path:
     root = parent / name
     root.mkdir(parents=True)
-    (root / ".git").mkdir()
     (root / "unrelated.txt").write_text("preserve\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=root, check=True, timeout=15)
+    subprocess.run(["git", "config", "user.email", "fixture.invalid"], cwd=root, check=True, timeout=15)
+    subprocess.run(["git", "config", "user.name", "pCodex Fixture"], cwd=root, check=True, timeout=15)
+    subprocess.run(["git", "add", "unrelated.txt"], cwd=root, check=True, timeout=15)
+    subprocess.run(["git", "commit", "-q", "-m", "fixture baseline"], cwd=root, check=True, timeout=15)
     return root
 
 
@@ -165,6 +169,9 @@ def probe(
         preview, _ = _pcodex(pcodex, repo, env, "--dry-run")
         preview_no_write = before == {"repo": _tree(repo), "codex": _tree(missing_home / "codex-home")}
         installed, _ = _pcodex(pcodex, repo, env, "--write", expected={0, 1})
+        repeat_before = {"repo": _tree(repo), "codex": _tree(missing_home / "codex-home")}
+        installed_again, _ = _pcodex(pcodex, repo, env, "--write", expected={0, 1})
+        repeat_no_write = repeat_before == {"repo": _tree(repo), "codex": _tree(missing_home / "codex-home")}
         status, _ = _pcodex(pcodex, repo, env, "--status", expected={1})
         installed_state = json.loads((repo / ".pcodex/codex-plugin-state.json").read_text(encoding="utf-8"))
         validate_payload_against_schema(installed_state, plugin_state_schema)
@@ -209,6 +216,9 @@ def probe(
             preview.get("writes_performed") is False,
             preview_no_write,
             installed.get("status") == "installed_needs_codex",
+            installed_again.get("status") == "installed_needs_codex",
+            installed_again.get("writes_performed") is False,
+            repeat_no_write,
             status.get("readiness") == "NEEDS_ACTION",
             status.get("reason") == "codex_missing",
             resolved == str(pcodex),
@@ -233,6 +243,8 @@ def probe(
             "lifecycle": {
                 "preview_no_write": preview_no_write,
                 "apply": installed.get("status"),
+                "install_twice": installed_again.get("status"),
+                "install_twice_no_write": repeat_no_write,
                 "status": status.get("readiness"),
                 "uninstall": removed.get("status"),
             },
@@ -253,11 +265,20 @@ def probe(
     env["PATH"] = str(pcodex.parent) + os.pathsep + env.get("PATH", "")
     repo = _repo(control_root, "repository with spaces β")
     marketplace_before = _seed_unrelated_workspace_state(repo)
+    dirty_before_install = bool(
+        subprocess.run(
+            ["git", "status", "--porcelain"], cwd=repo, text=True,
+            capture_output=True, check=True, timeout=15,
+        ).stdout.strip()
+    )
     codex_unrelated_before = _seed_unrelated_codex_state(main_home)
     before = {"repo": _tree(repo), "codex": _tree(main_home / "codex-home")}
     preview, preview_time = _pcodex(pcodex, repo, env, "--dry-run")
     preview_no_write = before == {"repo": _tree(repo), "codex": _tree(main_home / "codex-home")}
     installed, install_time = _pcodex(pcodex, repo, env, "--write")
+    repeat_before = {"repo": _tree(repo), "codex": _tree(main_home / "codex-home")}
+    installed_again, _ = _pcodex(pcodex, repo, env, "--write")
+    repeat_no_write = repeat_before == {"repo": _tree(repo), "codex": _tree(main_home / "codex-home")}
     status_ready, status_time = _pcodex(pcodex, repo, env, "--status")
     native_state = json.loads((repo / ".pcodex/codex-native-state.json").read_text(encoding="utf-8"))
     plugin_state = json.loads((repo / ".pcodex/codex-plugin-state.json").read_text(encoding="utf-8"))
@@ -403,6 +424,9 @@ def probe(
         *static_contract.values(),
         preview.get("writes_performed") is False, preview_no_write,
         installed.get("status") == "installed", status_ready.get("readiness") == "READY",
+        installed_again.get("status") == "unchanged",
+        installed_again.get("writes_performed") is False,
+        repeat_no_write, dirty_before_install,
         installed_manifest == expected_manifest,
         compatibility.get("supported") is True,
         resolved == str(pcodex), discovered_ok, skills_discovered,
@@ -442,6 +466,8 @@ def probe(
         "installed_package_path": str(package_path),
         "lifecycle": {
             "preview_no_write": preview_no_write, "apply": installed.get("status"),
+            "install_twice": installed_again.get("status"),
+            "install_twice_no_write": repeat_no_write,
             "status": status_ready.get("readiness"), "repair": repaired_missing.get("status"),
             "repair_preview_no_write": repair_preview_no_write,
             "disable": disabled.get("status"), "reenable": reenabled.get("status"),
@@ -458,6 +484,7 @@ def probe(
             "accepted_historical_fixture": exact_migration,
         },
         "preservation": {
+            "dirty_git_fixture": dirty_before_install,
             "codex_unrelated_config": config_after_payload == codex_unrelated_before,
             "marketplace_byte_exact": marketplace_after == marketplace_before,
             "unrelated_plugin": unrelated_plugin_preserved,
