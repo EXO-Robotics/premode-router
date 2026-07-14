@@ -15,6 +15,7 @@ from scripts.check_public_hygiene import scan
 from scripts.compare_release_artifacts import compare
 from scripts.build_release_artifacts import (
     build,
+    normalize_sdist_archive,
     require_probe_passed,
     run_json_probe,
     persist_lifecycle_probe,
@@ -502,6 +503,112 @@ def test_release_artifact_reproducibility_rejects_empty_inventories(tmp_path: Pa
 
     with pytest.raises(ValueError, match="exactly one wheel and one sdist"):
         compare(tmp_path)
+
+
+def test_sdist_normalization_removes_platform_and_build_time_metadata(
+    tmp_path: Path,
+) -> None:
+    policy = {
+        "archive_limits": {
+            "max_entries": 100,
+            "max_member_uncompressed_bytes": 1024 * 1024,
+            "max_total_uncompressed_bytes": 4 * 1024 * 1024,
+            "max_compression_ratio": 200.0,
+        }
+    }
+
+    def write_sdist(
+        path: Path,
+        *,
+        uid: int,
+        gid: int,
+        uname: str,
+        gname: str,
+        mtime: float,
+        reverse: bool,
+    ) -> None:
+        members = [
+            ("product-1.0", None, 0o755),
+            ("product-1.0/src", None, 0o755),
+            ("product-1.0/src/module.py", b"VALUE = 1\n", 0o664),
+            ("product-1.0/README.md", b"Example\n", 0o644),
+        ]
+        if reverse:
+            members.reverse()
+        with tarfile.open(path, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+            for name, payload, mode in members:
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.DIRTYPE if payload is None else tarfile.REGTYPE
+                info.size = len(payload or b"")
+                info.mode = mode
+                info.uid = uid
+                info.gid = gid
+                info.uname = uname
+                info.gname = gname
+                info.mtime = mtime
+                info.pax_headers = {"mtime": str(mtime)}
+                archive.addfile(info, io.BytesIO(payload) if payload is not None else None)
+
+    first = tmp_path / "first.tar.gz"
+    second = tmp_path / "second.tar.gz"
+    write_sdist(
+        first,
+        uid=501,
+        gid=20,
+        uname="runner",
+        gname="staff",
+        mtime=1_783_995_154.25,
+        reverse=False,
+    )
+    write_sdist(
+        second,
+        uid=1001,
+        gid=1001,
+        uname="linux",
+        gname="linux",
+        mtime=1_783_995_147.75,
+        reverse=True,
+    )
+
+    normalize_sdist_archive(first, epoch=1_700_000_000, policy=policy)
+    normalize_sdist_archive(second, epoch=1_700_000_000, policy=policy)
+
+    assert first.read_bytes() == second.read_bytes()
+    with tarfile.open(first, "r:gz") as archive:
+        assert [member.name for member in archive.getmembers()] == sorted(
+            member.name for member in archive.getmembers()
+        )
+        for member in archive.getmembers():
+            assert (member.uid, member.gid, member.uname, member.gname) == (0, 0, "", "")
+            assert member.mtime == 1_700_000_000
+            assert member.pax_headers == {}
+
+
+def test_sdist_normalization_checks_limits_before_rewriting(tmp_path: Path) -> None:
+    archive_path = tmp_path / "too-many.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for name in ("product-1.0", "product-1.0/module.py"):
+            info = tarfile.TarInfo(name)
+            info.type = tarfile.DIRTYPE if name == "product-1.0" else tarfile.REGTYPE
+            info.size = 0
+            archive.addfile(info, io.BytesIO() if info.isfile() else None)
+    original = archive_path.read_bytes()
+
+    with pytest.raises(RuntimeError, match="raw sdist structure failed"):
+        normalize_sdist_archive(
+            archive_path,
+            epoch=1_700_000_000,
+            policy={
+                "archive_limits": {
+                    "max_entries": 1,
+                    "max_member_uncompressed_bytes": 1024,
+                    "max_total_uncompressed_bytes": 1024,
+                    "max_compression_ratio": 200.0,
+                }
+            },
+        )
+
+    assert archive_path.read_bytes() == original
 
 
 def test_upgrade_smoke_fixture_contains_source_and_validation(tmp_path: Path) -> None:

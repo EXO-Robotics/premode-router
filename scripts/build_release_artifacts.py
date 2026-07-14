@@ -828,11 +828,70 @@ def write_tester_bundle(source: Path, output: Path, artifacts: Path) -> Path:
     return bundle
 
 
-def normalize_gzip(path: Path) -> None:
-    raw = gzip.decompress(path.read_bytes())
-    with path.open("wb") as target:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=target, mtime=0) as archive:
-            archive.write(raw)
+def normalize_sdist_archive(
+    path: Path,
+    *,
+    epoch: int,
+    policy: dict[str, object],
+) -> None:
+    """Canonicalize both tar metadata and gzip framing for reproducible sdists."""
+
+    raw_failures = validate_archive_structure(path, policy)
+    if raw_failures:
+        raise RuntimeError(
+            "raw sdist structure failed before normalization: "
+            + ", ".join(raw_failures[:10])
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix="pcodex-sdist-normalize-",
+        dir=path.parent,
+    ) as raw_temp:
+        temp = Path(raw_temp)
+        normalized_tar = temp / "normalized.tar"
+        normalized_gzip = temp / path.name
+        with tarfile.open(path, mode="r:gz") as source:
+            members = sorted(source.getmembers(), key=lambda member: member.name)
+            with tarfile.open(
+                normalized_tar,
+                mode="w",
+                format=tarfile.PAX_FORMAT,
+            ) as target:
+                for member in members:
+                    payload = source.extractfile(member) if member.isfile() else None
+                    member.uid = 0
+                    member.gid = 0
+                    member.uname = ""
+                    member.gname = ""
+                    member.mtime = epoch
+                    member.pax_headers = {}
+                    member.devmajor = 0
+                    member.devminor = 0
+                    if member.isdir():
+                        member.mode = 0o755
+                    elif member.isfile():
+                        member.mode = 0o755 if member.mode & 0o111 else 0o644
+                    else:
+                        member.mode = 0o777
+                    target.addfile(member, payload)
+
+        with normalized_tar.open("rb") as source, normalized_gzip.open("wb") as target:
+            with gzip.GzipFile(
+                filename="",
+                mode="wb",
+                fileobj=target,
+                mtime=0,
+                compresslevel=9,
+            ) as archive:
+                shutil.copyfileobj(source, archive, length=1024 * 1024)
+
+        normalized_failures = validate_archive_structure(normalized_gzip, policy)
+        if normalized_failures:
+            raise RuntimeError(
+                "normalized sdist structure failed: "
+                + ", ".join(normalized_failures[:10])
+            )
+        os.replace(normalized_gzip, path)
 
 
 def materialize_legacy_fixture(destination: Path) -> None:
@@ -1280,7 +1339,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
         )
         run(python, "setup.py", "sdist", "--dist-dir", str(dist), cwd=source, env=env)
         for sdist in dist.glob("*.tar.gz"):
-            normalize_gzip(sdist)
+            normalize_sdist_archive(sdist, epoch=int(epoch), policy=policy)
         artifacts = output / "artifacts"
         shutil.copytree(dist, artifacts, dirs_exist_ok=True)
 
