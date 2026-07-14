@@ -3,7 +3,7 @@
 Status date: 2026-07-13
 Campaign branch: `product/codex-beta-v1`
 Accepted campaign baseline: `88b459ca79ebd04149bb0719405656df2c904292`
-Current integrated milestone: `904d5762f37a3dcff057a919c5d34ee6ce007b74`
+Current integrated milestone implementation: `9131d680c1542c1cb54fc29f09f35c832290eb95`
 
 The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate for an earlier failed gate.
 
@@ -55,10 +55,12 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 
 ### Stage 3 — Canonical Documentation and First-Run Qualification
 
-- Classification: implementation in progress; external human evidence pending.
+- Classification: substantially complete; external human evidence pending.
 - Starting SHA: `904d5762f37a3dcff057a919c5d34ee6ce007b74`.
+- Implementation SHA: `9131d680c1542c1cb54fc29f09f35c832290eb95`.
 - Canonical set: the ten documents declared by `documentation_contract` in `premode.product.json`.
-- Automated evidence: static executable, command, flag, semantic-combination, containment, link, referenced-file, generated-path, version-role, and JSON-schema validation; blind tester-bundle isolation; CI wiring; first-run fixture qualification.
+- Automated evidence: 1,273 passed and 5 skipped in the complete repository suite; 192 passed and 4 skipped in the focused suite; static executable, command, flag, semantic-combination, containment, link, referenced-file, generated-path, version-role, and JSON-schema validation; blind tester-bundle isolation; CI wiring; first-run fixture qualification.
 - Study kit: deterministic five-fixture archives, restoration commands, receipt schema/templates, content-free aggregate validator, and separate blind/coordinator payloads.
+- Independent review: three read-only lanes ended at P0=0/P1=0 after fixes.
 - External evidence: `docs/FIRST_RUN_STUDY_PROTOCOL.md` freezes the five-person study and reconciled activation thresholds. No tester result is inferred from automation.
 - Current blocker: five eligible human tester receipts have not been collected.
