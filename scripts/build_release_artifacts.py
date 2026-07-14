@@ -559,12 +559,21 @@ def persist_no_write_probe(output: Path, label: str, payload: dict[str, object])
 
 def persist_lifecycle_probe(output: Path, label: str, payload: dict[str, object]) -> dict[str, object]:
     write_json(output / "private-receipts" / "lifecycle" / f"{label}.json", payload)
+    receipt_payload = dict(payload.get("receipts") or {})
+    public_receipt_types = sorted(
+        key for key in receipt_payload if key.endswith("_public")
+    )
     summary = {
         "schema_version": payload.get("schema_version"),
         "passed": payload.get("passed"),
         "full_cycle": payload.get("full_cycle"),
         "modified_cycle": payload.get("modified_cycle"),
-        "receipts": payload.get("receipts"),
+        "receipt_evidence": {
+            "schemas_validated": receipt_payload.get("schemas_validated") is True,
+            "public_receipt_types": public_receipt_types,
+            "public_receipt_count": len(public_receipt_types),
+            "run_identifiers_omitted": True,
+        },
         "performance": payload.get("performance"),
         "installed_import_isolated": True,
     }

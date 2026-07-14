@@ -17,6 +17,7 @@ from scripts.build_release_artifacts import (
     build,
     require_probe_passed,
     run_json_probe,
+    persist_lifecycle_probe,
     validate_archive_content,
     validate_archive_structure,
     validate_names,
@@ -435,6 +436,26 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(tmp_path: Path
     assert qualification["wheel_sdist_parity_evidence"]["passed"] is True
     assert qualification["artifacts"][0]["digest"]["sha256"] == "a" * 64
     assert qualification["public_registry_published"] is False
+
+
+def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> None:
+    operation_id = "8ba874a9" + "-d287-47da-a6f3-d345cedd7244"
+    summary = persist_lifecycle_probe(
+        tmp_path,
+        "wheel",
+        {
+            "schema_version": "pcodex.installed-lifecycle-probe.v1",
+            "passed": True,
+            "receipts": {
+                "schemas_validated": True,
+                "repair_public": {"operation_id": operation_id},
+            },
+        },
+    )
+
+    assert summary["receipt_evidence"]["public_receipt_types"] == ["repair_public"]
+    assert operation_id not in (tmp_path / "receipts/installed-lifecycle-wheel.json").read_text()
+    assert operation_id in (tmp_path / "private-receipts/lifecycle/wheel.json").read_text()
 
 
 def test_release_artifact_reproducibility_requires_six_identical_matrix_receipts(
