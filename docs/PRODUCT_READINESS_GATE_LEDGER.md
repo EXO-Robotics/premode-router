@@ -3,7 +3,7 @@
 Status date: 2026-07-13
 Campaign branch: `product/codex-beta-v1`
 Accepted campaign baseline: `88b459ca79ebd04149bb0719405656df2c904292`
-Current integrated milestone implementation: `9131d680c1542c1cb54fc29f09f35c832290eb95`
+Current integrated milestone implementation: `d86b7f6cbf1d30b4afbb40202ae489fd568bc998`
 
 The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate for an earlier failed gate.
 
@@ -24,7 +24,7 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 | G1 — product and CLI consolidation | public parser tests, strict doctor, lifecycle tests, first-run fixtures | complete | automated journeys pass | five-person external study not executed | median activation evidence | substantially_complete |
 | G2-core | canonical packet, `ProductionRankingProviderV1`, managed state, repair/uninstall | complete | full repository suite and clean artifact lifecycle pass | none | algorithm lane may retain incumbent | passed |
 | G2-security | no-write receipts, containment, ownership, scanners | complete | macOS/Linux and Python 3.11-3.13 CI and Stage 2 clean-artifact proof pass | none | broader adversarial review continues | passed |
-| G3 — production Codex integration | canonical plugin lifecycle and Codex 0.143 discovery | substantially complete | wheel/sdist lifecycle, live discovery, and optional MCP registration lifecycle pass | full optional-MCP protocol, containment, cancellation, shutdown, and sensitive-error conformance remain | broader Codex versions are unsupported | substantially_complete |
+| G3 — production Codex integration | canonical plugin lifecycle and Codex 0.143 discovery | substantially complete | wheel/sdist lifecycle, live discovery, and optional MCP registration lifecycle pass | optional MCP runtime does not yet enforce its registered `PCODEX_WORKSPACE`; full protocol, containment, cancellation, shutdown, and sensitive-error conformance remain | broader Codex versions are unsupported | substantially_complete |
 | G4 — production OpenClaw adapter | experimental detection/policy only | not started | not started | product lifecycle, containment, compatibility, and 20-task acceptance set absent | full G4 scope | not_started |
 | G5 — distribution and release engineering | workflows `29301111990` and `29302610473`, reproducible wheel/sdist, SBOM, provenance, rollback | substantially complete | macOS/Linux × Python 3.11-3.13 passed twice, including the Stage 2 contract boundary | product-level upgrade check/apply commands and final RC evidence remain | Windows not supported | substantially_complete |
 | G6 — held-out product proof | protocol foundations only | not started | not started | frozen 10-repository/100-task corpus and case studies absent | external/model execution | not_started |
@@ -58,9 +58,15 @@ The gate authority is `docs/ROADMAP_TO_90.md`. Later evidence cannot compensate 
 - Classification: substantially complete; external human evidence pending.
 - Starting SHA: `904d5762f37a3dcff057a919c5d34ee6ce007b74`.
 - Implementation SHA: `9131d680c1542c1cb54fc29f09f35c832290eb95`.
+- Qualification repair SHA: `d86b7f6cbf1d30b4afbb40202ae489fd568bc998`.
 - Canonical set: the ten documents declared by `documentation_contract` in `premode.product.json`.
 - Automated evidence: 1,273 passed and 5 skipped in the complete repository suite; 192 passed and 4 skipped in the focused suite; static executable, command, flag, semantic-combination, containment, link, referenced-file, generated-path, version-role, and JSON-schema validation; blind tester-bundle isolation; CI wiring; first-run fixture qualification.
 - Study kit: deterministic five-fixture archives, restoration commands, receipt schema/templates, content-free aggregate validator, and separate blind/coordinator payloads.
 - Independent review: three read-only lanes ended at P0=0/P1=0 after fixes.
+- Corrective qualification: the first committed builder run exposed repeated missing-Codex installation writes. The repair made valid receipt-owned missing-Codex installs idempotent while preserving fail-closed damaged, interrupted, unknown, and unsupported-version states; corrective re-review ended at P0=0/P1=0.
+- Artifacts: wheel SHA-256 `cff10c0443cc421e9207c39abde0d90d7ca8b3f995f9ae194bd59c691b123bb2`; sdist SHA-256 `353a21604c014b138b186c75ec9586af85e87d07d8264e537310046cca1c988b`.
+- Installed-artifact evidence: wheel and sdist lifecycle, live Codex `0.143.0`, missing-Codex lifecycle, no-write, package allowlist, upgrade/rollback, and parity passed from the clean corrective commit.
+- Study-kit evidence: two independent materializations were byte-identical; the kit is bound to the qualified wheel and qualification receipt hashes.
+- Remote evidence: workflow `29305106614`; six test jobs, six artifact jobs, reproducibility, release evidence, static quality, and history scanning passed. Dependency review was correctly skipped for manual dispatch.
 - External evidence: `docs/FIRST_RUN_STUDY_PROTOCOL.md` freezes the five-person study and reconciled activation thresholds. No tester result is inferred from automation.
 - Current blocker: five eligible human tester receipts have not been collected.
