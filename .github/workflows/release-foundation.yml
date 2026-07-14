@@ -165,16 +165,18 @@ jobs:
       - name: Lint and format qualification-critical Python
         run: |
           ruff check --select E9,F63,F7,F82 src/premode scripts tests
-          ruff format --check scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
+          ruff format --check src/premode/algorithm_handoff.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
       - name: Type-check versioned product contracts
-        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py
+        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py src/premode/algorithm_handoff.py
+      - name: Validate frozen production algorithm handoff
+        run: PYTHONPATH=src python scripts/validate_algorithm_handoff.py
       - name: Run Python security analyzers
         run: |
           bandit -q -r src/premode scripts -lll -x src/premode/lab73ab_sharded.py,src/premode/live_token_harness.py,src/premode/sharded_runner.py
           pip-audit --strict --no-deps --disable-pip --cache-dir "$RUNNER_TEMP/pip-audit" \
             --format json --output "$RUNNER_TEMP/pip-audit.json" \
             -r requirements/release-build.lock
-          detect-secrets scan \
+          detect-secrets scan --exclude-lines '"(?:sha256|.*_sha|commit_sha|tree_sha)"' \
             .github requirements schemas README.md premode.product.json \
             docs/GETTING_STARTED.md docs/CODEX_INTEGRATION.md \
             docs/OPENCLAW_INTEGRATION.md docs/TROUBLESHOOTING.md \
@@ -182,6 +184,8 @@ jobs:
             docs/MIGRATION.md docs/ROLLBACK.md docs/UNINSTALL.md \
             src/premode/no_write.py src/premode/managed_state.py \
             src/premode/cli.py src/premode/production_ranking.py \
+            src/premode/algorithm_handoff.py scripts/validate_algorithm_handoff.py \
+            release/algorithm-handoff.v1.json \
             > "$RUNNER_TEMP/detect-secrets.json"
           python -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/detect-secrets.json')); assert not d.get('results'), d.get('results')"
           semgrep scan --error --metrics=off --config security/semgrep-release.yml src/premode scripts

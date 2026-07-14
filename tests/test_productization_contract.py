@@ -16,6 +16,7 @@ import pytest
 
 from scripts.check_public_hygiene import scan
 from scripts.compare_release_artifacts import compare
+from scripts.validate_release_metadata import validate as validate_release_metadata
 from scripts.installed_codex_plugin_probe import (
     _McpLineReader,
     _classify_mcp_process_observations,
@@ -44,7 +45,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_evaluation_holdout_is_unpopulated_and_answer_free() -> None:
-    holdout = json.loads((ROOT / "evaluation/corpora/final-holdout.stub.json").read_text())
+    holdout = json.loads(
+        (ROOT / "evaluation/corpora/final-holdout.stub.json").read_text()
+    )
     assert holdout["populated"] is False
     assert holdout["contains_prompts_or_expected_answers"] is False
     assert "tasks" not in holdout
@@ -66,21 +69,33 @@ def test_release_allowlist_is_default_deny_for_wheels() -> None:
     assert "/private/tmp/" in policy["content_prohibited_patterns"]
     assert "premode/compiler.py" in policy["wheel_allowed_members"]
     assert "premode/no_write.py" in policy["wheel_allowed_members"]
-    assert validate_names(["premode/private_dump.py"], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True) == ["unexpected_wheel_member:premode/private_dump.py"]
+    assert validate_names(
+        ["premode/private_dump.py"],
+        allowed_prefixes=policy["wheel_allowed_prefixes"],
+        policy=policy,
+        exact_wheel=True,
+    ) == ["unexpected_wheel_member:premode/private_dump.py"]
 
 
 def test_release_allowlist_is_default_deny_for_sdist_source_members() -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     prefix = "premode_router-0.3.0b1/"
     assert validate_sdist_names([prefix + "src/premode/no_write.py"], policy) == []
-    assert validate_sdist_names([prefix + "src/app.py"], policy) == ["unexpected_sdist_member:src/app.py"]
-    assert validate_sdist_names([prefix + "src/premode/private_dump.py"], policy) == ["unexpected_sdist_member:src/premode/private_dump.py"]
+    assert validate_sdist_names([prefix + "src/app.py"], policy) == [
+        "unexpected_sdist_member:src/app.py"
+    ]
+    assert validate_sdist_names([prefix + "src/premode/private_dump.py"], policy) == [
+        "unexpected_sdist_member:src/premode/private_dump.py"
+    ]
     assert validate_sdist_names([prefix + "plugins/pcodex/accidental.txt"], policy) == [
         "unexpected_sdist_member:plugins/pcodex/accidental.txt"
     ]
     accidental_wheel = "premode_router-0.3.0b1.data/data/share/premode-router/plugins/pcodex/accidental.txt"
     assert validate_names(
-        [accidental_wheel], allowed_prefixes=policy["wheel_allowed_prefixes"], policy=policy, exact_wheel=True
+        [accidental_wheel],
+        allowed_prefixes=policy["wheel_allowed_prefixes"],
+        policy=policy,
+        exact_wheel=True,
     ) == [f"unexpected_wheel_member:{accidental_wheel}"]
 
 
@@ -92,22 +107,36 @@ def test_release_allowlist_requires_every_canonical_plugin_resource() -> None:
         for item in required
     ]
     sdist_names = ["premode_router-0.3.0b1/plugins/pcodex/" + item for item in required]
-    assert validate_required_plugin_resources(wheel_names, policy, archive_kind="wheel") == []
-    assert validate_required_plugin_resources(sdist_names, policy, archive_kind="sdist") == []
-    assert validate_required_plugin_resources(wheel_names[1:], policy, archive_kind="wheel") == [
-        f"missing_plugin_resource:{required[0]}"
-    ]
+    assert (
+        validate_required_plugin_resources(wheel_names, policy, archive_kind="wheel")
+        == []
+    )
+    assert (
+        validate_required_plugin_resources(sdist_names, policy, archive_kind="sdist")
+        == []
+    )
+    assert validate_required_plugin_resources(
+        wheel_names[1:], policy, archive_kind="wheel"
+    ) == [f"missing_plugin_resource:{required[0]}"]
 
 
 def test_release_allowlist_requires_exact_contract_golden_set() -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     required = policy["contract_golden_members"]
-    wheel_prefix = "premode_router-0.3.0b1.data/data/share/premode-router/contracts/goldens/"
+    wheel_prefix = (
+        "premode_router-0.3.0b1.data/data/share/premode-router/contracts/goldens/"
+    )
     sdist_prefix = "premode_router-0.3.0b1/contracts/goldens/"
     wheel_names = [wheel_prefix + item for item in required]
     sdist_names = [sdist_prefix + item for item in required]
-    assert validate_required_contract_goldens(wheel_names, policy, archive_kind="wheel") == []
-    assert validate_required_contract_goldens(sdist_names, policy, archive_kind="sdist") == []
+    assert (
+        validate_required_contract_goldens(wheel_names, policy, archive_kind="wheel")
+        == []
+    )
+    assert (
+        validate_required_contract_goldens(sdist_names, policy, archive_kind="sdist")
+        == []
+    )
     assert validate_required_contract_goldens(
         wheel_names[1:] + [wheel_prefix + "raw-task.json"], policy, archive_kind="wheel"
     ) == [
@@ -130,7 +159,12 @@ def test_builder_requires_an_absolute_validated_python_interpreter() -> None:
 
 def test_builder_refuses_to_skip_sdist_qualification(tmp_path: Path) -> None:
     try:
-        build("HEAD", tmp_path / "out", python=str(Path(sys.executable).resolve()), with_sdist=False)
+        build(
+            "HEAD",
+            tmp_path / "out",
+            python=str(Path(sys.executable).resolve()),
+            with_sdist=False,
+        )
     except RuntimeError as exc:
         assert "wheel and sdist" in str(exc)
     else:
@@ -139,16 +173,34 @@ def test_builder_refuses_to_skip_sdist_qualification(tmp_path: Path) -> None:
 
 def test_failed_json_probe_preserves_structured_receipts(tmp_path: Path) -> None:
     probe = tmp_path / "probe.py"
-    probe.write_text('import json; print(json.dumps({"schema_version":"fixture.v1","passed":False})); raise SystemExit(1)\n')
+    probe.write_text(
+        'import json; print(json.dumps({"schema_version":"fixture.v1","passed":False})); raise SystemExit(1)\n'
+    )
     output = tmp_path / "evidence"
     payload, returncode = run_json_probe(
         str(Path(sys.executable).resolve()),
-        str(probe), output=output, label="expected-failure", cwd=tmp_path, env=dict(os.environ),
+        str(probe),
+        output=output,
+        label="expected-failure",
+        cwd=tmp_path,
+        env=dict(os.environ),
     )
     assert returncode == 1
     assert payload["passed"] is False
-    assert json.loads((output / "private-receipts/probe-execution/expected-failure.json").read_text())["payload"] == payload
-    assert json.loads((output / "receipts/probe-execution/expected-failure.json").read_text())["payload_passed"] is False
+    assert (
+        json.loads(
+            (
+                output / "private-receipts/probe-execution/expected-failure.json"
+            ).read_text()
+        )["payload"]
+        == payload
+    )
+    assert (
+        json.loads(
+            (output / "receipts/probe-execution/expected-failure.json").read_text()
+        )["payload_passed"]
+        is False
+    )
     try:
         require_probe_passed("fixture", payload, returncode)
     except RuntimeError as exc:
@@ -157,7 +209,9 @@ def test_failed_json_probe_preserves_structured_receipts(tmp_path: Path) -> None
         raise AssertionError("failed probe unexpectedly accepted")
 
 
-def test_blind_tester_bundle_contains_only_wheel_checksum_and_canonical_docs(tmp_path: Path) -> None:
+def test_blind_tester_bundle_contains_only_wheel_checksum_and_canonical_docs(
+    tmp_path: Path,
+) -> None:
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
     wheel_buffer = io.BytesIO()
@@ -181,17 +235,24 @@ def test_blind_tester_bundle_contains_only_wheel_checksum_and_canonical_docs(tmp
     assert checksum == f"{hashlib.sha256(wheel_bytes).hexdigest()}  fixture.whl\n"
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     assert validate_archive_structure(bundle, policy) == []
-    assert validate_names(
-        sorted(names),
-        allowed_prefixes=list(policy["bundle_allowed_prefixes"]),
-        policy=policy,
-    ) == []
+    assert (
+        validate_names(
+            sorted(names),
+            allowed_prefixes=list(policy["bundle_allowed_prefixes"]),
+            policy=policy,
+        )
+        == []
+    )
     assert validate_archive_content(bundle, policy) == []
 
 
 def test_blind_tester_bundle_rejects_noncanonical_manifest_list(tmp_path: Path) -> None:
     source = tmp_path / "source"
-    shutil.copytree(ROOT, source, ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"))
+    shutil.copytree(
+        ROOT,
+        source,
+        ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache"),
+    )
     manifest_path = source / "premode.product.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["documentation_contract"]["canonical_docs"][-1] = "docs/FIRST_RUN.md"
@@ -206,7 +267,9 @@ def test_blind_tester_bundle_rejects_noncanonical_manifest_list(tmp_path: Path) 
         write_tester_bundle(source, output, artifacts)
 
 
-def test_blind_tester_bundle_rejects_symlinked_canonical_document(tmp_path: Path) -> None:
+def test_blind_tester_bundle_rejects_symlinked_canonical_document(
+    tmp_path: Path,
+) -> None:
     source = tmp_path / "source"
     source.mkdir()
     manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
@@ -241,17 +304,21 @@ def test_public_repository_hygiene_guard_passes() -> None:
     assert result["passed"], result["failures"]
 
 
-def test_hygiene_scans_tests_and_detector_files_without_whole_file_exemptions(tmp_path: Path) -> None:
+def test_hygiene_scans_tests_and_detector_files_without_whole_file_exemptions(
+    tmp_path: Path,
+) -> None:
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     paths = {
         "tests/test_fixture.py": "TO" + "KEN=realistic_unapproved_value\n",
         "src/premode/redaction.py": "REAL = 'ghp_" + "1234567890abcdefghijklmnop'\n",
-        "docs/leaks.txt": "\n".join([
-            "sk" + "-abcdefghijklmnopqrst",
-            "Bearer" + " abcdefghijklmnopqrst",
-            "-----BEGIN ENCRYPTED " + "PRIVATE KEY-----",
-            "git" + "@github.com:private-org/private-repo.git",
-        ]),
+        "docs/leaks.txt": "\n".join(
+            [
+                "sk" + "-abcdefghijklmnopqrst",
+                "Bearer" + " abcdefghijklmnopqrst",
+                "-----BEGIN ENCRYPTED " + "PRIVATE KEY-----",
+                "git" + "@github.com:private-org/private-repo.git",
+            ]
+        ),
     }
     for rel, content in paths.items():
         path = tmp_path / rel
@@ -267,13 +334,17 @@ def test_hygiene_scans_tests_and_detector_files_without_whole_file_exemptions(tm
     assert sum("docs/leaks.txt" in failure for failure in result["failures"]) >= 4
 
 
-def test_artifact_exact_signature_allowance_does_not_exempt_member(tmp_path: Path) -> None:
+def test_artifact_exact_signature_allowance_does_not_exempt_member(
+    tmp_path: Path,
+) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     wheel = tmp_path / "fixture.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr(
             "premode/redaction.py",
-            'PATTERN = r"github_' + 'pat_[A-Za-z0-9_]{20,}"\nREAL = "github_' + 'pat_1234567890abcdefghijklmnop"\n',
+            'PATTERN = r"github_'
+            + 'pat_[A-Za-z0-9_]{20,}"\nREAL = "github_'
+            + 'pat_1234567890abcdefghijklmnop"\n',
         )
 
     failures = validate_archive_content(wheel, policy)
@@ -285,17 +356,19 @@ def test_artifact_exact_signature_allowance_does_not_exempt_member(tmp_path: Pat
 def test_artifact_scanner_covers_private_identity_categories(tmp_path: Path) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     wheel = tmp_path / "leaks.whl"
-    payload = "\n".join([
-        "sk" + "-abcdefghijklmnopqrst",
-        "xoxb" + "-1234567890-abcdefghij",
-        "eyJ" + "abcdefghijkl.abcdefghijk.abcdefghijkl",
-        "Bearer" + " abcdefghijklmnopqrst",
-        "-----BEGIN ENCRYPTED " + "PRIVATE KEY-----",
-        "person" + "@private-company.example",
-        "git" + "@github.com:private-org/private-repo.git",
-        "https://service" + ".internal/api",
-        "123e4567" + "-e89b-12d3-a456-426614174000",
-    ])
+    payload = "\n".join(
+        [
+            "sk" + "-abcdefghijklmnopqrst",
+            "xoxb" + "-1234567890-abcdefghij",
+            "eyJ" + "abcdefghijkl.abcdefghijk.abcdefghijkl",
+            "Bearer" + " abcdefghijklmnopqrst",
+            "-----BEGIN ENCRYPTED " + "PRIVATE KEY-----",
+            "person" + "@private-company.example",
+            "git" + "@github.com:private-org/private-repo.git",
+            "https://service" + ".internal/api",
+            "123e4567" + "-e89b-12d3-a456-426614174000",
+        ]
+    )
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("premode/leaks.py", payload)
 
@@ -307,13 +380,17 @@ def test_artifact_scanner_covers_private_identity_categories(tmp_path: Path) -> 
     assert any(item.startswith("prohibited_system_id:") for item in failures)
 
 
-def test_artifact_exact_signature_allowance_handles_sdist_prefix_without_hiding_secret(tmp_path: Path) -> None:
+def test_artifact_exact_signature_allowance_handles_sdist_prefix_without_hiding_secret(
+    tmp_path: Path,
+) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     archive = tmp_path / "source.zip"
     with zipfile.ZipFile(archive, "w") as bundle:
         bundle.writestr(
             "premode_router-0/src/premode/redaction.py",
-            'PATTERN = r"github_' + 'pat_[A-Za-z0-9_]{20,}"\nREAL = "github_' + 'pat_1234567890abcdefghijklmnop"\n',
+            'PATTERN = r"github_'
+            + 'pat_[A-Za-z0-9_]{20,}"\nREAL = "github_'
+            + 'pat_1234567890abcdefghijklmnop"\n',
         )
 
     failures = validate_archive_content(archive, policy)
@@ -322,7 +399,9 @@ def test_artifact_exact_signature_allowance_handles_sdist_prefix_without_hiding_
     assert any(item.startswith("prohibited_secret:") for item in failures)
 
 
-def test_tester_bundle_scans_nested_members_not_opaque_archive_bytes(tmp_path: Path) -> None:
+def test_tester_bundle_scans_nested_members_not_opaque_archive_bytes(
+    tmp_path: Path,
+) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     nested_bytes = io.BytesIO()
     with zipfile.ZipFile(nested_bytes, "w", compression=zipfile.ZIP_STORED) as nested:
@@ -341,18 +420,25 @@ def test_tester_bundle_scans_nested_members_not_opaque_archive_bytes(tmp_path: P
         nested.writestr("payload.txt", b"person" + b"@private.example")
     with zipfile.ZipFile(bundle, "w") as outer:
         outer.writestr("artifacts/fixture.zip", leaking_bytes.getvalue())
-    assert any(item.startswith("prohibited_email:") for item in validate_archive_content(bundle, policy))
+    assert any(
+        item.startswith("prohibited_email:")
+        for item in validate_archive_content(bundle, policy)
+    )
 
 
-def test_archive_structure_rejects_traversal_links_and_resource_exhaustion(tmp_path: Path) -> None:
+def test_archive_structure_rejects_traversal_links_and_resource_exhaustion(
+    tmp_path: Path,
+) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     archive_path = tmp_path / "unsafe.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
         archive.writestr("../escape.txt", b"escape")
         link = zipfile.ZipInfo("link")
-        link.external_attr = (0o120777 << 16)
+        link.external_attr = 0o120777 << 16
         archive.writestr(link, b"target")
-        archive.writestr("large.txt", b"x" * (1024 * 1024 + 1), compress_type=zipfile.ZIP_DEFLATED)
+        archive.writestr(
+            "large.txt", b"x" * (1024 * 1024 + 1), compress_type=zipfile.ZIP_DEFLATED
+        )
     strict = dict(policy)
     strict["archive_limits"] = {
         "max_entries": 2,
@@ -445,7 +531,9 @@ def test_tar_validation_stops_at_first_declared_resource_overflow(
     assert any(item.startswith("archive_resource_limit:") for item in content_failures)
 
 
-def test_archive_structure_rejects_duplicates_and_casefold_collisions(tmp_path: Path) -> None:
+def test_archive_structure_rejects_duplicates_and_casefold_collisions(
+    tmp_path: Path,
+) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
     archive_path = tmp_path / "collisions.zip"
     with zipfile.ZipFile(archive_path, "w") as archive:
@@ -459,7 +547,9 @@ def test_archive_structure_rejects_duplicates_and_casefold_collisions(tmp_path: 
     assert any(item.startswith("archive_casefold_collision:") for item in failures)
 
 
-@pytest.mark.parametrize("name", ["../escape", "../../etc/passwd", "/absolute", "C:/absolute"])
+@pytest.mark.parametrize(
+    "name", ["../escape", "../../etc/passwd", "/absolute", "C:/absolute"]
+)
 def test_archive_name_validation_does_not_strip_unsafe_prefixes(name: str) -> None:
     policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
 
@@ -468,7 +558,9 @@ def test_archive_name_validation_does_not_strip_unsafe_prefixes(name: str) -> No
     assert any(item.startswith("unsafe_path:") for item in failures)
 
 
-def test_release_evidence_emits_sbom_provenance_and_qualification(tmp_path: Path) -> None:
+def test_release_evidence_emits_sbom_provenance_and_qualification(
+    tmp_path: Path,
+) -> None:
     inventory = [
         {
             "file": "artifacts/fixture.whl",
@@ -481,6 +573,18 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(tmp_path: Path
             "sha256": "c" * 64,
             "size": 456,
             "members": ["fixture/src/premode/__init__.py"],
+        },
+        {
+            "file": "release/algorithm-handoff.v1.json",
+            "sha256": "d" * 64,
+            "size": 789,
+            "members": [],
+        },
+        {
+            "file": "release/pcodex.algorithm-handoff.v1.schema.json",
+            "sha256": "e" * 64,
+            "size": 987,
+            "members": [],
         },
     ]
     installed = {
@@ -518,13 +622,90 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(tmp_path: Path
 
     sbom = json.loads((tmp_path / "release/SBOM.cyclonedx.json").read_text())
     provenance = json.loads((tmp_path / "release/provenance.intoto.json").read_text())
-    qualification = json.loads((tmp_path / "receipts/qualification-summary.json").read_text())
+    qualification = json.loads(
+        (tmp_path / "receipts/qualification-summary.json").read_text()
+    )
     assert sbom["bomFormat"] == "CycloneDX"
     assert provenance["predicateType"] == "https://slsa.dev/provenance/v1"
     assert qualification["status"] == "passed"
     assert qualification["wheel_sdist_parity_evidence"]["passed"] is True
     assert qualification["artifacts"][0]["digest"]["sha256"] == "a" * 64
     assert qualification["public_registry_published"] is False
+
+
+def test_release_metadata_binds_standalone_algorithm_authorities(
+    tmp_path: Path,
+) -> None:
+    release = tmp_path / "release"
+    release.mkdir()
+    handoff = release / "algorithm-handoff.v1.json"
+    schema = release / "pcodex.algorithm-handoff.v1.schema.json"
+    shutil.copy2(ROOT / "release/algorithm-handoff.v1.json", handoff)
+    shutil.copy2(ROOT / "schemas/pcodex.algorithm-handoff.v1.schema.json", schema)
+    inventory = [
+        {"file": "artifacts/fixture.whl", "sha256": "a" * 64, "size": 1, "members": []},
+        {
+            "file": "artifacts/fixture.tar.gz",
+            "sha256": "b" * 64,
+            "size": 1,
+            "members": [],
+        },
+        {
+            "file": "release/algorithm-handoff.v1.json",
+            "sha256": hashlib.sha256(handoff.read_bytes()).hexdigest(),
+            "size": handoff.stat().st_size,
+            "members": [],
+        },
+        {
+            "file": "release/pcodex.algorithm-handoff.v1.schema.json",
+            "sha256": hashlib.sha256(schema.read_bytes()).hexdigest(),
+            "size": schema.stat().st_size,
+            "members": [],
+        },
+    ]
+    installed = {
+        "wheel_lifecycle": {"passed": True},
+        "sdist_lifecycle": {"passed": True},
+        "wheel_no_write": {"passed": True},
+        "sdist_no_write": {"passed": True},
+        "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "upgrade_rollback": {
+            "passed": True,
+            "failed_upgrade_post_mutation_rollback": {"passed": True},
+            "unsupported_downgrade_fail_closed": True,
+        },
+    }
+    write_release_evidence(
+        tmp_path,
+        schema_root=ROOT / "schemas",
+        commit_sha="b" * 40,
+        evidence_timestamp="2026-07-13T00:00:00Z",
+        product_version="0.3.0b1",
+        python=str(Path(sys.executable)),
+        inventory=inventory,
+        install_smoke=installed,
+        policy_hashes={"release/algorithm-handoff.v1.json": inventory[2]["sha256"]},
+        wheel_sdist_parity={
+            "passed": True,
+            "comparison": "normalized_member_sha256_excluding_record",
+            "direct_wheel_sha256": "a" * 64,
+            "sdist_rebuilt_wheel_sha256": "b" * 64,
+            "normalized_member_count": 12,
+        },
+    )
+    manifest = [
+        {"file": item["file"], "sha256": item["sha256"], "size": item["size"]}
+        for item in inventory
+    ]
+    (tmp_path / "SHA256-MANIFEST.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    assert validate_release_metadata(tmp_path)["passed"] is True
+
+    handoff.write_text("{}", encoding="utf-8")
+    with pytest.raises(Exception):
+        validate_release_metadata(tmp_path)
 
 
 def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> None:
@@ -562,10 +743,14 @@ def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> N
     assert "ownership_id" not in public_text
     assert "authority_receipt_hash" not in public_text
     assert summary["full_cycle"]["status_installed"]["readiness"] == "READY"
-    assert operation_id in (tmp_path / "private-receipts/lifecycle/wheel.json").read_text()
+    assert (
+        operation_id in (tmp_path / "private-receipts/lifecycle/wheel.json").read_text()
+    )
 
 
-def test_codex_probe_keeps_private_mcp_evidence_out_of_public_summary(tmp_path: Path) -> None:
+def test_codex_probe_keeps_private_mcp_evidence_out_of_public_summary(
+    tmp_path: Path,
+) -> None:
     private_marker = "/private/secret-workspace"
     payload = {
         "schema_version": "pcodex.installed-codex-plugin-probe.v1",
@@ -623,13 +808,43 @@ def test_mcp_process_evidence_allows_only_exact_workers_and_readers() -> None:
             ),
             "executable_path": "/venv/bin/python",
         },
-        {"pid": 4, "ppid": 2, "command": "/usr/bin/curl example.invalid", "executable_path": "/usr/bin/curl"},
-        {"pid": 5, "ppid": 3, "command": "/usr/bin/git status --porcelain", "executable_path": "/usr/bin/git"},
-        {"pid": 6, "ppid": 3, "command": "/usr/bin/git clean -fd", "executable_path": "/usr/bin/git"},
+        {
+            "pid": 4,
+            "ppid": 2,
+            "command": "/usr/bin/curl example.invalid",
+            "executable_path": "/usr/bin/curl",
+        },
+        {
+            "pid": 5,
+            "ppid": 3,
+            "command": "/usr/bin/git status --porcelain",
+            "executable_path": "/usr/bin/git",
+        },
+        {
+            "pid": 6,
+            "ppid": 3,
+            "command": "/usr/bin/git clean -fd",
+            "executable_path": "/usr/bin/git",
+        },
         {"pid": 8, "ppid": 3, "command": "(git)", "executable_path": "(git)"},
-        {"pid": 9, "ppid": 3, "command": "/tmp/evil/git status --short", "executable_path": "/tmp/evil/git"},
-        {"pid": 10, "ppid": 3, "command": "/tmp/evil/rg --files", "executable_path": "/tmp/evil/rg"},
-        {"pid": 11, "ppid": 3, "command": "/bin/sh /guard/git status --short", "executable_path": "/usr/bin/dash"},
+        {
+            "pid": 9,
+            "ppid": 3,
+            "command": "/tmp/evil/git status --short",
+            "executable_path": "/tmp/evil/git",
+        },
+        {
+            "pid": 10,
+            "ppid": 3,
+            "command": "/tmp/evil/rg --files",
+            "executable_path": "/tmp/evil/rg",
+        },
+        {
+            "pid": 11,
+            "ppid": 3,
+            "command": "/bin/sh /guard/git status --short",
+            "executable_path": "/usr/bin/dash",
+        },
     ]
     monitor = SimpleNamespace(
         root_pid=1,
@@ -680,7 +895,13 @@ def test_linux_mcp_process_evidence_accepts_only_inode_bound_spawn_argv(
             "ppid": 2,
             "command": f"{venv_python} -B -c {spawn_code} --multiprocessing-fork",
             "executable_path": str(interpreter),
-            "argv": [str(venv_python), "-B", "-c", spawn_code, "--multiprocessing-fork"],
+            "argv": [
+                str(venv_python),
+                "-B",
+                "-c",
+                spawn_code,
+                "--multiprocessing-fork",
+            ],
         },
         {
             "pid": 4,
@@ -742,6 +963,11 @@ def test_release_artifact_reproducibility_requires_six_identical_matrix_receipts
     inventory = [
         {"file": "artifacts/product.whl", "sha256": "a" * 64},
         {"file": "artifacts/product.tar.gz", "sha256": "b" * 64},
+        {"file": "release/algorithm-handoff.v1.json", "sha256": "c" * 64},
+        {
+            "file": "release/pcodex.algorithm-handoff.v1.schema.json",
+            "sha256": "d" * 64,
+        },
     ]
     for index in range(6):
         receipt = tmp_path / f"cell-{index}" / "receipts/artifact-inventory.json"
@@ -754,13 +980,15 @@ def test_release_artifact_reproducibility_requires_six_identical_matrix_receipts
     assert result["matrix_receipts"] == 6
 
 
-def test_release_artifact_reproducibility_rejects_empty_inventories(tmp_path: Path) -> None:
+def test_release_artifact_reproducibility_rejects_empty_inventories(
+    tmp_path: Path,
+) -> None:
     for index in range(6):
         receipt = tmp_path / f"cell-{index}" / "receipts/artifact-inventory.json"
         receipt.parent.mkdir(parents=True)
         receipt.write_text("[]", encoding="utf-8")
 
-    with pytest.raises(ValueError, match="exactly one wheel and one sdist"):
+    with pytest.raises(ValueError, match="one wheel, one sdist"):
         compare(tmp_path)
 
 
@@ -806,7 +1034,9 @@ def test_sdist_normalization_removes_platform_and_build_time_metadata(
                 info.gname = gname
                 info.mtime = mtime
                 info.pax_headers = {"mtime": str(mtime)}
-                archive.addfile(info, io.BytesIO(payload) if payload is not None else None)
+                archive.addfile(
+                    info, io.BytesIO(payload) if payload is not None else None
+                )
 
     first = tmp_path / "first.tar.gz"
     second = tmp_path / "second.tar.gz"
@@ -838,7 +1068,12 @@ def test_sdist_normalization_removes_platform_and_build_time_metadata(
             member.name for member in archive.getmembers()
         )
         for member in archive.getmembers():
-            assert (member.uid, member.gid, member.uname, member.gname) == (0, 0, "", "")
+            assert (member.uid, member.gid, member.uname, member.gname) == (
+                0,
+                0,
+                "",
+                "",
+            )
             assert member.mtime == 1_700_000_000
             assert member.pax_headers == {}
 

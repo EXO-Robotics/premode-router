@@ -11,6 +11,7 @@
     "premode/__init__.py",
     "premode/__main__.py",
     "premode/adapter_policy.py",
+    "premode/algorithm_handoff.py",
     "premode/adapters.py",
     "premode/audit.py",
     "premode/backbone.py",
@@ -86,6 +87,7 @@
     "premode_router-*.dist-info/licenses/*",
     "premode_router-*.data/data/share/premode-router/premode.product.json",
     "premode_router-*.data/data/share/premode-router/schemas/*.json",
+    "premode_router-*.data/data/share/premode-router/release/algorithm-handoff.v1.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/agent-adapter-v1.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/context-packet-v1.json",
     "premode_router-*.data/data/share/premode-router/contracts/goldens/context-receipt-v1.json",
@@ -108,6 +110,7 @@
     "production-ranking-request-v1.json",
     "production-ranking-result-v1.json"
   ],
+  "algorithm_handoff_member": "algorithm-handoff.v1.json",
   "plugin_allowed_members": [
     ".codex-plugin/plugin.json",
     "assets/README.md",

@@ -17,14 +17,34 @@ def compare(root: Path) -> dict[str, object]:
         names = [Path(item["file"]).name for item in inventory]
         wheels = [name for name in names if name.endswith(".whl")]
         sdists = [name for name in names if name.endswith(".tar.gz")]
-        if len(inventory) != 2 or len(wheels) != 1 or len(sdists) != 1:
-            raise ValueError(f"{matrix} must report exactly one wheel and one sdist")
+        authorities = {
+            name
+            for name in names
+            if name
+            in {
+                "algorithm-handoff.v1.json",
+                "pcodex.algorithm-handoff.v1.schema.json",
+            }
+        }
+        if (
+            len(inventory) != 4
+            or len(wheels) != 1
+            or len(sdists) != 1
+            or authorities
+            != {
+                "algorithm-handoff.v1.json",
+                "pcodex.algorithm-handoff.v1.schema.json",
+            }
+        ):
+            raise ValueError(
+                f"{matrix} must report one wheel, one sdist, and both algorithm authorities"
+            )
         if len(set(names)) != len(names):
             raise ValueError(f"{matrix} reports duplicate artifact identities")
         for item in inventory:
             name = Path(item["file"]).name
             hashes.setdefault(name, {})[matrix] = item["sha256"]
-    if len(hashes) != 2 or any(len(values) != 6 for values in hashes.values()):
+    if len(hashes) != 4 or any(len(values) != 6 for values in hashes.values()):
         raise ValueError(
             "every expected artifact must have one hash from each matrix cell"
         )

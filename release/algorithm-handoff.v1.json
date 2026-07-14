@@ -1,0 +1,163 @@
+{
+  "schema_version": "pcodex.algorithm-handoff.v1",
+  "product_version": "0.3.0b1",
+  "promotion_decision": "no_candidate_promoted",
+  "approved_algorithm_commit": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6",
+  "algorithm_baseline": {
+    "commit_sha": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6",
+    "tree_sha": "8120490deb23457d19299b09d5291783753f2066"
+  },
+  "candidate_manifest": {
+    "evaluated_strategy_count": 3,
+    "promoted_strategy_count": 0,
+    "combination_testing_performed": false,
+    "production_algorithm_changed": false,
+    "sealed_holdout_accessed": false,
+    "public_experiment_identifiers": false
+  },
+  "production_provider": {
+    "interface": "ProductionRankingProviderV1",
+    "provider_version": "production-ranking-provider.v1",
+    "implementation": "IncumbentManifestRankingProviderV1",
+    "freeze_schema_version": "pcodex.production-behavior-freeze.v1",
+    "freeze_sha256": "f4499af2b068a8802d3abaadbd360e804facebf4afc5dc6f461ee3fd12e2714c",
+    "freeze_case_count": 9,
+    "abstention_case_count": 5,
+    "fallback_case_count": 1,
+    "all_exact_tasks_once": true,
+    "routing_modes": ["narrow", "broad", "abstain", "fallback"]
+  },
+  "supported_task_classes": [
+    "package-qualified explicit source routing",
+    "package-qualified explicit source and related-test routing",
+    "ordinary explicit duplicate-boundary controls"
+  ],
+  "abstention_classes": [
+    "same basename without authority evidence",
+    "multiple equally plausible duplicates",
+    "near-duplicate conflicting content",
+    "generated mirror ambiguity",
+    "vendor and archive duplicate ambiguity"
+  ],
+  "fallback_classes": [
+    "an explicitly returned versioned fallback result is contract-compatible",
+    "insufficient confidence preserves the exact raw task through abstention"
+  ],
+  "native_evidence": {
+    "complete_receipt_count": 36,
+    "excluded_receipt_count": 6,
+    "scope": "bounded native complete receipts from strategy recovery and incumbent hardening; not the final held-out corpus"
+  },
+  "qualification_results": {
+    "recommendation_safety": {
+      "status": "passed_on_counted_native_receipts",
+      "counted_receipts": 36,
+      "unsafe_recommendations": 0,
+      "scope": "counted native complete receipts only"
+    },
+    "packet_quality": {
+      "status": "qualified_with_retained_negatives",
+      "deterministic_packet_tasks": 12,
+      "known_negative_count": 2,
+      "scope": "one irrelevant cross-package verification path and one omitted configuration-support cell are retained"
+    },
+    "agent_quality": {
+      "status": "no_alternative_noninferiority_demonstrated",
+      "diagnostic_repetitions": 3,
+      "incumbent_exact_successes": 0,
+      "evaluated_variant_exact_successes": 3,
+      "standard_exact_successes": 3,
+      "scope": "one frozen diagnostic cell; not a general quality estimate"
+    },
+    "complete_task_cost": {
+      "status": "evaluated_variant_rejected_for_cost",
+      "diagnostic_repetitions": 3,
+      "incumbent_mean_input_tokens": 5895,
+      "evaluated_variant_mean_input_tokens": 13077,
+      "standard_mean_input_tokens": 8040,
+      "scope": "complete runtime input tokens on the same frozen diagnostic cell"
+    },
+    "transfer_evidence": {
+      "status": "not_executed_evidence_neutral",
+      "executed_tasks": 0,
+      "scope": "later multi-model attempt did not execute a task and cannot qualify or disqualify the incumbent"
+    }
+  },
+  "evidence_integrity": [
+    {
+      "id": "strategy-promotion-decision",
+      "sha256": "9c8575289a4dfc088f80add13cb7145bd4e507fb6e6f7f8794ba1a056c196ef8",
+      "disclosure": "public_safe_source"
+    },
+    {
+      "id": "strategy-manifest",
+      "sha256": "d2dd983c074eb8a172352f1c976acac4a158c554d28e6d8524d8fbaa875db82a",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "strategy-native-receipt-index",
+      "sha256": "fab25b104a929415d88140e4af4a1d87bef1462ca8f4ae2d791dba564bfbefbc",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "strategy-run-manifest",
+      "sha256": "2ac9ec59783482e5946c51b53a8303bfd3dc15a367361eca7577c9982ba574e1",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "incumbent-retention-decision",
+      "sha256": "10c7c4f64c29664e561b54dee5e46b4f21af985b3b9477f80c2bce45335598b8",
+      "disclosure": "public_safe_source"
+    },
+    {
+      "id": "incumbent-supported-classes",
+      "sha256": "212039fdea316eae2f738640c9e83c7b4c60ec624df9ae7190474bbb87418165",
+      "disclosure": "public_safe_source"
+    },
+    {
+      "id": "incumbent-abstention-classes",
+      "sha256": "5399c881dc193b86d96b0b96d537595bbe88bb4a0d0ae0f83ed661b735a0d4e0",
+      "disclosure": "public_safe_source"
+    },
+    {
+      "id": "incumbent-native-receipt-index",
+      "sha256": "7f8e2e3627dba43a3a2ecfa7d7473c1cef2f0e8298701f64321f15caa84ae8b6",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "incumbent-run-manifest",
+      "sha256": "3657a3e46e82433c537263e8218e0b2f08e5803f504e8681bdeb2214b9ddad51",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "incumbent-cost-decomposition",
+      "sha256": "aea37a3eec6f967f26472569cc771767c8afa12764179028caf77580bf07f84c",
+      "disclosure": "private_hash_only"
+    },
+    {
+      "id": "transfer-evidence-neutral-handoff",
+      "sha256": "fa315f139e18c80c41a3c9e4fcf91687bc015c77fbb7f1746d783f588fa39883",
+      "disclosure": "public_safe_source"
+    }
+  ],
+  "known_limitations": [
+    "The evidence is bounded and does not replace the frozen 10-repository and 100-task release evaluation.",
+    "One irrelevant cross-package verification-path defect and one omitted configuration-support cell were retained as negative evidence.",
+    "The later multi-model attempt executed no tasks and is evidence-neutral.",
+    "Provider execution failures fail closed; automatic raw-task fallback is not implemented.",
+    "Synthetic freeze cases prove safe outcomes on representative fixture shapes; they do not isolate every ambiguity mechanism causally.",
+    "No broad token-savings, cross-model, or universal task-quality claim is supported."
+  ],
+  "supported_claims": [
+    "The incumbent production ranking provider is frozen behind ProductionRankingProviderV1.",
+    "The product accepts versioned narrow, broad, abstention, and explicit provider-returned fallback results.",
+    "No new algorithm candidate was promoted into the production package."
+  ],
+  "prohibited_claims": [
+    "general token savings",
+    "cross-model qualification",
+    "universal repository support",
+    "final held-out release qualification"
+  ],
+  "private_evidence_included": false
+}

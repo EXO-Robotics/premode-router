@@ -1,0 +1,188 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.algorithm-handoff.v1.schema.json",
+  "title": "pCodex sanitized production algorithm handoff",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_version",
+    "promotion_decision",
+    "approved_algorithm_commit",
+    "algorithm_baseline",
+    "candidate_manifest",
+    "production_provider",
+    "supported_task_classes",
+    "abstention_classes",
+    "fallback_classes",
+    "native_evidence",
+    "qualification_results",
+    "evidence_integrity",
+    "known_limitations",
+    "supported_claims",
+    "prohibited_claims",
+    "private_evidence_included"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.algorithm-handoff.v1"},
+    "product_version": {"const": "0.3.0b1"},
+    "promotion_decision": {"const": "no_candidate_promoted"},
+    "approved_algorithm_commit": {"const": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"},
+    "algorithm_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["commit_sha", "tree_sha"],
+      "properties": {
+        "commit_sha": {"const": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"},
+        "tree_sha": {"const": "8120490deb23457d19299b09d5291783753f2066"}
+      }
+    },
+    "candidate_manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evaluated_strategy_count", "promoted_strategy_count", "combination_testing_performed", "production_algorithm_changed", "sealed_holdout_accessed", "public_experiment_identifiers"],
+      "properties": {
+        "evaluated_strategy_count": {"const": 3},
+        "promoted_strategy_count": {"const": 0},
+        "combination_testing_performed": {"const": false},
+        "production_algorithm_changed": {"const": false},
+        "sealed_holdout_accessed": {"const": false},
+        "public_experiment_identifiers": {"const": false}
+      }
+    },
+    "production_provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interface",
+        "provider_version",
+        "implementation",
+        "freeze_schema_version",
+        "freeze_sha256",
+        "freeze_case_count",
+        "abstention_case_count",
+        "fallback_case_count",
+        "all_exact_tasks_once",
+        "routing_modes"
+      ],
+      "properties": {
+        "interface": {"const": "ProductionRankingProviderV1"},
+        "provider_version": {"const": "production-ranking-provider.v1"},
+        "implementation": {"const": "IncumbentManifestRankingProviderV1"},
+        "freeze_schema_version": {"const": "pcodex.production-behavior-freeze.v1"},
+        "freeze_sha256": {"$ref": "#/$defs/sha"},
+        "freeze_case_count": {"const": 9},
+        "abstention_case_count": {"const": 5},
+        "fallback_case_count": {"const": 1},
+        "all_exact_tasks_once": {"const": true},
+        "routing_modes": {
+          "type": "array",
+          "minItems": 3,
+          "uniqueItems": true,
+          "items": {"enum": ["narrow", "broad", "abstain", "fallback"]}
+        }
+      }
+    },
+    "supported_task_classes": {"$ref": "#/$defs/nonemptyStringList"},
+    "abstention_classes": {"$ref": "#/$defs/nonemptyStringList"},
+    "fallback_classes": {"$ref": "#/$defs/nonemptyStringList"},
+    "native_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["complete_receipt_count", "excluded_receipt_count", "scope"],
+      "properties": {
+        "complete_receipt_count": {"const": 36},
+        "excluded_receipt_count": {"const": 6},
+        "scope": {"type": "string", "minLength": 1}
+      }
+    },
+    "qualification_results": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recommendation_safety", "packet_quality", "agent_quality", "complete_task_cost", "transfer_evidence"],
+      "properties": {
+        "recommendation_safety": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "counted_receipts", "unsafe_recommendations", "scope"],
+          "properties": {
+            "status": {"const": "passed_on_counted_native_receipts"},
+            "counted_receipts": {"const": 36},
+            "unsafe_recommendations": {"const": 0},
+            "scope": {"type": "string", "minLength": 1}
+          }
+        },
+        "packet_quality": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "deterministic_packet_tasks", "known_negative_count", "scope"],
+          "properties": {
+            "status": {"const": "qualified_with_retained_negatives"},
+            "deterministic_packet_tasks": {"const": 12},
+            "known_negative_count": {"const": 2},
+            "scope": {"type": "string", "minLength": 1}
+          }
+        },
+        "agent_quality": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "diagnostic_repetitions", "incumbent_exact_successes", "evaluated_variant_exact_successes", "standard_exact_successes", "scope"],
+          "properties": {
+            "status": {"const": "no_alternative_noninferiority_demonstrated"},
+            "diagnostic_repetitions": {"const": 3},
+            "incumbent_exact_successes": {"const": 0},
+            "evaluated_variant_exact_successes": {"const": 3},
+            "standard_exact_successes": {"const": 3},
+            "scope": {"type": "string", "minLength": 1}
+          }
+        },
+        "complete_task_cost": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "diagnostic_repetitions", "incumbent_mean_input_tokens", "evaluated_variant_mean_input_tokens", "standard_mean_input_tokens", "scope"],
+          "properties": {
+            "status": {"const": "evaluated_variant_rejected_for_cost"},
+            "diagnostic_repetitions": {"const": 3},
+            "incumbent_mean_input_tokens": {"const": 5895},
+            "evaluated_variant_mean_input_tokens": {"const": 13077},
+            "standard_mean_input_tokens": {"const": 8040},
+            "scope": {"type": "string", "minLength": 1}
+          }
+        },
+        "transfer_evidence": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "executed_tasks", "scope"],
+          "properties": {
+            "status": {"const": "not_executed_evidence_neutral"},
+            "executed_tasks": {"const": 0},
+            "scope": {"type": "string", "minLength": 1}
+          }
+        }
+      }
+    },
+    "evidence_integrity": {
+      "type": "array",
+      "minItems": 11,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "sha256", "disclosure"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$"},
+          "sha256": {"$ref": "#/$defs/sha"},
+          "disclosure": {"enum": ["public_safe_source", "private_hash_only"]}
+        }
+      }
+    },
+    "known_limitations": {"$ref": "#/$defs/nonemptyStringList"},
+    "supported_claims": {"$ref": "#/$defs/nonemptyStringList"},
+    "prohibited_claims": {"$ref": "#/$defs/nonemptyStringList"},
+    "private_evidence_included": {"const": false}
+  },
+  "$defs": {
+    "sha": {"type": "string", "pattern": "^[0-9a-f]{40}$|^[0-9a-f]{64}$"},
+    "nonemptyStringList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    }
+  }
+}

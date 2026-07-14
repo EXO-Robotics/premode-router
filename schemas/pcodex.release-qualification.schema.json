@@ -29,7 +29,11 @@
     },
     "artifacts": {
       "type": "array",
-      "minItems": 2,
+      "minItems": 4,
+      "allOf": [
+        {"contains": {"type": "object", "properties": {"name": {"const": "release/algorithm-handoff.v1.json"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "release/pcodex.algorithm-handoff.v1.schema.json"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1}
+      ],
       "items": {
         "type": "object",
         "additionalProperties": false,

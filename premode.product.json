@@ -105,7 +105,13 @@
     "compatibility_provider": "IncumbentManifestRankingProviderV1",
     "product_algorithm_agnostic": true,
     "public_experiment_identifiers": false,
-    "fallback": "explicit fallback or first-class abstention"
+    "fallback": "explicit fallback or first-class abstention",
+    "algorithm_handoff": {
+      "receipt": "release/algorithm-handoff.v1.json",
+      "schema": "schemas/pcodex.algorithm-handoff.v1.schema.json",
+      "decision": "no_candidate_promoted",
+      "freeze_sha256": "f4499af2b068a8802d3abaadbd360e804facebf4afc5dc6f461ee3fd12e2714c"
+    }
   },
   "canonical_packet_authority": {
     "version": "v5",
