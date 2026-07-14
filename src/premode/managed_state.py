@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Receipt-driven ownership primitives for setup, repair, and uninstall."""
+
+from __future__ import annotations
 
 import hashlib
 import ctypes
@@ -287,18 +287,39 @@ def _atomic_write_managed(
             )
             os.unlink(temporary_name, dir_fd=current_fd)
         else:
-            if expected_current_hash is not None and sys.platform == "darwin":
+            if expected_current_hash is not None and sys.platform in {
+                "darwin",
+                "linux",
+            }:
                 libc = ctypes.CDLL(None, use_errno=True)
-                renameatx_np = libc.renameatx_np
-                renameatx_np.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
-                renameatx_np.restype = ctypes.c_int
-                if renameatx_np(
-                    current_fd,
-                    os.fsencode(temporary_name),
-                    current_fd,
-                    os.fsencode(target_name),
-                    0x00000002,  # RENAME_SWAP
-                ) != 0:
+                if sys.platform == "darwin":
+                    atomic_exchange = getattr(libc, "renameatx_np", None)
+                    exchange_flag = 0x00000002  # RENAME_SWAP
+                else:
+                    atomic_exchange = getattr(libc, "renameat2", None)
+                    exchange_flag = 0x00000002  # RENAME_EXCHANGE
+                if atomic_exchange is None:
+                    raise ManagedStateError(
+                        "atomic managed-state exchange is unavailable"
+                    )
+                atomic_exchange.argtypes = [
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_int,
+                    ctypes.c_char_p,
+                    ctypes.c_uint,
+                ]
+                atomic_exchange.restype = ctypes.c_int
+                if (
+                    atomic_exchange(
+                        current_fd,
+                        os.fsencode(temporary_name),
+                        current_fd,
+                        os.fsencode(target_name),
+                        exchange_flag,
+                    )
+                    != 0
+                ):
                     error = ctypes.get_errno()
                     raise OSError(error, os.strerror(error), target_name)
                 try:
@@ -364,13 +385,16 @@ def _atomic_write_managed(
                     except OSError:
                         target_is_staged = False
                     if target_is_staged:
-                        if renameatx_np(
-                            current_fd,
-                            os.fsencode(temporary_name),
-                            current_fd,
-                            os.fsencode(target_name),
-                            0x00000002,
-                        ) != 0:
+                        if (
+                            atomic_exchange(
+                                current_fd,
+                                os.fsencode(temporary_name),
+                                current_fd,
+                                os.fsencode(target_name),
+                                exchange_flag,
+                            )
+                            != 0
+                        ):
                             error = ctypes.get_errno()
                             temporary_created = False
                             raise ManagedStateError(
@@ -536,6 +560,7 @@ def install_managed_file(
     operation_type: str = "setup",
     operation_id: str | None = None,
     sensitivity: str = "private_metadata",
+    fault_injector: Any | None = None,
 ) -> dict[str, Any]:
     root = validate_managed_root(managed_root)
     if not root.exists():
@@ -653,6 +678,8 @@ def install_managed_file(
     }
     validated = validate_install_state_receipt(payload)
     try:
+        if fault_injector is not None:
+            fault_injector("after_target_write_before_receipt")
         if prior["status"] == "missing":
             marker_payload = {
                 "schema_version": OWNERSHIP_MARKER_SCHEMA_VERSION,
@@ -1393,7 +1420,6 @@ def apply_repair(
                     os.close(parent_fd)
         if created_marker:
             try:
-                marker_path = _ownership_marker_path(root)
                 if prior_marker_bytes is None:
                     marker_parent_fd, marker_name = _open_managed_parent_fd(root, OWNERSHIP_MARKER_RELATIVE_PATH)
                     try:

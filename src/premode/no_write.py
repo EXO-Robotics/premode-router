@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -10,7 +12,9 @@ import re
 import select
 import shlex
 import stat
+import struct
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -361,7 +365,7 @@ def governed_roots_from_product(
     return GovernedRootSet(roots, _token=_ROOT_AUTHORITY_TOKEN)
 
 
-class FilesystemActivityMonitor:
+class _KqueueFilesystemActivityMonitor:
     """Best-effort transient-write detector using macOS kqueue vnode events."""
 
     def __init__(self, snapshot: dict[str, Any]) -> None:
@@ -375,7 +379,7 @@ class FilesystemActivityMonitor:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
-    def __enter__(self) -> "FilesystemActivityMonitor":
+    def __enter__(self) -> "_KqueueFilesystemActivityMonitor":
         if not self.available:
             return self
         try:
@@ -459,6 +463,190 @@ class FilesystemActivityMonitor:
             except OSError:
                 pass
             self._kqueue = None
+
+
+class _InotifyFilesystemActivityMonitor:
+    """Linux transient-write detector using the kernel inotify API."""
+
+    _EVENT = struct.Struct("iIII")
+    _MASK = (
+        0x00000002  # IN_MODIFY
+        | 0x00000004  # IN_ATTRIB
+        | 0x00000008  # IN_CLOSE_WRITE
+        | 0x00000040  # IN_MOVED_FROM
+        | 0x00000080  # IN_MOVED_TO
+        | 0x00000100  # IN_CREATE
+        | 0x00000200  # IN_DELETE
+        | 0x00000400  # IN_DELETE_SELF
+        | 0x00000800  # IN_MOVE_SELF
+    )
+
+    def __init__(self, snapshot: dict[str, Any]) -> None:
+        self.snapshot = snapshot
+        self.available = sys.platform.startswith("linux")
+        self.events: list[dict[str, Any]] = []
+        self.errors: list[str] = []
+        self._fd: int | None = None
+        self._records: dict[int, tuple[str, str]] = {}
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+        self._libc: Any = None
+
+    def __enter__(self) -> "_InotifyFilesystemActivityMonitor":
+        if not self.available:
+            return self
+        try:
+            self._libc = ctypes.CDLL(None, use_errno=True)
+            init = self._libc.inotify_init1
+            init.argtypes = [ctypes.c_int]
+            init.restype = ctypes.c_int
+            add = self._libc.inotify_add_watch
+            add.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_uint32]
+            add.restype = ctypes.c_int
+            self._fd = int(init(os.O_NONBLOCK | getattr(os, "O_CLOEXEC", 0)))
+            if self._fd < 0:
+                raise OSError(ctypes.get_errno(), "inotify_init1 failed")
+            watched: set[Path] = set()
+            for root in self.snapshot.get("roots", []):
+                candidates: list[tuple[Path, str]] = []
+                if root.get("exists"):
+                    candidates.extend(
+                        (Path(entry["resolved_path"]), entry["path"])
+                        for entry in root.get("entries", [])
+                        if entry.get("entry_type") in {"regular", "directory"}
+                    )
+                else:
+                    parent = Path(root["resolved_path"]).parent
+                    while not (parent.exists() or parent == parent.parent):
+                        parent = parent.parent
+                    if parent.exists():
+                        candidates.append((parent, "<missing-root-parent>"))
+                for path, relative in candidates:
+                    resolved = path.resolve(strict=False)
+                    if resolved in watched:
+                        continue
+                    watched.add(resolved)
+                    wd = int(add(self._fd, os.fsencode(resolved), self._MASK))
+                    if wd < 0:
+                        error = ctypes.get_errno()
+                        self.errors.append(
+                            f"{root['root_id']}:{relative}:{errno.errorcode.get(error, error)}"
+                        )
+                    else:
+                        self._records[wd] = (root["root_id"], relative)
+            if self.errors or not self._records:
+                self.available = False
+                self._close()
+                return self
+            self._thread = threading.Thread(
+                target=self._poll, name="pcodex-no-write-inotify-monitor", daemon=True
+            )
+            self._thread.start()
+        except (AttributeError, OSError, ValueError) as exc:
+            self.available = False
+            self.errors.append(type(exc).__name__)
+            self._close()
+        return self
+
+    def _poll(self) -> None:
+        assert self._fd is not None
+        while not self._stop.wait(0.01):
+            try:
+                payload = os.read(self._fd, 64 * 1024)
+            except BlockingIOError:
+                continue
+            except OSError as exc:
+                if exc.errno == errno.EAGAIN:
+                    continue
+                self.errors.append(type(exc).__name__)
+                self.available = False
+                return
+            offset = 0
+            while offset + self._EVENT.size <= len(payload):
+                wd, mask, cookie, length = self._EVENT.unpack_from(payload, offset)
+                offset += self._EVENT.size
+                raw_name = payload[offset : offset + length]
+                offset += length
+                name = os.fsdecode(raw_name.split(b"\0", 1)[0]) if raw_name else ""
+                root_id, relative = self._records.get(wd, ("unknown", "unknown"))
+                event_path = f"{relative}/{name}" if name else relative
+                self.events.append(
+                    {
+                        "root_id": root_id,
+                        "path": event_path,
+                        "flags": mask,
+                        "cookie": cookie,
+                    }
+                )
+
+    def __exit__(self, *_: object) -> None:
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1)
+        # Drain events queued between the last poll and command completion.
+        if self._fd is not None and self.available:
+            self._poll_once()
+        self._close()
+
+    def _poll_once(self) -> None:
+        assert self._fd is not None
+        try:
+            payload = os.read(self._fd, 64 * 1024)
+        except BlockingIOError:
+            return
+        except OSError as exc:
+            if exc.errno != errno.EAGAIN:
+                self.errors.append(type(exc).__name__)
+                self.available = False
+            return
+        offset = 0
+        while offset + self._EVENT.size <= len(payload):
+            wd, mask, cookie, length = self._EVENT.unpack_from(payload, offset)
+            offset += self._EVENT.size
+            raw_name = payload[offset : offset + length]
+            offset += length
+            name = os.fsdecode(raw_name.split(b"\0", 1)[0]) if raw_name else ""
+            root_id, relative = self._records.get(wd, ("unknown", "unknown"))
+            event_path = f"{relative}/{name}" if name else relative
+            self.events.append(
+                {
+                    "root_id": root_id,
+                    "path": event_path,
+                    "flags": mask,
+                    "cookie": cookie,
+                }
+            )
+
+    def _close(self) -> None:
+        if self._fd is not None:
+            try:
+                os.close(self._fd)
+            except OSError:
+                pass
+            self._fd = None
+
+
+class FilesystemActivityMonitor:
+    """Supported transient-write evidence on macOS (kqueue) and Linux (inotify)."""
+
+    def __init__(self, snapshot: dict[str, Any]) -> None:
+        self._delegate = (
+            _KqueueFilesystemActivityMonitor(snapshot)
+            if hasattr(select, "kqueue") and hasattr(select, "KQ_FILTER_VNODE")
+            else _InotifyFilesystemActivityMonitor(snapshot)
+        )
+        self.available = self._delegate.available
+        self.events = self._delegate.events
+        self.errors = self._delegate.errors
+
+    def __enter__(self) -> "FilesystemActivityMonitor":
+        self._delegate.__enter__()
+        self.available = self._delegate.available
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self._delegate.__exit__(*args)
+        self.available = self._delegate.available
 
 
 def _read_process_table() -> dict[int, dict[str, Any]]:

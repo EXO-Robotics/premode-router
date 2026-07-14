@@ -1,0 +1,37 @@
+rules:
+  - id: pcodex-no-subprocess-shell
+    message: Supported product and release code must not launch subprocesses through a shell.
+    severity: ERROR
+    languages: [python]
+    pattern: subprocess.$FUNC(..., shell=True, ...)
+    paths:
+      exclude:
+        - src/premode/lab73*.py
+        - src/premode/live_token_harness.py
+        - src/premode/sharded_runner.py
+        - src/premode/benchmark.py
+
+  - id: pcodex-no-dynamic-eval
+    message: Supported product and release code must not evaluate dynamic Python.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: eval(...)
+          - pattern: exec(...)
+    paths:
+      exclude:
+        - src/premode/lab73*.py
+        - src/premode/live_token_harness.py
+        - src/premode/sharded_runner.py
+
+  - id: pcodex-no-shell-os-system
+    message: Supported product and release code must not use os.system.
+    severity: ERROR
+    languages: [python]
+    pattern: os.system(...)
+    paths:
+      exclude:
+        - src/premode/lab73*.py
+        - src/premode/live_token_harness.py
+        - src/premode/sharded_runner.py

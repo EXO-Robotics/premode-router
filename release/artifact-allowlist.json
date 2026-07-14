@@ -1,5 +1,11 @@
 {
   "schema_version": "pcodex.artifact_allowlist.v1",
+  "archive_limits": {
+    "max_entries": 10000,
+    "max_member_uncompressed_bytes": 33554432,
+    "max_total_uncompressed_bytes": 268435456,
+    "max_compression_ratio": 200.0
+  },
   "wheel_allowed_prefixes": ["premode/", "premode_router-"],
   "wheel_allowed_members": [
     "premode/__init__.py",
@@ -104,7 +110,7 @@
     "src/premode/live_token_harness.py",
     "src/premode/sharded_runner.py"
   ],
-  "bundle_allowed_prefixes": ["artifacts/", "plugins/pcodex/", "receipts/"],
+  "bundle_allowed_prefixes": ["artifacts/", "plugins/pcodex/", "receipts/", "release/", "docs/"],
   "prohibited_parts": [
     ".git", ".venv", ".premode", ".pcodex", "__MACOSX", "__pycache__",
     "observer", "transcript", "audit.db", "worktree"

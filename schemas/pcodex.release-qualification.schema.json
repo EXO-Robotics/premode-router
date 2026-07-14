@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode/schemas/pcodex.release-qualification.schema.json",
+  "title": "pCodex release qualification receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "commit", "product_version", "platform",
+    "artifacts", "package_content_allowlist", "wheel_sdist_parity",
+    "wheel_sdist_parity_evidence",
+    "installed_lifecycle", "no_write", "upgrade_rollback", "codex_plugin", "sbom",
+    "provenance", "public_registry_published"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.release-qualification.v1"},
+    "status": {"const": "passed"},
+    "commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "product_version": {"const": "0.3.0b1"},
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["system", "release", "machine", "python"],
+      "properties": {
+        "system": {"enum": ["Darwin", "Linux"]},
+        "release": {"type": "string", "minLength": 1},
+        "machine": {"type": "string", "minLength": 1},
+        "python": {"type": "string", "pattern": "^3\\.(?:11|12|13)\\."}
+      }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "digest"],
+        "properties": {
+          "name": {"type": "string"},
+          "digest": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["sha256"],
+            "properties": {"sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+          }
+        }
+      }
+    },
+    "package_content_allowlist": {"const": "passed"},
+    "wheel_sdist_parity": {"const": "passed"},
+    "wheel_sdist_parity_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "passed", "comparison", "direct_wheel_sha256",
+        "sdist_rebuilt_wheel_sha256", "normalized_member_count"
+      ],
+      "properties": {
+        "passed": {"const": true},
+        "comparison": {"const": "normalized_member_sha256_excluding_record"},
+        "direct_wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sdist_rebuilt_wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "normalized_member_count": {"type": "integer", "minimum": 1}
+      }
+    },
+    "installed_lifecycle": {"$ref": "#/$defs/parity"},
+    "no_write": {"$ref": "#/$defs/parity"},
+    "upgrade_rollback": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["passed", "post_mutation_rollback", "unsupported_downgrade_fail_closed"],
+      "properties": {
+        "passed": {"const": true},
+        "post_mutation_rollback": {"const": true},
+        "unsupported_downgrade_fail_closed": {"const": true}
+      }
+    },
+    "codex_plugin": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheel", "sdist", "live_codex_version"],
+      "properties": {
+        "wheel": {"const": true},
+        "sdist": {"const": true},
+        "live_codex_version": {"type": ["string", "null"]}
+      }
+    },
+    "sbom": {"const": "release/SBOM.cyclonedx.json"},
+    "provenance": {"const": "release/provenance.intoto.json"},
+    "public_registry_published": {"const": false}
+  },
+  "$defs": {
+    "parity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["wheel", "sdist"],
+      "properties": {"wheel": {"const": true}, "sdist": {"const": true}}
+    }
+  }
+}

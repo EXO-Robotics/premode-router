@@ -334,3 +334,58 @@ def test_transient_create_delete_is_detected(tmp_path: Path) -> None:
     )
     assert verification["transient_filesystem_events"]
     assert verification["passed"] is False
+
+
+@pytest.mark.skipif(not __import__("sys").platform.startswith("linux"), reason="inotify evidence is Linux-specific")
+def test_linux_inotify_transient_create_delete_is_detected(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+
+    def transient_write() -> None:
+        path = repo / "transient"
+        path.write_text("temporary", encoding="utf-8")
+        path.unlink()
+
+    verification = verify_no_write(
+        transient_write,
+        roots=[GovernedRoot("repo", repo)],
+        monitor_processes=False,
+        monitor_filesystem=True,
+    )
+    assert verification["filesystem_observation"] == "complete"
+    assert verification["transient_filesystem_events"]
+    assert verification["passed"] is False
+
+
+@pytest.mark.skipif(not __import__("sys").platform.startswith("linux"), reason="inotify evidence is Linux-specific")
+@pytest.mark.parametrize("operation_name", ["write_restore", "chmod_restore", "missing_root"])
+def test_linux_inotify_detects_restored_and_missing_root_activity(
+    tmp_path: Path, operation_name: str
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    existing = repo / "existing.txt"
+    existing.write_text("original", encoding="utf-8")
+    missing = repo / "missing"
+
+    def operation() -> None:
+        if operation_name == "write_restore":
+            existing.write_text("changed", encoding="utf-8")
+            existing.write_text("original", encoding="utf-8")
+        elif operation_name == "chmod_restore":
+            existing.chmod(0o600)
+            existing.chmod(0o644)
+        else:
+            missing.mkdir()
+            missing.rmdir()
+
+    verification = verify_no_write(
+        operation,
+        roots=[GovernedRoot("repo", repo), GovernedRoot("missing", missing)],
+        monitor_processes=False,
+        monitor_filesystem=True,
+    )
+
+    assert verification["filesystem_observation"] == "complete"
+    assert verification["transient_filesystem_events"]
+    assert verification["passed"] is False

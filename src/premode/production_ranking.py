@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Stable product-facing ranking contract.
 
 This module deliberately knows nothing about ranking implementations, observers,
 or experiment identities. Providers receive the exact task and return only the
 bounded path guidance consumed by the canonical packet renderer.
 """
+
+from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
@@ -160,7 +160,7 @@ class ProductionRankingResultV1:
             "verify_paths": list(self.verify_paths),
             "support_paths": list(self.support_paths),
             "abstention_reason": self.abstention_reason,
-            "decision_receipt": asdict(self.decision_receipt),
+            "decision_receipt": asdict(_receipt(self.decision_receipt)),
             "provider_version": self.provider_version,
         }
 

@@ -151,6 +151,41 @@ def test_repair_interruption_rolls_back_without_false_completion(
     assert status["state"] == "repairable_incomplete_installation"
 
 
+def test_managed_update_interruption_after_mutation_restores_prior_authority(
+    tmp_path: Path,
+) -> None:
+    root = _repo(tmp_path, "managed upgrade rollback")
+    receipt = root / DEFAULT_INSTALL_STATE_RELATIVE_PATH
+    relative = ".premode/upgrade-fixture.txt"
+    prior = b"previous supported bytes\n"
+    current = b"current release bytes\n"
+    install_managed_file(root, relative, prior, receipt_path=receipt)
+    before = {
+        relative: (root / relative).read_bytes(),
+        DEFAULT_INSTALL_STATE_RELATIVE_PATH: receipt.read_bytes(),
+        OWNERSHIP_MARKER_RELATIVE_PATH: (root / OWNERSHIP_MARKER_RELATIVE_PATH).read_bytes(),
+    }
+
+    def interrupt(stage: str) -> None:
+        if stage == "after_target_write_before_receipt":
+            raise RuntimeError("interrupted managed upgrade")
+
+    with pytest.raises(RuntimeError, match="interrupted managed upgrade"):
+        install_managed_file(
+            root,
+            relative,
+            current,
+            receipt_path=receipt,
+            operation_type="reinstall",
+            fault_injector=interrupt,
+        )
+
+    assert (root / relative).read_bytes() == before[relative]
+    assert receipt.read_bytes() == before[DEFAULT_INSTALL_STATE_RELATIVE_PATH]
+    assert (root / OWNERSHIP_MARKER_RELATIVE_PATH).read_bytes() == before[OWNERSHIP_MARKER_RELATIVE_PATH]
+    assert lifecycle_status(root, receipt, expected_content={relative: prior})["readiness"] == "READY"
+
+
 def test_alternate_filesystem_objects_and_hard_links_fail_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = _repo(tmp_path)
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
@@ -452,7 +487,7 @@ def test_repair_operation_receipt_does_not_clobber_concurrent_unrelated_leaf(
     assert not _target(root).exists()
 
 
-@pytest.mark.skipif(os.sys.platform != "darwin", reason="macOS atomic-swap receipt qualification")
+@pytest.mark.skipif(os.sys.platform not in {"darwin", "linux"}, reason="supported atomic-exchange receipt qualification")
 def test_existing_receipt_atomic_swap_restores_alternate_object_on_mismatch(tmp_path: Path) -> None:
     root = _repo(tmp_path, "existing receipt alternate swap")
     relative = ".premode/existing-operation.json"

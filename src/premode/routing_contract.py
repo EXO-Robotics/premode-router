@@ -65,8 +65,10 @@ def _is_verification_path(path: str) -> bool:
 
 
 def decision_from_manifest(repo_root: Path, manifest: dict[str, Any]) -> RoutingDecisionV1:
-    locator = manifest.get("locator_evidence") if isinstance(manifest.get("locator_evidence"), dict) else {}
-    backbone = manifest.get("tool_assisted_anchors_internal") if isinstance(manifest.get("tool_assisted_anchors_internal"), dict) else {}
+    raw_locator = manifest.get("locator_evidence")
+    locator: dict[str, Any] = raw_locator if isinstance(raw_locator, dict) else {}
+    raw_backbone = manifest.get("tool_assisted_anchors_internal")
+    backbone: dict[str, Any] = raw_backbone if isinstance(raw_backbone, dict) else {}
     exact_task = str(manifest.get("canonical_user_prompt") or "")
     explicit_paths = {str(path).casefold() for path in __import__("re").findall(r"(?<![\w.-])(?:[A-Za-z0-9_.-]+/)+[A-Za-z0-9_.-]+\.[A-Za-z0-9]+(?![\w.-])", exact_task)}
     generated_intent = bool(__import__("re").search(r"(?i)\b(generated|vendor|dist|build output|generated code)\b", exact_task))

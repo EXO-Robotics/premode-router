@@ -1,0 +1,10 @@
+{
+  "schema_version": "pcodex.previous-supported.v1",
+  "product": "premode-router",
+  "current_version": "0.3.0b1",
+  "previous_version": "0.2.6.24",
+  "previous_commit": "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6",
+  "upgrade_policy": "explicit_package_upgrade_then_current_receipt_bound_lifecycle",
+  "downgrade_policy": "unsupported_fail_closed_for_future_or_unknown_receipts",
+  "publication_authorized": false
+}

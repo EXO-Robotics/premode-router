@@ -5,19 +5,26 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tarfile
 import zipfile
 import io
 
+import pytest
+
 from scripts.check_public_hygiene import scan
+from scripts.compare_release_artifacts import compare
 from scripts.build_release_artifacts import (
     build,
     require_probe_passed,
     run_json_probe,
     validate_archive_content,
+    validate_archive_structure,
     validate_names,
     validate_required_plugin_resources,
     validate_sdist_names,
     validated_python_interpreter,
+    write_smoke_fixture,
+    write_release_evidence,
     write_tester_bundle,
 )
 
@@ -245,3 +252,224 @@ def test_tester_bundle_scans_nested_members_not_opaque_archive_bytes(tmp_path: P
     with zipfile.ZipFile(bundle, "w") as outer:
         outer.writestr("artifacts/fixture.zip", leaking_bytes.getvalue())
     assert any(item.startswith("prohibited_email:") for item in validate_archive_content(bundle, policy))
+
+
+def test_archive_structure_rejects_traversal_links_and_resource_exhaustion(tmp_path: Path) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    archive_path = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("../escape.txt", b"escape")
+        link = zipfile.ZipInfo("link")
+        link.external_attr = (0o120777 << 16)
+        archive.writestr(link, b"target")
+        archive.writestr("large.txt", b"x" * (1024 * 1024 + 1), compress_type=zipfile.ZIP_DEFLATED)
+    strict = dict(policy)
+    strict["archive_limits"] = {
+        "max_entries": 2,
+        "max_member_uncompressed_bytes": 1024,
+        "max_total_uncompressed_bytes": 2048,
+        "max_compression_ratio": 2.0,
+    }
+
+    failures = validate_archive_structure(archive_path, strict)
+
+    assert any(item.startswith("unsafe_archive_path:") for item in failures)
+    assert any(item.startswith("archive_link_member:") for item in failures)
+    assert any(item.startswith("archive_entry_limit:") for item in failures)
+    assert any(item.startswith("archive_member_size:") for item in failures)
+    assert any(item.startswith("archive_compression_ratio:") for item in failures)
+    assert any(item.startswith("archive_total_size:") for item in failures)
+
+
+def test_archive_structure_rejects_tar_special_members(tmp_path: Path) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    archive_path = tmp_path / "unsafe.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        link = tarfile.TarInfo("link")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "target"
+        archive.addfile(link)
+
+    assert any(
+        item.startswith("archive_special_member:link")
+        for item in validate_archive_structure(archive_path, policy)
+    )
+
+
+def test_tar_validation_streams_without_getmembers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    policy["archive_limits"]["max_entries"] = 2
+    archive_path = tmp_path / "bounded.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        for index in range(3):
+            info = tarfile.TarInfo(f"file-{index}.txt")
+            payload = f"value-{index}".encode()
+            info.size = len(payload)
+            archive.addfile(info, io.BytesIO(payload))
+
+    monkeypatch.setattr(
+        tarfile.TarFile,
+        "getmembers",
+        lambda _self: pytest.fail("unbounded getmembers must not be used"),
+    )
+    failures = validate_archive_structure(archive_path, policy)
+    content_failures = validate_archive_content(archive_path, policy)
+
+    assert any(item.startswith("archive_entry_limit:") for item in failures)
+    assert any(item.startswith("archive_entry_limit:") for item in content_failures)
+
+
+def test_tar_validation_stops_at_first_declared_resource_overflow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    policy["archive_limits"]["max_member_uncompressed_bytes"] = 8
+    policy["archive_limits"]["max_total_uncompressed_bytes"] = 16
+    archive_path = tmp_path / "bounded.tar.gz"
+    archive_path.write_bytes(b"fixture")
+
+    class SentinelTar:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            first = tarfile.TarInfo("oversized.bin")
+            first.size = 9
+            yield first
+            pytest.fail("tar validation advanced after the declared member limit")
+
+        def extractfile(self, _item):
+            pytest.fail("oversized tar member must not be read")
+
+    monkeypatch.setattr(tarfile, "open", lambda *_args, **_kwargs: SentinelTar())
+
+    structure_failures = validate_archive_structure(archive_path, policy)
+    content_failures = validate_archive_content(archive_path, policy)
+
+    assert any(item.startswith("archive_member_size:") for item in structure_failures)
+    assert any(item.startswith("archive_resource_limit:") for item in content_failures)
+
+
+def test_archive_structure_rejects_duplicates_and_casefold_collisions(tmp_path: Path) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    archive_path = tmp_path / "collisions.zip"
+    with zipfile.ZipFile(archive_path, "w") as archive:
+        archive.writestr("safe/name.txt", b"one")
+        archive.writestr("safe/name.txt", b"two")
+        archive.writestr("SAFE/NAME.TXT", b"three")
+
+    failures = validate_archive_structure(archive_path, policy)
+
+    assert any(item.startswith("archive_duplicate_member:") for item in failures)
+    assert any(item.startswith("archive_casefold_collision:") for item in failures)
+
+
+@pytest.mark.parametrize("name", ["../escape", "../../etc/passwd", "/absolute", "C:/absolute"])
+def test_archive_name_validation_does_not_strip_unsafe_prefixes(name: str) -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+
+    failures = validate_names([name], allowed_prefixes=[], policy=policy)
+
+    assert any(item.startswith("unsafe_path:") for item in failures)
+
+
+def test_release_evidence_emits_sbom_provenance_and_qualification(tmp_path: Path) -> None:
+    inventory = [
+        {
+            "file": "artifacts/fixture.whl",
+            "sha256": "a" * 64,
+            "size": 123,
+            "members": ["premode/__init__.py"],
+        },
+        {
+            "file": "artifacts/fixture.tar.gz",
+            "sha256": "c" * 64,
+            "size": 456,
+            "members": ["fixture/src/premode/__init__.py"],
+        },
+    ]
+    installed = {
+        "wheel_lifecycle": {"passed": True},
+        "sdist_lifecycle": {"passed": True},
+        "wheel_no_write": {"passed": True},
+        "sdist_no_write": {"passed": True},
+        "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "upgrade_rollback": {
+            "passed": True,
+            "failed_upgrade_post_mutation_rollback": {"passed": True},
+            "unsupported_downgrade_fail_closed": True,
+        },
+    }
+
+    write_release_evidence(
+        tmp_path,
+        schema_root=ROOT / "schemas",
+        commit_sha="b" * 40,
+        evidence_timestamp="2026-07-13T00:00:00Z",
+        product_version="0.3.0b1",
+        python=str(Path(sys.executable)),
+        inventory=inventory,
+        install_smoke=installed,
+        policy_hashes={"release/artifact-allowlist.json": "d" * 64},
+        wheel_sdist_parity={
+            "passed": True,
+            "comparison": "normalized_member_sha256_excluding_record",
+            "direct_wheel_sha256": "e" * 64,
+            "sdist_rebuilt_wheel_sha256": "f" * 64,
+            "normalized_member_count": 12,
+        },
+    )
+
+    sbom = json.loads((tmp_path / "release/SBOM.cyclonedx.json").read_text())
+    provenance = json.loads((tmp_path / "release/provenance.intoto.json").read_text())
+    qualification = json.loads((tmp_path / "receipts/qualification-summary.json").read_text())
+    assert sbom["bomFormat"] == "CycloneDX"
+    assert provenance["predicateType"] == "https://slsa.dev/provenance/v1"
+    assert qualification["status"] == "passed"
+    assert qualification["wheel_sdist_parity_evidence"]["passed"] is True
+    assert qualification["artifacts"][0]["digest"]["sha256"] == "a" * 64
+    assert qualification["public_registry_published"] is False
+
+
+def test_release_artifact_reproducibility_requires_six_identical_matrix_receipts(
+    tmp_path: Path,
+) -> None:
+    inventory = [
+        {"file": "artifacts/product.whl", "sha256": "a" * 64},
+        {"file": "artifacts/product.tar.gz", "sha256": "b" * 64},
+    ]
+    for index in range(6):
+        receipt = tmp_path / f"cell-{index}" / "receipts/artifact-inventory.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text(json.dumps(inventory), encoding="utf-8")
+
+    result = compare(tmp_path)
+
+    assert result["passed"] is True
+    assert result["matrix_receipts"] == 6
+
+
+def test_release_artifact_reproducibility_rejects_empty_inventories(tmp_path: Path) -> None:
+    for index in range(6):
+        receipt = tmp_path / f"cell-{index}" / "receipts/artifact-inventory.json"
+        receipt.parent.mkdir(parents=True)
+        receipt.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exactly one wheel and one sdist"):
+        compare(tmp_path)
+
+
+def test_upgrade_smoke_fixture_contains_source_and_validation(tmp_path: Path) -> None:
+    write_smoke_fixture(tmp_path)
+
+    assert (tmp_path / "src/app.py").is_file()
+    assert (tmp_path / "tests/test_app.py").is_file()
+    authority = json.loads((ROOT / "release/previous-supported.json").read_text())
+    assert authority["previous_version"] == "0.2.6.24"
+    assert authority["previous_commit"] == "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"

@@ -11,42 +11,256 @@ concurrency:
   group: release-foundation-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  PYTHONHASHSEED: "0"
+  PYTHONDONTWRITEBYTECODE: "1"
+  TZ: UTC
+  CODEX_VERSION: "0.143.0"
+
 jobs:
-  release-contract:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      PYTHONHASHSEED: "0"
-      TZ: UTC
+  test-matrix:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install pinned test and build dependencies
+        run: python -m pip install --require-hashes -r requirements/release-test.lock
+      - name: Install source without dependency resolution
+        run: python -m pip install --no-deps --no-build-isolation .
+      - name: Install and verify Codex runtime
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/codex-npm" "@openai/codex@$CODEX_VERSION"
+          echo "$RUNNER_TEMP/codex-npm/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/codex-npm/bin/codex" --version | grep -F "$CODEX_VERSION"
+      - name: Compile production and qualification code
+        run: python -m compileall -q -f src/premode scripts packages/premode-plugin-literal-symbol/src
+      - name: Validate JSON and product manifests
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in [Path("premode.product.json"), *sorted(Path("schemas").glob("*.json")), *sorted(Path("plugins/pcodex").rglob("*.json"))]:
+              json.loads(path.read_text(encoding="utf-8"))
+          PY
+          python -c "from premode.product_contract import validate_installed_product_contract as v; assert v()['status']=='valid'"
+      - name: Run focused product, lifecycle, no-write, plugin, and packaging suites
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: >-
+          python -m pytest -q
+          tests/test_product_contract.py
+          tests/test_package_layout.py
+          tests/test_productization_contract.py
+          tests/test_public_lifecycle.py
+          tests/test_lab73dt_codex_native_ux_surface.py
+          tests/no_write
+      - name: Run complete repository suite
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+        run: python -m pytest -q
+      - name: Run public hygiene and diff gates
+        shell: bash
+        run: |
+          python scripts/check_public_hygiene.py --json
+          git diff --check
+          git diff --cached --check
+
+  artifact-qualification:
+    name: Artifacts (${{ matrix.os }}, Python ${{ matrix.python }})
+    needs: test-matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        python: ["3.11", "3.12", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install pinned build dependencies
+        run: python -m pip install --require-hashes -r requirements/release-build.lock
+      - name: Install and verify Codex runtime
+        shell: bash
+        run: |
+          npm install --global --prefix "$RUNNER_TEMP/codex-npm" "@openai/codex@$CODEX_VERSION"
+          echo "$RUNNER_TEMP/codex-npm/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/codex-npm/bin/codex" --version | grep -F "$CODEX_VERSION"
+      - name: Build and qualify wheel and sdist outside checkout
+        shell: bash
+        run: |
+          PYTHON_BIN="$(python -c 'import sys; print(sys.executable)')"
+          python scripts/build_release_artifacts.py \
+            --commit HEAD \
+            --output "$RUNNER_TEMP/pcodex-qualification" \
+            --python "$PYTHON_BIN" \
+            --with-sdist
+      - name: Verify machine-readable release evidence
+        shell: bash
+        run: |
+          python scripts/validate_release_metadata.py "$RUNNER_TEMP/pcodex-qualification"
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          root = Path(os.environ["RUNNER_TEMP"]) / "pcodex-qualification"
+          qualification = json.loads((root / "receipts/qualification-summary.json").read_text())
+          assert qualification["status"] == "passed"
+          assert qualification["wheel_sdist_parity"] == "passed"
+          assert qualification["installed_lifecycle"] == {"wheel": True, "sdist": True}
+          assert qualification["no_write"] == {"wheel": True, "sdist": True}
+          assert qualification["upgrade_rollback"] == {
+              "passed": True,
+              "post_mutation_rollback": True,
+              "unsupported_downgrade_fail_closed": True,
+          }
+          assert (root / "release/SBOM.cyclonedx.json").is_file()
+          assert (root / "release/provenance.intoto.json").is_file()
+          PY
+      - name: Upload qualification evidence without publishing
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pcodex-${{ matrix.os }}-py${{ matrix.python }}
+          path: ${{ runner.temp }}/pcodex-qualification
+          if-no-files-found: error
+          retention-days: 14
+
+  static-quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - name: Install test dependency and source
-        run: python -m pip install 'pytest==9.1.1' && python -m pip install --no-deps --no-build-isolation .
-      - name: Compile production package
-        run: python -m compileall -q -f src/premode packages/premode-plugin-literal-symbol/src
-      - name: Run network-free product contract, safety, and schema checks
-        run: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python -m pytest -q tests/test_product_contract.py tests/test_package_layout.py packages/premode-plugin-literal-symbol/tests/test_literal_symbol_plugin.py tests/test_privacy_and_codex.py tests/test_v2624_data_packet_boundary.py
-      - name: Run public repository hygiene guard
-        run: python scripts/check_public_hygiene.py --json
-      - name: Verify public help
+      - name: Install pinned static tools
+        run: python -m pip install --require-hashes -r requirements/release-security.lock
+      - name: Lint and format qualification-critical Python
         run: |
-          premode --help >/dev/null
-          pcodex --help >/dev/null
-          pcodex setup --help >/dev/null
-          pcodex status --help >/dev/null
-          pcodex run --help >/dev/null
-          pcodex integrate codex --help >/dev/null
-          pcodex doctor --help >/dev/null
-          premode review-patch --help >/dev/null
-      - name: Build and smoke-test wheels without network access
+          ruff check --select E9,F63,F7,F82 src/premode scripts tests
+          ruff format --check scripts/validate_release_metadata.py scripts/compare_release_artifacts.py
+      - name: Type-check versioned product contracts
+        run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/production_ranking.py
+      - name: Run Python security analyzers
         run: |
-          mkdir -p "$RUNNER_TEMP/premode-wheel"
-          python -m pip wheel --no-deps --no-build-isolation --wheel-dir "$RUNNER_TEMP/premode-wheel" .
-          python -m venv "$RUNNER_TEMP/premode-smoke"
-          "$RUNNER_TEMP/premode-smoke/bin/pip" install --no-index --no-deps "$RUNNER_TEMP"/premode-wheel/*.whl
-          "$RUNNER_TEMP/premode-smoke/bin/python" -c "import premode; from premode.plugins import resolve_packet_plugin; assert resolve_packet_plugin('literal_symbol').packet_strategy == 'literal_symbol'"
-          "$RUNNER_TEMP/premode-smoke/bin/premode" --help >/dev/null
-          "$RUNNER_TEMP/premode-smoke/bin/pcodex" --help >/dev/null
+          bandit -q -r src/premode scripts -lll -x src/premode/lab73ab_sharded.py,src/premode/live_token_harness.py,src/premode/sharded_runner.py
+          pip-audit --strict --no-deps --disable-pip --cache-dir "$RUNNER_TEMP/pip-audit" \
+            --format json --output "$RUNNER_TEMP/pip-audit.json" \
+            -r requirements/release-build.lock
+          detect-secrets scan \
+            .github requirements schemas \
+            docs/ROLLBACK.md docs/UNINSTALL.md docs/KNOWN_LIMITATIONS.md \
+            src/premode/no_write.py src/premode/managed_state.py \
+            src/premode/cli.py src/premode/production_ranking.py \
+            > "$RUNNER_TEMP/detect-secrets.json"
+          python -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/detect-secrets.json')); assert not d.get('results'), d.get('results')"
+          semgrep scan --error --metrics=off --config security/semgrep-release.yml src/premode scripts
+      - name: Upload scanner receipt
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: static-security-receipts
+          path: |
+            ${{ runner.temp }}/detect-secrets.json
+            ${{ runner.temp }}/pip-audit.json
+          if-no-files-found: error
+
+  history-secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - name: Build pinned history scanners
+        env:
+          GOBIN: ${{ runner.temp }}/security-bin
+        run: |
+          go install github.com/gitleaks/gitleaks/v8@v8.30.1
+          go install github.com/trufflesecurity/trufflehog/v3@v3.95.9
+          "$GOBIN/gitleaks" version | grep -F '8.30.1'
+          "$GOBIN/trufflehog" --version | grep -F '3.95.9'
+      - name: Run Gitleaks against full history
+        run: >-
+          "$RUNNER_TEMP/security-bin/gitleaks" git --redact --no-banner --exit-code 1 .
+      - name: Run TruffleHog against full history
+        run: >-
+          "$RUNNER_TEMP/security-bin/trufflehog" git file://.
+          --fail --no-update --results=verified,unknown,unverified
+
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+
+  reproducibility:
+    needs: artifact-qualification
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - name: Download all matrix qualification evidence
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: pcodex-*
+          path: ${{ runner.temp }}/pcodex-matrix
+      - name: Require identical wheel and sdist hashes across the supported matrix
+        run: >-
+          python scripts/compare_release_artifacts.py
+          "$RUNNER_TEMP/pcodex-matrix"
+          --output "$RUNNER_TEMP/reproducibility.json"
+      - name: Upload reproducibility receipt
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: reproducibility-receipt
+          path: ${{ runner.temp }}/reproducibility.json
+          if-no-files-found: error
+
+  release-evidence:
+    if: always()
+    needs: [test-matrix, artifact-qualification, static-quality, history-secret-scan, dependency-review, reproducibility]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every release qualification job
+        env:
+          TESTS: ${{ needs.test-matrix.result }}
+          ARTIFACTS: ${{ needs.artifact-qualification.result }}
+          STATIC: ${{ needs.static-quality.result }}
+          SECRETS: ${{ needs.history-secret-scan.result }}
+          REPRODUCIBILITY: ${{ needs.reproducibility.result }}
+          DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          test "$TESTS" = success
+          test "$ARTIFACTS" = success
+          test "$STATIC" = success
+          test "$SECRETS" = success
+          test "$REPRODUCIBILITY" = success
+          if test "$EVENT_NAME" = pull_request; then
+            test "$DEPENDENCY_REVIEW" = success
+          else
+            test "$DEPENDENCY_REVIEW" = skipped
+          fi

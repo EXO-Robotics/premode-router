@@ -356,7 +356,6 @@ def main(argv: list[str] | None = None) -> int:
         _print_json(setup_result)
         return 0
     if args.command == "detect":
-        idx = load_index(repo) if False else None
         result = detect_projects(repo)
         _print_json(result)
         return 0
