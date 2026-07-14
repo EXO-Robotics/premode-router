@@ -7,6 +7,7 @@ from typing import Any
 # The stable default ships with the product. Entry-point plugins remain the
 # extension boundary for experimental and third-party strategies.
 LITERAL_SYMBOL_METADATA: dict[str, Any] = {
+    "schema_version": "pcodex.packet-strategy-plugin.v1",
     "name": "premode-router",
     "version": "builtin",
     "strategy_id": "literal_symbol",
@@ -16,6 +17,7 @@ LITERAL_SYMBOL_METADATA: dict[str, Any] = {
     "fallback": "ranked_paths_plus_anchors",
     "diagnostics_out_of_band": True,
     "distribution": "builtin",
+    "sensitivity_classification": "public_safe",
 }
 
 

@@ -8,7 +8,7 @@
     "$schema", "schema_version", "product_name", "release_target", "release_class", "status",
     "supported_runtime", "version_source", "production_package", "phase_boundary",
     "production_branch_policy", "public_commands", "advanced_commands", "research_surfaces",
-    "production_ranking_authority", "canonical_packet_authority", "install_state_authority", "no_write_authority",
+    "production_ranking_authority", "canonical_packet_authority", "cross_process_contracts", "install_state_authority", "no_write_authority",
     "public_surface_inventory", "stateful_surface_inventory", "integration_status", "known_beta_debt"
   ],
   "properties": {
@@ -45,10 +45,11 @@
     "research_surfaces": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
     "production_ranking_authority": {
       "type": "object", "additionalProperties": false,
-      "required": ["interface", "provider_version", "result_schema", "compatibility_provider", "product_algorithm_agnostic", "public_experiment_identifiers", "fallback"],
+      "required": ["interface", "provider_version", "request_schema", "result_schema", "compatibility_provider", "product_algorithm_agnostic", "public_experiment_identifiers", "fallback"],
       "properties": {
         "interface": {"const": "ProductionRankingProviderV1"},
         "provider_version": {"const": "production-ranking-provider.v1"},
+        "request_schema": {"const": "schemas/production-ranking-request-v1.schema.json"},
         "result_schema": {"const": "schemas/production-ranking-provider-v1.schema.json"},
         "compatibility_provider": {"const": "IncumbentManifestRankingProviderV1"},
         "product_algorithm_agnostic": {"const": true},
@@ -58,14 +59,42 @@
     },
     "canonical_packet_authority": {
       "type": "object", "additionalProperties": false,
-      "required": ["version", "variant", "strategy", "public_renderer", "model_facing_sections", "internal_anchors_model_facing"],
+      "required": ["version", "variant", "strategy", "public_renderer", "contract_schema", "model_facing_sections", "internal_anchors_model_facing"],
       "properties": {
         "version": {"const": "v5"},
         "variant": {"const": "tool_assisted_anchors_internal"},
         "strategy": {"const": "literal_symbol"},
         "public_renderer": {"const": "canonical_core_v1"},
+        "contract_schema": {"const": "schemas/context-packet-v1.schema.json"},
         "model_facing_sections": {"type": "array", "items": {"enum": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"]}, "uniqueItems": true},
         "internal_anchors_model_facing": {"const": false}
+      }
+    },
+    "cross_process_contracts": {
+      "type": "array",
+      "minItems": 6,
+      "maxItems": 6,
+      "uniqueItems": true,
+      "allOf": [
+        {"contains": {"type": "object", "properties": {"name": {"const": "ContextRequestV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "ContextSelectionV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "ContextPacketV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "ContextReceiptV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "PacketStrategyPluginV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1},
+        {"contains": {"type": "object", "properties": {"name": {"const": "AgentAdapterV1"}}, "required": ["name"]}, "minContains": 1, "maxContains": 1}
+      ],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "python_authority", "schema", "golden", "sensitivity", "unknown_versions"],
+        "properties": {
+          "name": {"enum": ["ContextRequestV1", "ContextSelectionV1", "ContextPacketV1", "ContextReceiptV1", "PacketStrategyPluginV1", "AgentAdapterV1"]},
+          "python_authority": {"type": "string", "minLength": 1},
+          "schema": {"type": "string", "pattern": "^schemas/.+\\.json$"},
+          "golden": {"type": "string", "pattern": "^contracts/goldens/.+\\.json$"},
+          "sensitivity": {"enum": ["sensitive_private", "private_metadata", "content_free", "public_safe"]},
+          "unknown_versions": {"const": "fail_closed"}
+        }
       }
     },
     "install_state_authority": {

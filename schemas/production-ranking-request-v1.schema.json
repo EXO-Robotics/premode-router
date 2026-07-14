@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "production-ranking-request-v1.schema.json",
+  "title": "ProductionRankingRequestV1",
+  "$comment": "Sensitive/private cross-process input. It contains the exact user task and repository-derived context.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "exact_task",
+    "resolved_repository_context",
+    "supported_execution_options"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "pcodex.production-ranking-request.v1"
+    },
+    "exact_task": {
+      "type": "string"
+    },
+    "resolved_repository_context": {
+      "type": "object"
+    },
+    "supported_execution_options": {
+      "type": "object"
+    }
+  }
+}

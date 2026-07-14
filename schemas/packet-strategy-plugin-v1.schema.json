@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "packet-strategy-plugin-v1.schema.json",
+  "title": "PacketStrategyPluginV1 resolved metadata",
+  "$comment": "Public-safe metadata only. Experimental identities and diagnostics are excluded.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "sensitivity_classification",
+    "plugin_name",
+    "plugin_package",
+    "packet_version",
+    "packet_variant",
+    "packet_strategy"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.packet-strategy-plugin.v1"},
+    "sensitivity_classification": {"const": "public_safe"},
+    "plugin_name": {"type": "string", "minLength": 1},
+    "plugin_package": {"type": ["string", "null"]},
+    "packet_version": {"type": "string", "minLength": 1},
+    "packet_variant": {"type": "string", "minLength": 1},
+    "packet_strategy": {"type": "string", "minLength": 1}
+  }
+}

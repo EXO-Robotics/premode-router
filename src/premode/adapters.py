@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -110,51 +109,6 @@ PENALIZED_ROOT_SEGMENTS: tuple[str, ...] = (
 )
 
 
-
-OPENCLAW_AUTHORITY_MARKERS: tuple[str, ...] = (
-    "AGENTS.md",
-    "WORKFLOW.md",
-    "PROJECT/tasks.json",
-    "PROJECT/AI/worker_start/WORKER_START_HERE.md",
-    "PROJECT/state/worker_start/WORKER_STARTER_CONTEXT_V1.json",
-    "PROJECT/state/task_queue_normalized_latest.json",
-    "PROJECT/state/path_authority_latest.json",
-    "PROJECT/state/artifact_authority_latest.json",
-    "PROJECT/AI/OUTPUT_HYGIENE_GUARDRAILS.md",
-    "ARTIFACT_STORAGE.md",
-    "EXTERNAL_ARTIFACTS_INDEX.md",
-)
-
-OPENCLAW_EVIDENCE_ONLY_PATTERNS: tuple[str, ...] = (
-    "_claw_output/",
-    "PROJECT/state/history/",
-    "PROJECT/state/archive/",
-    "PROJECT/artifacts/generated/",
-    "logs/",
-    "proof/",
-    "proofs/",
-)
-
-OPENCLAW_DANGEROUS_MUTATION_ZONES: tuple[str, ...] = (
-    "PROJECT/tasks.json",
-    "PROJECT/state/task_queue_normalized_latest.json",
-    "PROJECT/state/path_authority_latest.json",
-    "PROJECT/state/artifact_authority_latest.json",
-    "_claw_output/",
-    "Content/",
-    "*.uasset",
-    "*.umap",
-    "*.blend",
-)
-
-OPENCLAW_PROOF_POLICY: dict[str, bool] = {
-    "do_not_claim_runtime_from_static_or_browser_evidence": True,
-    "do_not_claim_collision_or_input_proof_without_same_run_evidence": True,
-    "do_not_mutate_bridge_unreal_or_blender_without_authorization": True,
-    "do_not_mutate_project_task_queue_without_authorization": True,
-    "do_not_treat_historical_proof_as_current_truth": True,
-    "human_review_required_for_public_synthesis": True,
-}
 
 def _parent_root(rel_path: str) -> str:
     rel_path = rel_path.strip("/")
@@ -631,7 +585,6 @@ def _prompt_mentioned_paths(prompt: str | None, rel_paths: list[str]) -> list[st
 
 def _nearest_marker_root_for_path(path: str, rel_paths: list[str]) -> str | None:
     marker_paths = [p for p in rel_paths if _matched_primary_marker(p)]
-    path_parts = path.strip('/').split('/')[:-1]
     best: tuple[int, str] | None = None
     for marker in marker_paths:
         root = _parent_root(marker)
@@ -644,33 +597,6 @@ def _nearest_marker_root_for_path(path: str, rel_paths: list[str]) -> str | None
         if prefix_match and (best is None or depth > best[0]):
             best = (depth, root)
     return best[1] if best else None
-
-def _is_openclaw_authority_path(path: str) -> bool:
-    lower = path.strip("/").lower()
-    return any(lower == marker.lower() for marker in OPENCLAW_AUTHORITY_MARKERS)
-
-
-def _is_openclaw_evidence_only_path(path: str) -> bool:
-    lower = path.strip("/").lower()
-    return any(lower.startswith(pattern.lower()) or (pattern.startswith("*") and lower.endswith(pattern[1:].lower())) for pattern in OPENCLAW_EVIDENCE_ONLY_PATTERNS)
-
-
-def openclaw_policy_from_detection(detection: dict[str, Any]) -> dict[str, Any] | None:
-    active = detection.get("active_project", {}) if isinstance(detection, dict) else {}
-    if active.get("adapter") != "openclaw_control_plane":
-        return None
-    return {
-        "authority_model": "proof_governed_control_plane",
-        "authority_surfaces": list(OPENCLAW_AUTHORITY_MARKERS),
-        "evidence_only_patterns": list(OPENCLAW_EVIDENCE_ONLY_PATTERNS),
-        "dangerous_mutation_zones": list(OPENCLAW_DANGEROUS_MUTATION_ZONES),
-        "proof_policy": dict(OPENCLAW_PROOF_POLICY),
-        "notes": [
-            "Current authority surfaces outrank historical/generated proof artifacts.",
-            "Generated proof/log folders are evidence-only unless explicitly task-named.",
-            "Bridge, Unreal, Blender, and task-queue mutation require explicit authorization.",
-        ],
-    }
 
 def detect_projects(
     repo_root: Path,
@@ -780,6 +706,8 @@ def detect_projects(
             strong_markers = {m for m in markers if m.lower() not in {"agents.md", "readme.md", "readme"}}
             if len(strong_markers) < 3:
                 continue
+            from .openclaw_adapter import OPENCLAW_AUTHORITY_MARKERS
+
             # OpenClaw/control-plane authority markers define the repository root.
             # Do not let nested Node executor/package.json markers hijack the active project.
             authority_roots: dict[str, int] = {}
@@ -817,7 +745,15 @@ def detect_projects(
         confidence = round(max(0.10, confidence - min(0.35, _root_penalty(root) / 800)), 2)
         extra: dict[str, Any] = {}
         if kind == "openclaw_control_plane" and markers:
-            authority_hits = [m for m in sorted(set(markers)) if _is_openclaw_authority_path(m) or m.lower() in {"_claw_output", "tools/gamebot", "tools/symphony"}]
+            from .openclaw_adapter import (
+                OPENCLAW_AUTHORITY_MARKERS,
+                OPENCLAW_DANGEROUS_MUTATION_ZONES,
+                OPENCLAW_EVIDENCE_ONLY_PATTERNS,
+                OPENCLAW_PROOF_POLICY,
+                is_openclaw_authority_path,
+            )
+
+            authority_hits = [m for m in sorted(set(markers)) if is_openclaw_authority_path(m) or m.lower() in {"_claw_output", "tools/gamebot", "tools/symphony"}]
             confidence = round(min(0.99, 0.72 + 0.04 * len(authority_hits) + prompt_score), 2)
             openclaw_traits = sorted(set(intake_report.get("traits", [])) | {
                 "proof_governed_candidate",
@@ -1011,9 +947,14 @@ def adapter_score_bonus(entry: dict[str, Any], detection: dict[str, Any]) -> int
     if path in active.get("markers", []):
         score += 300
     if active.get("adapter") == "openclaw_control_plane":
-        if _is_openclaw_authority_path(path):
+        from .openclaw_adapter import (
+            is_openclaw_authority_path,
+            is_openclaw_evidence_only_path,
+        )
+
+        if is_openclaw_authority_path(path):
             score += 650
-        if _is_openclaw_evidence_only_path(path):
+        if is_openclaw_evidence_only_path(path):
             score -= 120
     intake_delta, _flags = intake_score_delta(path, detection.get("intake_report"))
     score += intake_delta

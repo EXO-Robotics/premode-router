@@ -1,0 +1,12 @@
+{
+  "schema_version": "pcodex.production-ranking-request.v1",
+  "exact_task": "Update the synthetic parser fixture.",
+  "resolved_repository_context": {
+    "repository_kind": "python",
+    "workspace_root_binding": "configured"
+  },
+  "supported_execution_options": {
+    "profile": "lite",
+    "write_policy": "ADVISORY"
+  }
+}

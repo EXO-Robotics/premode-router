@@ -1,0 +1,18 @@
+{
+  "schema_version": "pcodex.production-ranking-result.v1",
+  "routing_mode": "narrow",
+  "primary_paths": ["src/parser.py"],
+  "verify_paths": ["tests/test_parser.py"],
+  "support_paths": [],
+  "abstention_reason": null,
+  "decision_receipt": {
+    "schema_version": "pcodex.production-ranking-decision-receipt.v1",
+    "exact_task_sha256": "f84fdf31658e99fce2a6dee548a341530070aff10440bd26c70bb84d4d7c7cfe",
+    "routing_mode": "narrow",
+    "primary_path_count": 1,
+    "verify_path_count": 1,
+    "support_path_count": 0,
+    "source_contract": "incumbent-manifest.v1"
+  },
+  "provider_version": "production-ranking-provider.v1"
+}

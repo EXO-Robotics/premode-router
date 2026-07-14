@@ -22,6 +22,7 @@ from scripts.build_release_artifacts import (
     validate_archive_content,
     validate_archive_structure,
     validate_names,
+    validate_required_contract_goldens,
     validate_required_plugin_resources,
     validate_sdist_names,
     validated_python_interpreter,
@@ -87,6 +88,26 @@ def test_release_allowlist_requires_every_canonical_plugin_resource() -> None:
     assert validate_required_plugin_resources(sdist_names, policy, archive_kind="sdist") == []
     assert validate_required_plugin_resources(wheel_names[1:], policy, archive_kind="wheel") == [
         f"missing_plugin_resource:{required[0]}"
+    ]
+
+
+def test_release_allowlist_requires_exact_contract_golden_set() -> None:
+    policy = json.loads((ROOT / "release/artifact-allowlist.json").read_text())
+    required = policy["contract_golden_members"]
+    wheel_prefix = "premode_router-0.3.0b1.data/data/share/premode-router/contracts/goldens/"
+    sdist_prefix = "premode_router-0.3.0b1/contracts/goldens/"
+    wheel_names = [wheel_prefix + item for item in required]
+    sdist_names = [sdist_prefix + item for item in required]
+    assert validate_required_contract_goldens(wheel_names, policy, archive_kind="wheel") == []
+    assert validate_required_contract_goldens(sdist_names, policy, archive_kind="sdist") == []
+    assert validate_required_contract_goldens(
+        wheel_names[1:] + [wheel_prefix + "raw-task.json"], policy, archive_kind="wheel"
+    ) == [
+        f"missing_contract_golden:{required[0]}",
+        "unexpected_contract_golden:raw-task.json",
+    ]
+    assert validate_sdist_names([sdist_prefix + "raw-task.json"], policy) == [
+        "unexpected_sdist_member:contracts/goldens/raw-task.json"
     ]
 
 

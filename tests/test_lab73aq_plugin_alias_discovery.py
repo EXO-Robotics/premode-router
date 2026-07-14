@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 PLUGIN_METADATA = {
+    "schema_version": "pcodex.packet-strategy-plugin.v1",
     "name": "premode-plugin-literal-symbol",
     "strategy_id": "literal_symbol",
     "packet_version": "v5",
@@ -34,6 +35,7 @@ PLUGIN_METADATA = {
     ],
     "diagnostics_out_of_band": True,
     "private_package": True,
+    "sensitivity_classification": "public_safe",
 }
 
 
@@ -101,6 +103,8 @@ def test_plugin_discovery_loads_mocked_entry_point(monkeypatch: pytest.MonkeyPat
     resolved = resolve_packet_plugin("literal_symbol")
 
     assert resolved.as_dict() == {
+        "schema_version": "pcodex.packet-strategy-plugin.v1",
+        "sensitivity_classification": "public_safe",
         "plugin_name": "literal_symbol",
         "plugin_package": "premode-router",
         "packet_version": "v5",

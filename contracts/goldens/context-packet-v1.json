@@ -1,0 +1,9 @@
+{
+  "rendered_packet": "TASK\nUpdate parser.\nLIKELY FILES\n\nPRIMARY\n\n* src/parser.py\n\nStart with these files. Expand only when required by the task.\n",
+  "exact_task_sha256": "84671820fffb70bbf5e5dea44e5bac171d43c1679d9318f874952404a9a34d0c",
+  "exact_task_length": 14,
+  "packet_sha256": "fdc4c6a21581b091f0711bd79d86617306c13a7d44df89e1a486bbfd356d5a64",
+  "renderer_id": "canonical_core_v1",
+  "schema_version": "pcodex.context-packet.v1",
+  "sensitivity_classification": "sensitive_private"
+}

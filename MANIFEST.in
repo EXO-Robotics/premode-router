@@ -3,6 +3,12 @@ include CHANGELOG.md
 include pyproject.toml
 include premode.product.json
 recursive-include schemas *.json
+include contracts/goldens/agent-adapter-v1.json
+include contracts/goldens/context-packet-v1.json
+include contracts/goldens/context-receipt-v1.json
+include contracts/goldens/packet-strategy-plugin-v1.json
+include contracts/goldens/production-ranking-request-v1.json
+include contracts/goldens/production-ranking-result-v1.json
 recursive-include plugins/pcodex *
 include plugins/pcodex/.codex-plugin/plugin.json
 recursive-include src *.py

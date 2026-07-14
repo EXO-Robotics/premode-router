@@ -9,11 +9,13 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 import hashlib
+import math
 import re
 from typing import Any, Mapping, Protocol, runtime_checkable
 
 
 PRODUCTION_RANKING_PROVIDER_VERSION = "production-ranking-provider.v1"
+PRODUCTION_RANKING_REQUEST_SCHEMA_VERSION = "pcodex.production-ranking-request.v1"
 PRODUCTION_RANKING_RESULT_SCHEMA_VERSION = "pcodex.production-ranking-result.v1"
 ROUTING_MODES = frozenset({"narrow", "broad", "fallback", "abstain"})
 PUBLIC_ABSTENTION_REASONS = frozenset({
@@ -31,6 +33,25 @@ class ProductionRankingContractError(ValueError):
 
 class UnknownProviderVersionError(ProductionRankingContractError):
     pass
+
+
+def _json_value(value: object, field: str) -> Any:
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ProductionRankingContractError(f"{field} contains a non-finite number")
+        return value
+    if isinstance(value, Mapping):
+        result: dict[str, Any] = {}
+        for key, nested in value.items():
+            if not isinstance(key, str):
+                raise ProductionRankingContractError(f"{field} keys must be strings")
+            result[key] = _json_value(nested, f"{field}.{key}")
+        return result
+    if isinstance(value, (list, tuple)):
+        return [_json_value(nested, f"{field}[]") for nested in value]
+    raise ProductionRankingContractError(f"{field} contains a non-JSON value")
 
 
 def _paths(values: object, field: str) -> tuple[str, ...]:
@@ -54,14 +75,43 @@ class ProductionRankingRequestV1:
     exact_task: str
     resolved_repository_context: Mapping[str, Any]
     supported_execution_options: Mapping[str, Any]
+    schema_version: str = PRODUCTION_RANKING_REQUEST_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
+        if self.schema_version != PRODUCTION_RANKING_REQUEST_SCHEMA_VERSION:
+            raise ProductionRankingContractError(
+                f"unsupported request schema_version: {self.schema_version}"
+            )
         if not isinstance(self.exact_task, str):
             raise ProductionRankingContractError("exact_task must be a string")
         if not isinstance(self.resolved_repository_context, Mapping):
             raise ProductionRankingContractError("resolved_repository_context must be a mapping")
         if not isinstance(self.supported_execution_options, Mapping):
             raise ProductionRankingContractError("supported_execution_options must be a mapping")
+        object.__setattr__(
+            self,
+            "resolved_repository_context",
+            _json_value(self.resolved_repository_context, "resolved_repository_context"),
+        )
+        object.__setattr__(
+            self,
+            "supported_execution_options",
+            _json_value(self.supported_execution_options, "supported_execution_options"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "exact_task": self.exact_task,
+            "resolved_repository_context": _json_value(
+                self.resolved_repository_context,
+                "resolved_repository_context",
+            ),
+            "supported_execution_options": _json_value(
+                self.supported_execution_options,
+                "supported_execution_options",
+            ),
+        }
 
 
 @dataclass(frozen=True)
@@ -103,14 +153,17 @@ def _receipt(value: object) -> ProductionRankingDecisionReceiptV1:
     }
     if set(value) != allowed:
         raise ProductionRankingContractError("decision_receipt contains missing or unsupported fields")
+    for field in ("schema_version", "exact_task_sha256", "routing_mode", "source_contract"):
+        if not isinstance(value[field], str):
+            raise ProductionRankingContractError(f"decision_receipt {field} must be a string")
     return ProductionRankingDecisionReceiptV1(
-        schema_version=str(value["schema_version"]),
-        exact_task_sha256=str(value["exact_task_sha256"]),
-        routing_mode=str(value["routing_mode"]),
+        schema_version=value["schema_version"],
+        exact_task_sha256=value["exact_task_sha256"],
+        routing_mode=value["routing_mode"],
         primary_path_count=value["primary_path_count"],  # type: ignore[arg-type]
         verify_path_count=value["verify_path_count"],  # type: ignore[arg-type]
         support_path_count=value["support_path_count"],  # type: ignore[arg-type]
-        source_contract=str(value["source_contract"]),
+        source_contract=value["source_contract"],
     )
 
 
@@ -174,17 +227,75 @@ class ProductionRankingProviderV1(Protocol):
 
 
 def ranking_result_from_dict(payload: Mapping[str, Any]) -> ProductionRankingResultV1:
+    allowed = {
+        "schema_version",
+        "routing_mode",
+        "primary_paths",
+        "verify_paths",
+        "support_paths",
+        "abstention_reason",
+        "decision_receipt",
+        "provider_version",
+    }
+    if set(payload) != allowed:
+        raise ProductionRankingContractError(
+            "ranking result contains missing or unsupported fields"
+        )
     if payload.get("provider_version") != PRODUCTION_RANKING_PROVIDER_VERSION:
         raise UnknownProviderVersionError(f"unsupported provider_version: {payload.get('provider_version')}")
+    for field in ("schema_version", "routing_mode", "provider_version"):
+        if not isinstance(payload[field], str):
+            raise ProductionRankingContractError(f"ranking result {field} must be a string")
+    abstention_reason = payload["abstention_reason"]
+    if abstention_reason is not None and not isinstance(abstention_reason, str):
+        raise ProductionRankingContractError(
+            "ranking result abstention_reason must be a string or null"
+        )
     return ProductionRankingResultV1(
-        schema_version=str(payload.get("schema_version") or ""),
-        routing_mode=str(payload.get("routing_mode") or ""),
+        schema_version=payload["schema_version"],
+        routing_mode=payload["routing_mode"],
         primary_paths=_paths(payload.get("primary_paths"), "primary_paths"),
         verify_paths=_paths(payload.get("verify_paths"), "verify_paths"),
         support_paths=_paths(payload.get("support_paths"), "support_paths"),
-        abstention_reason=payload.get("abstention_reason") if isinstance(payload.get("abstention_reason"), str) else None,
+        abstention_reason=abstention_reason,
         decision_receipt=_receipt(payload.get("decision_receipt")),
-        provider_version=str(payload["provider_version"]),
+        provider_version=payload["provider_version"],
+    )
+
+
+def ranking_request_from_dict(payload: Mapping[str, Any]) -> ProductionRankingRequestV1:
+    allowed = {
+        "schema_version",
+        "exact_task",
+        "resolved_repository_context",
+        "supported_execution_options",
+    }
+    if set(payload) != allowed:
+        raise ProductionRankingContractError(
+            "ranking request contains missing or unsupported fields"
+        )
+    if payload.get("schema_version") != PRODUCTION_RANKING_REQUEST_SCHEMA_VERSION:
+        raise ProductionRankingContractError(
+            f"unsupported request schema_version: {payload.get('schema_version')}"
+        )
+    exact_task = payload.get("exact_task")
+    context = payload.get("resolved_repository_context")
+    options = payload.get("supported_execution_options")
+    if not isinstance(exact_task, str):
+        raise ProductionRankingContractError("exact_task must be a string")
+    if not isinstance(context, Mapping):
+        raise ProductionRankingContractError(
+            "resolved_repository_context must be a mapping"
+        )
+    if not isinstance(options, Mapping):
+        raise ProductionRankingContractError(
+            "supported_execution_options must be a mapping"
+        )
+    return ProductionRankingRequestV1(
+        exact_task=exact_task,
+        resolved_repository_context=context,
+        supported_execution_options=options,
+        schema_version=str(payload["schema_version"]),
     )
 
 

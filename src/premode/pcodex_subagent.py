@@ -9,7 +9,7 @@ from typing import Any
 
 from . import pcodex_bootstrap as pcodex
 from .candidate_policy import CandidateIntent, classify_candidate, is_generated_candidate_path
-from .core_packet import CorePath, render_core_packet
+from .core_packet import CorePath, render_context_packet_v1
 from .production_ranking import ProductionRankingContractError, ranking_result_from_dict
 
 
@@ -81,7 +81,11 @@ def _validated_decision_and_packet(
                     return None, None
                 seen.add(policy.normalized_path.casefold())
                 items.append(CorePath(path=policy.normalized_path, role=role))  # type: ignore[arg-type]
-        expected = prompt if product.routing_mode == "abstain" else render_core_packet(prompt, items)
+        expected = (
+            prompt
+            if product.routing_mode == "abstain"
+            else render_context_packet_v1(prompt, items).rendered_packet
+        )
         if compiled.get("packet") != expected:
             return None, None
         return product.to_dict(), expected
@@ -183,7 +187,7 @@ def _validated_decision_and_packet(
         for key, role in roles
         for path in normalized[key]
     ]
-    expected = render_core_packet(prompt, items)
+    expected = render_context_packet_v1(prompt, items).rendered_packet
     if compiled.get("packet") != expected:
         return None, None
     return {**raw, **normalized}, expected

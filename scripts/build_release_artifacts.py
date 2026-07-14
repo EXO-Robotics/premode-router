@@ -327,6 +327,7 @@ def validate_sdist_names(names: list[str], policy: dict[str, object]) -> list[st
             if str(member).startswith("premode/")
         ),
         *("plugins/pcodex/" + str(member) for member in policy.get("plugin_allowed_members", [])),
+        *("contracts/goldens/" + str(member) for member in policy.get("contract_golden_members", [])),
     }
     allowed_globs = (
         "docs/*.md", "docs/*.json", "docs/**/*.md", "docs/**/*.json",
@@ -360,6 +361,29 @@ def validate_required_plugin_resources(
     else:
         raise ValueError(f"unsupported archive kind: {archive_kind}")
     return [f"missing_plugin_resource:{relative}" for relative in required if relative not in present]
+
+
+def validate_required_contract_goldens(
+    names: list[str], policy: dict[str, object], *, archive_kind: str,
+) -> list[str]:
+    """Require the exact public-safe golden contract set in both artifacts."""
+    required = {str(item) for item in policy.get("contract_golden_members", [])}
+    normalized = [PurePosixPath(name).as_posix() for name in names]
+    if archive_kind == "wheel":
+        marker = "/share/premode-router/contracts/goldens/"
+        present = {name.split(marker, 1)[1] for name in normalized if marker in name}
+    elif archive_kind == "sdist":
+        present = set()
+        for name in normalized:
+            parts = PurePosixPath(name).parts
+            relative = PurePosixPath(*parts[1:]).as_posix() if len(parts) > 1 else ""
+            if relative.startswith("contracts/goldens/"):
+                present.add(relative.removeprefix("contracts/goldens/"))
+    else:
+        raise ValueError(f"unsupported archive_kind: {archive_kind}")
+    failures = [f"missing_contract_golden:{name}" for name in sorted(required - present)]
+    failures.extend(f"unexpected_contract_golden:{name}" for name in sorted(present - required))
+    return failures
 
 
 def validate_archive_content(path: Path, policy: dict[str, object]) -> list[str]:
@@ -1361,10 +1385,16 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             allowlist_failures.extend(validate_names(item_members, allowed_prefixes=list(prefixes), policy=policy, exact_wheel=artifact.suffix == ".whl"))
             if artifact.suffix == ".whl":
                 allowlist_failures.extend(validate_required_plugin_resources(item_members, policy, archive_kind="wheel"))
+                allowlist_failures.extend(validate_required_contract_goldens(item_members, policy, archive_kind="wheel"))
             if artifact.name.endswith((".tar.gz", ".tgz")):
                 allowlist_failures.extend(validate_sdist_names(item_members, policy))
                 allowlist_failures.extend(
                     validate_required_plugin_resources(
+                        item_members, policy, archive_kind="sdist"
+                    )
+                )
+                allowlist_failures.extend(
+                    validate_required_contract_goldens(
                         item_members, policy, archive_kind="sdist"
                     )
                 )
@@ -1469,6 +1499,11 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             "import json; from premode.product_contract import validate_installed_product_contract as v; print(json.dumps(v(),sort_keys=True))",
             cwd=temp, env=smoke_env,
         ))
+        installed_contract_goldens = json.loads(run(
+            str(smoke_python), "-c",
+            "import json; from premode.product_contract import validate_installed_contract_goldens as v; print(json.dumps(v(),sort_keys=True))",
+            cwd=temp, env=smoke_env,
+        ))
         setup_payload = json.loads(run(str(smoke_bin / "pcodex"), "setup", "--skip-tune", "--no-mcp", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         status_payload = json.loads(run(str(smoke_bin / "pcodex"), "status", "--json", "--repo-root", str(fixture), cwd=temp, env=smoke_env))
         before_user_files = {path.relative_to(fixture).as_posix(): sha256(path) for path in fixture.rglob("*") if path.is_file() and ".premode" not in path.parts}
@@ -1556,6 +1591,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
                     f"changed={changed[:5]}"
                 )
             run(str(sdist_python), "-c", "from premode.product_contract import validate_installed_product_contract as v; assert v()['status']=='valid'", cwd=temp)
+            run(str(sdist_python), "-c", "from premode.product_contract import validate_installed_contract_goldens as v; assert v()['status']=='valid'", cwd=temp)
             run(str(sdist_python), "-c", "from premode.production_ranking import PRODUCTION_RANKING_PROVIDER_VERSION as v; assert v=='production-ranking-provider.v1'", cwd=temp)
             run(str(sdist_bin / "pcodex"), "--help", cwd=temp)
             sdist_fixture = temp / "sdist repository with spaces"
@@ -1663,6 +1699,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             "dry_run_codex_launch": dry_payload.get("codex_launch"),
             "selected_paths": selected,
             "installed_contract": installed_contract,
+            "installed_contract_goldens": installed_contract_goldens,
             "provider_version": decision.get("provider_version"),
             "uninstall_preview_status": uninstall_preview.get("status"),
             "uninstall_preview_writes": uninstall_preview.get("writes_performed"),

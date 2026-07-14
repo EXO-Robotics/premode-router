@@ -4,6 +4,8 @@ from dataclasses import dataclass
 import re
 from typing import Iterable, Literal
 
+from .context_contracts import ContextPacketV1
+
 
 CoreRole = Literal["primary", "verification", "support"]
 
@@ -86,6 +88,25 @@ def render_core_packet(
 
     lines.extend(["", instruction])
     return "\n".join(lines).rstrip() + "\n"
+
+
+def render_context_packet_v1(
+    task: str,
+    paths: Iterable[CorePath],
+    *,
+    instruction: str = DEFAULT_CORE_INSTRUCTION,
+    fallback_instruction: str = DEFAULT_FALLBACK_INSTRUCTION,
+) -> ContextPacketV1:
+    """Return the typed logistics contract without changing packet rendering."""
+
+    exact_task = str(task)
+    rendered = render_core_packet(
+        exact_task,
+        paths,
+        instruction=instruction,
+        fallback_instruction=fallback_instruction,
+    )
+    return ContextPacketV1.from_task_and_packet(exact_task, rendered)
 
 
 def core_packet_leakage(task: str, packet: str) -> dict[str, object]:

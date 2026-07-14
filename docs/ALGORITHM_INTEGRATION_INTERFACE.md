@@ -6,9 +6,11 @@
 
 - Interface: `ProductionRankingProviderV1`
 - Provider version: `production-ranking-provider.v1`
+- Request schema: `pcodex.production-ranking-request.v1`
 - Result schema: `pcodex.production-ranking-result.v1`
 - Python contract: `src/premode/production_ranking.py`
 - Process-boundary schema: `schemas/production-ranking-provider-v1.schema.json`
+- Contract compatibility policy: `docs/CONTRACT_COMPATIBILITY.md`
 - Current compatibility adapter: `src/premode/production_ranking_incumbent.py`
 
 The interface module imports no observer, Qwen, lab, or candidate implementation. Provider selection can change without reopening CLI, setup, repair, uninstall, plugin, or documentation logic.

@@ -1,8 +1,9 @@
-from __future__ import annotations
-
 """Installed-artifact access to the authoritative product manifest snapshot."""
 
+from __future__ import annotations
+
 import json
+import math
 from pathlib import Path
 import re
 import sys
@@ -47,6 +48,12 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             or ("array" in expected and isinstance(instance, list))
             or ("boolean" in expected and isinstance(instance, bool))
             or ("integer" in expected and isinstance(instance, int) and not isinstance(instance, bool))
+            or (
+                "number" in expected
+                and isinstance(instance, (int, float))
+                and not isinstance(instance, bool)
+                and math.isfinite(float(instance))
+            )
         )
         if not matches:
             raise ValueError(f"{path}: wrong type")
@@ -79,7 +86,7 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             raise ValueError(f"{path}: expected string")
         if len(instance) < int(schema.get("minLength", 0)):
             raise ValueError(f"{path}: string too short")
-        if schema.get("pattern") and re.fullmatch(str(schema["pattern"]), instance) is None:
+        if schema.get("pattern") and re.search(str(schema["pattern"]), instance) is None:
             raise ValueError(f"{path}: pattern mismatch")
     elif expected == "boolean" and not isinstance(instance, bool):
         raise ValueError(f"{path}: expected boolean")
@@ -88,6 +95,13 @@ def _validate(instance: Any, schema: dict[str, Any], path: str, root_schema: dic
             raise ValueError(f"{path}: expected integer")
         if "minimum" in schema and instance < int(schema["minimum"]):
             raise ValueError(f"{path}: below minimum")
+    elif expected == "number":
+        if (
+            not isinstance(instance, (int, float))
+            or isinstance(instance, bool)
+            or not math.isfinite(float(instance))
+        ):
+            raise ValueError(f"{path}: expected finite number")
 
 
 def validate_installed_product_contract(prefix: Path | str | None = None) -> dict[str, Any]:
@@ -95,9 +109,46 @@ def validate_installed_product_contract(prefix: Path | str | None = None) -> dic
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     validate_payload_against_schema(manifest, schema)
+    required_contracts = {
+        "ContextRequestV1",
+        "ContextSelectionV1",
+        "ContextPacketV1",
+        "ContextReceiptV1",
+        "PacketStrategyPluginV1",
+        "AgentAdapterV1",
+    }
+    contracts = manifest.get("cross_process_contracts")
+    names = [item.get("name") for item in contracts] if isinstance(contracts, list) else []
+    if len(names) != len(required_contracts) or set(names) != required_contracts:
+        raise ValueError("$.cross_process_contracts: exactly one authority per required contract is required")
     return {
         "status": "valid",
         "schema_version": manifest["schema_version"],
         "product_name": manifest["product_name"],
         "release_target": manifest.get("release_target"),
+    }
+
+
+def validate_installed_contract_goldens(
+    prefix: Path | str | None = None,
+) -> dict[str, Any]:
+    root = Path(sys.prefix if prefix is None else prefix) / "share" / "premode-router"
+    pairs = {
+        "production-ranking-request-v1.json": "production-ranking-request-v1.schema.json",
+        "production-ranking-result-v1.json": "production-ranking-provider-v1.schema.json",
+        "context-packet-v1.json": "context-packet-v1.schema.json",
+        "context-receipt-v1.json": "context-receipt-v1.schema.json",
+        "packet-strategy-plugin-v1.json": "packet-strategy-plugin-v1.schema.json",
+        "agent-adapter-v1.json": "agent-adapter-v1.schema.json",
+    }
+    for golden_name, schema_name in pairs.items():
+        golden = json.loads(
+            (root / "contracts" / "goldens" / golden_name).read_text(encoding="utf-8")
+        )
+        schema = json.loads((root / "schemas" / schema_name).read_text(encoding="utf-8"))
+        validate_payload_against_schema(golden, schema)
+    return {
+        "status": "valid",
+        "schema_version": "pcodex.installed-contract-goldens.v1",
+        "validated_contracts": sorted(pairs),
     }

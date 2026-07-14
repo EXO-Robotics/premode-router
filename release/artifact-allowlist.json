@@ -10,6 +10,7 @@
   "wheel_allowed_members": [
     "premode/__init__.py",
     "premode/__main__.py",
+    "premode/adapter_policy.py",
     "premode/adapters.py",
     "premode/audit.py",
     "premode/backbone.py",
@@ -24,6 +25,7 @@
     "premode/compiler.py",
     "premode/config.py",
     "premode/context_constraints.py",
+    "premode/context_contracts.py",
     "premode/core_packet.py",
     "premode/default_plugin.py",
     "premode/doctor.py",
@@ -45,6 +47,7 @@
     "premode/mcp_server.py",
     "premode/metrics.py",
     "premode/no_write.py",
+    "premode/openclaw_adapter.py",
     "premode/packet_schema.py",
     "premode/paths.py",
     "premode/pcodex_bootstrap.py",
@@ -83,6 +86,12 @@
     "premode_router-*.dist-info/licenses/*",
     "premode_router-*.data/data/share/premode-router/premode.product.json",
     "premode_router-*.data/data/share/premode-router/schemas/*.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/agent-adapter-v1.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/context-packet-v1.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/context-receipt-v1.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/packet-strategy-plugin-v1.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/production-ranking-request-v1.json",
+    "premode_router-*.data/data/share/premode-router/contracts/goldens/production-ranking-result-v1.json",
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/.codex-plugin/plugin.json",
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/assets/README.md",
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex-dry-run/SKILL.md",
@@ -90,6 +99,14 @@
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex-tune/SKILL.md",
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex/SKILL.md",
     "premode_router-*.data/data/share/premode-router/plugins/pcodex/skills/pcodex/bin/resolve-pcodex.sh"
+  ],
+  "contract_golden_members": [
+    "agent-adapter-v1.json",
+    "context-packet-v1.json",
+    "context-receipt-v1.json",
+    "packet-strategy-plugin-v1.json",
+    "production-ranking-request-v1.json",
+    "production-ranking-result-v1.json"
   ],
   "plugin_allowed_members": [
     ".codex-plugin/plugin.json",

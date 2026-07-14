@@ -21,6 +21,7 @@ from typing import Any, Callable, Mapping
 from uuid import uuid4
 
 from . import __version__
+from .context_contracts import AgentAdapterContractV1
 
 
 PLUGIN_NAME = "pcodex"
@@ -59,6 +60,34 @@ LEGACY_SKILL_FINGERPRINT = {
     "pcodex-tune/SKILL.md": "3365707b3e53ebd66b8d8082e1136121af961dbca58153a6a089da1e26d43d32",
 }
 SUPPORTED_CODEX_VERSIONS = ">=0.143.0,<0.144.0"
+CODEX_AGENT_ADAPTER_CONTRACT = AgentAdapterContractV1(
+    adapter_id="codex",
+    adapter_version="pcodex.codex-agent-adapter.v1",
+    supported_platforms=("darwin", "linux"),
+    supported_agent_versions=("0.143.x",),
+    lifecycle_operations=(
+        "preview",
+        "install",
+        "status",
+        "discovery",
+        "repair",
+        "disable",
+        "reinstall",
+        "uninstall",
+    ),
+)
+
+
+class CanonicalCodexAgentAdapterV1:
+    """Descriptor boundary for the existing canonical Codex lifecycle."""
+
+    adapter_contract = CODEX_AGENT_ADAPTER_CONTRACT
+
+    def describe(self) -> AgentAdapterContractV1:
+        return self.adapter_contract
+
+
+CANONICAL_CODEX_AGENT_ADAPTER = CanonicalCodexAgentAdapterV1()
 
 
 class CodexPluginError(RuntimeError):

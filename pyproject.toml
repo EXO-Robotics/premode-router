@@ -31,6 +31,14 @@ premode = []
 [tool.setuptools.data-files]
 "share/premode-router" = ["premode.product.json"]
 "share/premode-router/schemas" = ["schemas/*.json"]
+"share/premode-router/contracts/goldens" = [
+  "contracts/goldens/agent-adapter-v1.json",
+  "contracts/goldens/context-packet-v1.json",
+  "contracts/goldens/context-receipt-v1.json",
+  "contracts/goldens/packet-strategy-plugin-v1.json",
+  "contracts/goldens/production-ranking-request-v1.json",
+  "contracts/goldens/production-ranking-result-v1.json",
+]
 "share/premode-router/plugins/pcodex/.codex-plugin" = ["plugins/pcodex/.codex-plugin/plugin.json"]
 "share/premode-router/plugins/pcodex/assets" = ["plugins/pcodex/assets/README.md"]
 "share/premode-router/plugins/pcodex/skills/pcodex" = ["plugins/pcodex/skills/pcodex/SKILL.md"]

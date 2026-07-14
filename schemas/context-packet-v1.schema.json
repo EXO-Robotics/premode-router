@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-packet-v1.schema.json",
+  "title": "ContextPacketV1",
+  "$comment": "Sensitive/private. The exact task exists only inside rendered_packet; exact_task_sha256 is content-free integrity metadata.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "rendered_packet",
+    "exact_task_sha256",
+    "exact_task_length",
+    "packet_sha256",
+    "renderer_id",
+    "schema_version",
+    "sensitivity_classification"
+  ],
+  "properties": {
+    "rendered_packet": {"type": "string", "pattern": "^TASK\\n"},
+    "exact_task_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "exact_task_length": {"type": "integer", "minimum": 0},
+    "packet_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "renderer_id": {"const": "canonical_core_v1"},
+    "schema_version": {"const": "pcodex.context-packet.v1"},
+    "sensitivity_classification": {"const": "sensitive_private"}
+  }
+}

@@ -2,6 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "production-ranking-provider-v1.schema.json",
   "title": "ProductionRankingProviderV1 result",
+  "$comment": "Private metadata contract. The decision receipt is content-free and stores only a task hash, path counts, routing mode, and source contract.",
   "type": "object",
   "additionalProperties": false,
   "required": [

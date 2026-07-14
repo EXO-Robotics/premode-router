@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agent-adapter-v1.schema.json",
+  "title": "AgentAdapterContractV1",
+  "$comment": "Public-safe descriptor for an in-process AgentAdapterV1 implementation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "adapter_id",
+    "adapter_version",
+    "supported_platforms",
+    "supported_agent_versions",
+    "lifecycle_operations",
+    "workspace_binding",
+    "exact_task_transport",
+    "schema_version",
+    "sensitivity_classification"
+  ],
+  "properties": {
+    "adapter_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "adapter_version": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$"},
+    "supported_platforms": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "supported_agent_versions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "lifecycle_operations": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["preview", "install", "status", "discovery", "repair", "disable", "reinstall", "uninstall"]
+      }
+    },
+    "workspace_binding": {"const": "configured_root_immutable"},
+    "exact_task_transport": {"const": "single_canonical_field"},
+    "schema_version": {"const": "pcodex.agent-adapter-contract.v1"},
+    "sensitivity_classification": {"const": "public_safe"}
+  }
+}

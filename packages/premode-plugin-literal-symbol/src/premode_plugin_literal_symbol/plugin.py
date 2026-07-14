@@ -4,6 +4,7 @@ from copy import deepcopy
 from typing import Any
 
 PLUGIN_METADATA: dict[str, Any] = {
+    "schema_version": "pcodex.packet-strategy-plugin.v1",
     "name": "premode-plugin-literal-symbol",
     "version": "0.1.0",
     "strategy_id": "literal_symbol",
@@ -23,6 +24,7 @@ PLUGIN_METADATA: dict[str, Any] = {
     "license": "Proprietary / All Rights Reserved",
     "private": True,
     "private_package": True,
+    "sensitivity_classification": "public_safe",
     "deferred_policy_branches": [
         {
             "strategy": "literal_symbol_config_gated",

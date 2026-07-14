@@ -10,7 +10,8 @@ from fnmatch import fnmatch
 from pathlib import Path
 from typing import Any, Iterable
 
-from .adapters import detect_projects, load_commands, read_rules_and_memory, adapter_score_bonus, openclaw_policy_from_detection
+from .adapter_policy import adapter_policy_from_detection
+from .adapters import detect_projects, load_commands, read_rules_and_memory, adapter_score_bonus
 from .audit import sha256_text, write_audit
 from .backbone import build_tool_assisted_anchors_internal, build_tool_assisted_backbone
 from .config import load_config, premode_dir
@@ -29,7 +30,8 @@ from .context_constraints import (
     is_read_only_manifest_path,
     is_restricted_edit_bucket_path,
 )
-from .core_packet import CorePath, core_packet_leakage, render_core_packet
+from .core_packet import CorePath, core_packet_leakage, render_context_packet_v1
+from .context_contracts import ContextReceiptV1
 from .routing_contract import decision_from_manifest
 from .production_ranking import ProductionRankingProviderV1, ProductionRankingRequestV1, rank_with_provider
 from .production_ranking_incumbent import IncumbentManifestRankingProviderV1
@@ -258,34 +260,37 @@ def _normalize_packet_detail_mode(packet_detail_mode: str | None) -> str:
 def _context_receipt(manifest: dict[str, Any]) -> dict[str, Any]:
     metrics = manifest.get("metrics") or {}
     caps = manifest.get("caps") or {}
-    return {
-        "context_boundary_mode": manifest.get("context_boundary_mode", "standard"),
-        "packet_mode": manifest.get("packet_mode"),
-        "packet_detail_mode": manifest.get("packet_detail_mode"),
-        "packet_detail_mode_requested": manifest.get("packet_detail_mode_requested"),
-        "packet_detail_mode_selected": manifest.get("packet_detail_mode_selected", manifest.get("packet_detail_mode")),
-        "profile": manifest.get("resource_profile"),
-        "repo_map_enabled": bool(manifest.get("repo_map_summary")),
-        "packet_total_tokens": metrics.get("packet_total_tokens"),
-        "model_facing_packet_tokens": metrics.get("model_facing_packet_tokens"),
-        "hard_packet_token_budget": caps.get("hard_packet_token_budget"),
-        "selected_context_tokens": metrics.get("selected_context_tokens"),
-        "saved_context_tokens": metrics.get("saved_context_tokens"),
-        "model_facing_context_tokens": metrics.get("model_facing_context_tokens"),
-        "model_facing_evidence_tokens": metrics.get("model_facing_evidence_tokens"),
-        "local_manifest_tokens": metrics.get("local_manifest_tokens"),
-        "paths_only_packet_tokens": metrics.get("paths_only_packet_tokens"),
-        "evidence_snippet_packet_tokens": metrics.get("evidence_snippet_packet_tokens"),
-        "full_repo_reduction_percent": metrics.get("full_repo_reduction_percent"),
-        "policy_metadata_tokens": metrics.get("policy_metadata_tokens"),
-        "output_contract_tokens": metrics.get("output_contract_tokens"),
-        "budget_exceeded": bool(metrics.get("budget_exceeded_by")),
-        "budget_exceeded_by": metrics.get("budget_exceeded_by"),
-        "over_budget_reason": metrics.get("over_budget_reason"),
-        "full_text_file_count": metrics.get("full_text_file_count"),
-        "summary_file_count": metrics.get("summary_file_count"),
-        "manifest_file_count": metrics.get("manifest_file_count"),
-    }
+    return ContextReceiptV1(
+        context_boundary_mode=manifest.get("context_boundary_mode", "standard"),
+        packet_mode=manifest.get("packet_mode"),
+        packet_detail_mode=manifest.get("packet_detail_mode"),
+        packet_detail_mode_requested=manifest.get("packet_detail_mode_requested"),
+        packet_detail_mode_selected=manifest.get(
+            "packet_detail_mode_selected",
+            manifest.get("packet_detail_mode"),
+        ),
+        profile=manifest.get("resource_profile"),
+        repo_map_enabled=bool(manifest.get("repo_map_summary")),
+        packet_total_tokens=metrics.get("packet_total_tokens"),
+        model_facing_packet_tokens=metrics.get("model_facing_packet_tokens"),
+        hard_packet_token_budget=caps.get("hard_packet_token_budget"),
+        selected_context_tokens=metrics.get("selected_context_tokens"),
+        saved_context_tokens=metrics.get("saved_context_tokens"),
+        model_facing_context_tokens=metrics.get("model_facing_context_tokens"),
+        model_facing_evidence_tokens=metrics.get("model_facing_evidence_tokens"),
+        local_manifest_tokens=metrics.get("local_manifest_tokens"),
+        paths_only_packet_tokens=metrics.get("paths_only_packet_tokens"),
+        evidence_snippet_packet_tokens=metrics.get("evidence_snippet_packet_tokens"),
+        full_repo_reduction_percent=metrics.get("full_repo_reduction_percent"),
+        policy_metadata_tokens=metrics.get("policy_metadata_tokens"),
+        output_contract_tokens=metrics.get("output_contract_tokens"),
+        budget_exceeded=bool(metrics.get("budget_exceeded_by")),
+        budget_exceeded_by=metrics.get("budget_exceeded_by"),
+        over_budget_reason=metrics.get("over_budget_reason"),
+        full_text_file_count=metrics.get("full_text_file_count"),
+        summary_file_count=metrics.get("summary_file_count"),
+        manifest_file_count=metrics.get("manifest_file_count"),
+    ).to_dict()
 
 
 
@@ -3330,12 +3335,14 @@ def _control_plane_boundary_categories(project_detection: dict[str, Any] | None,
             runtime_forbidden.append(txt)
     allowed_source = [p for p in generic_allowed if not _path_matches_any(p, authority + state_auth + evidence_only + runtime_forbidden)]
     def clean(items: list[str]) -> list[str]:
-        out=[]; seen=set()
+        out = []
+        seen = set()
         for item in items:
-            text=str(item).strip()
+            text = str(item).strip()
             if not text or text.lower() in seen:
                 continue
-            out.append(text); seen.add(text.lower())
+            out.append(text)
+            seen.add(text.lower())
         return out[:80]
     return {
         "authority_read_only": clean(authority),
@@ -4269,7 +4276,7 @@ def select_context(
     if child_boundary:
         evidence_summary["child_context_boundary"] = child_boundary
     root_cause_hypotheses = _root_cause_hypotheses(classification, evidence_summary)
-    proof_policy = openclaw_policy_from_detection(project_detection)
+    proof_policy = adapter_policy_from_detection(project_detection)
     intake_policy = intake_policy_from_detection(project_detection)
 
     context_tiers = {
@@ -5749,7 +5756,7 @@ def _canonical_core_packet_parts(manifest: dict[str, Any]) -> tuple[str, str, st
     items = [item(path, "primary") for path in primary]
     items.extend(item(path, "verification") for path in related)
     items.extend(item(path, "support") for path in support)
-    packet = render_core_packet(exact_task, items)
+    packet = render_context_packet_v1(exact_task, items).rendered_packet
     prefix = "TASK\n"
     return packet, prefix, packet[len(prefix):]
 

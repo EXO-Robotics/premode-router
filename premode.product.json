@@ -55,6 +55,7 @@
   "production_ranking_authority": {
     "interface": "ProductionRankingProviderV1",
     "provider_version": "production-ranking-provider.v1",
+    "request_schema": "schemas/production-ranking-request-v1.schema.json",
     "result_schema": "schemas/production-ranking-provider-v1.schema.json",
     "compatibility_provider": "IncumbentManifestRankingProviderV1",
     "product_algorithm_agnostic": true,
@@ -66,9 +67,60 @@
     "variant": "tool_assisted_anchors_internal",
     "strategy": "literal_symbol",
     "public_renderer": "canonical_core_v1",
+    "contract_schema": "schemas/context-packet-v1.schema.json",
     "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"],
     "internal_anchors_model_facing": false
   },
+  "cross_process_contracts": [
+    {
+      "name": "ContextRequestV1",
+      "python_authority": "premode.production_ranking.ProductionRankingRequestV1",
+      "schema": "schemas/production-ranking-request-v1.schema.json",
+      "golden": "contracts/goldens/production-ranking-request-v1.json",
+      "sensitivity": "sensitive_private",
+      "unknown_versions": "fail_closed"
+    },
+    {
+      "name": "ContextSelectionV1",
+      "python_authority": "premode.production_ranking.ProductionRankingResultV1",
+      "schema": "schemas/production-ranking-provider-v1.schema.json",
+      "golden": "contracts/goldens/production-ranking-result-v1.json",
+      "sensitivity": "private_metadata",
+      "unknown_versions": "fail_closed"
+    },
+    {
+      "name": "ContextPacketV1",
+      "python_authority": "premode.context_contracts.ContextPacketV1",
+      "schema": "schemas/context-packet-v1.schema.json",
+      "golden": "contracts/goldens/context-packet-v1.json",
+      "sensitivity": "sensitive_private",
+      "unknown_versions": "fail_closed"
+    },
+    {
+      "name": "ContextReceiptV1",
+      "python_authority": "premode.context_contracts.ContextReceiptV1",
+      "schema": "schemas/context-receipt-v1.schema.json",
+      "golden": "contracts/goldens/context-receipt-v1.json",
+      "sensitivity": "private_metadata",
+      "unknown_versions": "fail_closed"
+    },
+    {
+      "name": "PacketStrategyPluginV1",
+      "python_authority": "premode.plugins.PacketStrategyPluginV1",
+      "schema": "schemas/packet-strategy-plugin-v1.schema.json",
+      "golden": "contracts/goldens/packet-strategy-plugin-v1.json",
+      "sensitivity": "public_safe",
+      "unknown_versions": "fail_closed"
+    },
+    {
+      "name": "AgentAdapterV1",
+      "python_authority": "premode.context_contracts.AgentAdapterV1",
+      "schema": "schemas/agent-adapter-v1.schema.json",
+      "golden": "contracts/goldens/agent-adapter-v1.json",
+      "sensitivity": "public_safe",
+      "unknown_versions": "fail_closed"
+    }
+  ],
   "install_state_authority": {
     "schema_version": "pcodex.install-state.v1",
     "schema": "schemas/pcodex.install-state.schema.json",

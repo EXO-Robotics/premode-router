@@ -2,10 +2,11 @@ import argparse
 import json
 import pathlib
 import shutil
-import sys
 import tomllib
 
 import premode
+import pytest
+from jsonschema import Draft202012Validator
 from premode.cli import build_parser
 from premode.pcodex_bootstrap import LOCAL_STATE_CLEANUP_TARGETS, _parser as build_pcodex_parser
 from premode.product_contract import validate_installed_product_contract
@@ -57,9 +58,21 @@ def test_product_manifest_shape_without_network_dependencies() -> None:
         "variant": "tool_assisted_anchors_internal",
         "strategy": "literal_symbol",
         "public_renderer": "canonical_core_v1",
+        "contract_schema": "schemas/context-packet-v1.schema.json",
         "model_facing_sections": ["TASK", "LIKELY FILES", "PRIMARY", "VERIFY", "SUPPORT"],
         "internal_anchors_model_facing": False,
     }
+
+
+def test_product_manifest_requires_exactly_one_authority_per_contract() -> None:
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    schema = json.loads((ROOT / "schemas/premode.product.schema.json").read_text(encoding="utf-8"))
+    duplicate = json.loads(json.dumps(manifest))
+    replacement = dict(duplicate["cross_process_contracts"][0])
+    replacement["python_authority"] = "premode.invalid.DuplicateAuthority"
+    duplicate["cross_process_contracts"][-1] = replacement
+
+    assert list(Draft202012Validator(schema).iter_errors(duplicate))
 
 
 def test_installed_product_manifest_and_schema_validator(tmp_path: pathlib.Path) -> None:
@@ -74,6 +87,23 @@ def test_installed_product_manifest_and_schema_validator(tmp_path: pathlib.Path)
         "product_name": "pCodex",
         "release_target": "0.3.0b1",
     }
+
+
+def test_installed_product_validator_rejects_duplicate_contract_authority(tmp_path: pathlib.Path) -> None:
+    share = tmp_path / "share" / "premode-router"
+    (share / "schemas").mkdir(parents=True)
+    manifest = json.loads((ROOT / "premode.product.json").read_text(encoding="utf-8"))
+    replacement = dict(manifest["cross_process_contracts"][0])
+    replacement["python_authority"] = "premode.invalid.DuplicateAuthority"
+    manifest["cross_process_contracts"][-1] = replacement
+    (share / "premode.product.json").write_text(json.dumps(manifest), encoding="utf-8")
+    shutil.copy2(
+        ROOT / "schemas" / "premode.product.schema.json",
+        share / "schemas" / "premode.product.schema.json",
+    )
+
+    with pytest.raises(ValueError, match="exactly one authority"):
+        validate_installed_product_contract(tmp_path)
 
 
 def test_public_commands_exist_in_active_parsers() -> None:

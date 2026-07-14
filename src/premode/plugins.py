@@ -8,6 +8,7 @@ from .default_plugin import get_literal_symbol_plugin
 
 ENTRY_POINT_GROUP = "premode.plugins"
 BUILTIN_PLUGIN_LOADERS = {"literal_symbol": get_literal_symbol_plugin}
+PACKET_STRATEGY_PLUGIN_SCHEMA_VERSION = "pcodex.packet-strategy-plugin.v1"
 
 
 class PluginAliasError(ValueError):
@@ -15,12 +16,22 @@ class PluginAliasError(ValueError):
 
 
 @dataclass(frozen=True)
-class ResolvedPacketPlugin:
+class PacketStrategyPluginV1:
     plugin_name: str
     plugin_package: str | None
     packet_version: str
     packet_variant: str
     packet_strategy: str
+    schema_version: str = PACKET_STRATEGY_PLUGIN_SCHEMA_VERSION
+    sensitivity_classification: str = "public_safe"
+
+    def __post_init__(self) -> None:
+        if self.schema_version != PACKET_STRATEGY_PLUGIN_SCHEMA_VERSION:
+            raise PluginAliasError(
+                f"unsupported packet strategy plugin schema_version: {self.schema_version}"
+            )
+        if self.sensitivity_classification != "public_safe":
+            raise PluginAliasError("packet strategy plugin metadata must be public-safe")
 
     def as_compile_kwargs(self) -> dict[str, str]:
         return {
@@ -31,12 +42,17 @@ class ResolvedPacketPlugin:
 
     def as_dict(self) -> dict[str, str | None]:
         return {
+            "schema_version": self.schema_version,
+            "sensitivity_classification": self.sensitivity_classification,
             "plugin_name": self.plugin_name,
             "plugin_package": self.plugin_package,
             "packet_version": self.packet_version,
             "packet_variant": self.packet_variant,
             "packet_strategy": self.packet_strategy,
         }
+
+
+ResolvedPacketPlugin = PacketStrategyPluginV1
 
 
 def _entry_points(group: str = ENTRY_POINT_GROUP) -> list[Any]:
@@ -101,8 +117,25 @@ def resolve_packet_plugin(
         plugin = _load_metadata(matches[0])
         if builtin is not None:
             bundled = builtin()
-            fields = ("packet_version", "packet_variant", "packet_strategy")
-            conflicts = [field for field in fields if plugin.get(field) != bundled.get(field)]
+            required_legacy_fields = (
+                "packet_version",
+                "packet_variant",
+                "packet_strategy",
+            )
+            optional_versioned_fields = (
+                "schema_version",
+                "sensitivity_classification",
+            )
+            conflicts = [
+                field
+                for field in required_legacy_fields
+                if plugin.get(field) != bundled.get(field)
+            ]
+            conflicts.extend(
+                field
+                for field in optional_versioned_fields
+                if field in plugin and plugin.get(field) != bundled.get(field)
+            )
             if conflicts:
                 raise PluginAliasError(
                     f"Installed legacy plugin alias '{alias}' conflicts with the bundled stable default: "
@@ -111,6 +144,26 @@ def resolve_packet_plugin(
             plugin = bundled
     if not (plugin.get("strategy_id") or plugin.get("name")):
         raise PluginAliasError(f"Pre-mode plugin alias '{alias}' is missing required metadata field 'strategy_id' or 'name'.")
+    declared_schema = plugin.get("schema_version")
+    schema_version = (
+        PACKET_STRATEGY_PLUGIN_SCHEMA_VERSION
+        if declared_schema is None
+        else _text_field(plugin, "schema_version", alias=alias)
+    )
+    if schema_version != PACKET_STRATEGY_PLUGIN_SCHEMA_VERSION:
+        raise PluginAliasError(
+            f"Pre-mode plugin alias '{alias}' has unsupported schema_version {schema_version!r}."
+        )
+    declared_sensitivity = plugin.get("sensitivity_classification")
+    sensitivity = (
+        "public_safe"
+        if declared_sensitivity is None
+        else _text_field(plugin, "sensitivity_classification", alias=alias)
+    )
+    if sensitivity != "public_safe":
+        raise PluginAliasError(
+            f"Pre-mode plugin alias '{alias}' metadata must be public-safe."
+        )
 
     resolved = ResolvedPacketPlugin(
         plugin_name=alias,
@@ -118,6 +171,8 @@ def resolve_packet_plugin(
         packet_version=_text_field(plugin, "packet_version", alias=alias),
         packet_variant=_text_field(plugin, "packet_variant", alias=alias),
         packet_strategy=_text_field(plugin, "packet_strategy", alias=alias),
+        schema_version=schema_version,
+        sensitivity_classification=sensitivity,
     )
 
     conflicts = []

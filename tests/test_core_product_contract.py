@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from premode import cli
 from premode import compiler
 from premode import pcodex_bootstrap as pcodex
-from premode.core_packet import CorePath, render_core_packet
+from premode.core_packet import CorePath, render_context_packet_v1, render_core_packet
 from premode.role_core import classify_path_role, infer_prompt_intent, path_role_rank
 from premode.role_model import (
     classify_path_role as legacy_classify_path_role,
@@ -48,6 +48,28 @@ def test_path_only_packet_is_exact_compact_and_deterministic() -> None:
     assert "SUPPORT" not in first
     assert first.count("* src/auth.py") == 1
     assert first.endswith("Start with these files. Expand only when required by the task.\n")
+
+
+def test_typed_context_packet_boundary_is_byte_equivalent_to_canonical_renderer() -> None:
+    task = "Update parser.\nKeep the exact task text."
+    items = [
+        CorePath("src/parser.py", "primary"),
+        CorePath("tests/test_parser.py", "verification"),
+    ]
+
+    typed = render_context_packet_v1(task, items)
+
+    assert typed.rendered_packet == render_core_packet(task, items)
+    assert typed.exact_task_length == len(task)
+
+
+def test_typed_context_packet_boundary_accepts_canonical_empty_fallback() -> None:
+    task = "Investigate the repository broadly."
+
+    typed = render_context_packet_v1(task, [])
+
+    assert typed.rendered_packet == render_core_packet(task, [])
+    assert "No likely files met the confidence threshold." in typed.rendered_packet
 
 
 def test_task_line_occurs_once_when_task_text_matches_a_selected_path() -> None:

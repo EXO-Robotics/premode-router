@@ -1,0 +1,9 @@
+{
+  "schema_version": "pcodex.packet-strategy-plugin.v1",
+  "sensitivity_classification": "public_safe",
+  "plugin_name": "literal_symbol",
+  "plugin_package": "premode-router",
+  "packet_version": "v5",
+  "packet_variant": "tool_assisted_anchors_internal",
+  "packet_strategy": "literal_symbol"
+}
