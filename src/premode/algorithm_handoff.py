@@ -23,47 +23,47 @@ ALGORITHM_HANDOFF_SCHEMA_RELATIVE_PATH = Path(
 )
 EXPECTED_EVIDENCE_AUTHORITY = {
     "strategy-promotion-decision": (
-        "9c8575289a4dfc088f80add13cb7145bd4e507fb6e6f7f8794ba1a056c196ef8",
+        "9c8575289a4dfc088f80add13cb7145bd4e507fb6e6f7f8794ba1a056c196ef8",  # pragma: allowlist secret
         "public_safe_source",
     ),
     "strategy-manifest": (
-        "d2dd983c074eb8a172352f1c976acac4a158c554d28e6d8524d8fbaa875db82a",
+        "d2dd983c074eb8a172352f1c976acac4a158c554d28e6d8524d8fbaa875db82a",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "strategy-native-receipt-index": (
-        "fab25b104a929415d88140e4af4a1d87bef1462ca8f4ae2d791dba564bfbefbc",
+        "fab25b104a929415d88140e4af4a1d87bef1462ca8f4ae2d791dba564bfbefbc",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "strategy-run-manifest": (
-        "2ac9ec59783482e5946c51b53a8303bfd3dc15a367361eca7577c9982ba574e1",
+        "2ac9ec59783482e5946c51b53a8303bfd3dc15a367361eca7577c9982ba574e1",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "incumbent-retention-decision": (
-        "10c7c4f64c29664e561b54dee5e46b4f21af985b3b9477f80c2bce45335598b8",
+        "10c7c4f64c29664e561b54dee5e46b4f21af985b3b9477f80c2bce45335598b8",  # pragma: allowlist secret
         "public_safe_source",
     ),
     "incumbent-supported-classes": (
-        "212039fdea316eae2f738640c9e83c7b4c60ec624df9ae7190474bbb87418165",
+        "212039fdea316eae2f738640c9e83c7b4c60ec624df9ae7190474bbb87418165",  # pragma: allowlist secret
         "public_safe_source",
     ),
     "incumbent-abstention-classes": (
-        "5399c881dc193b86d96b0b96d537595bbe88bb4a0d0ae0f83ed661b735a0d4e0",
+        "5399c881dc193b86d96b0b96d537595bbe88bb4a0d0ae0f83ed661b735a0d4e0",  # pragma: allowlist secret
         "public_safe_source",
     ),
     "incumbent-native-receipt-index": (
-        "7f8e2e3627dba43a3a2ecfa7d7473c1cef2f0e8298701f64321f15caa84ae8b6",
+        "7f8e2e3627dba43a3a2ecfa7d7473c1cef2f0e8298701f64321f15caa84ae8b6",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "incumbent-run-manifest": (
-        "3657a3e46e82433c537263e8218e0b2f08e5803f504e8681bdeb2214b9ddad51",
+        "3657a3e46e82433c537263e8218e0b2f08e5803f504e8681bdeb2214b9ddad51",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "incumbent-cost-decomposition": (
-        "aea37a3eec6f967f26472569cc771767c8afa12764179028caf77580bf07f84c",
+        "aea37a3eec6f967f26472569cc771767c8afa12764179028caf77580bf07f84c",  # pragma: allowlist secret
         "private_hash_only",
     ),
     "transfer-evidence-neutral-handoff": (
-        "fa315f139e18c80c41a3c9e4fcf91687bc015c77fbb7f1746d783f588fa39883",
+        "fa315f139e18c80c41a3c9e4fcf91687bc015c77fbb7f1746d783f588fa39883",  # pragma: allowlist secret
         "public_safe_source",
     ),
 }

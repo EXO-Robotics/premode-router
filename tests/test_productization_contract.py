@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -42,6 +43,32 @@ from scripts.build_release_artifacts import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_ci_secret_hash_exclusion_is_value_and_field_bounded() -> None:
+    workflow = (ROOT / ".github/workflows/release-foundation.yml").read_text(
+        encoding="utf-8"
+    )
+    marker = "detect-secrets scan --exclude-lines '"
+    pattern = workflow.split(marker, 1)[1].split("'", 1)[0]
+    excluded = re.compile(pattern)
+
+    valid_commit = "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"
+    valid_digest = "f" * 64
+    assert excluded.fullmatch(f'  "approved_algorithm_commit": "{valid_commit}",')
+    assert excluded.fullmatch(f'  "freeze_sha256": "{valid_digest}"')
+    assert excluded.fullmatch(f'  "commit_sha": {{"const": "{valid_commit}"}},')
+
+    assert not excluded.fullmatch(f'  "database_password_sha": "{valid_digest}"')
+    fake_openai_token = "sk" + "-proj-not-a-hash"
+    fake_github_token = "gh" + "p_not_a_hash"
+    assert not excluded.fullmatch(
+        f'  "approved_algorithm_commit": "{fake_openai_token}"'
+    )
+    assert not excluded.fullmatch(f'  "sha256": "{fake_github_token}"')
+    assert not excluded.fullmatch(
+        f'  "approved_algorithm_commit": "{valid_commit}", "password": "hidden"'
+    )
 
 
 def test_evaluation_holdout_is_unpopulated_and_answer_free() -> None:

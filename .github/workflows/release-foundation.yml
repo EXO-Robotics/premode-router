@@ -176,7 +176,9 @@ jobs:
           pip-audit --strict --no-deps --disable-pip --cache-dir "$RUNNER_TEMP/pip-audit" \
             --format json --output "$RUNNER_TEMP/pip-audit.json" \
             -r requirements/release-build.lock
-          detect-secrets scan --exclude-lines '"(?:sha256|.*_sha|commit_sha|tree_sha)"' \
+          # Exact hash-authority field names are evidence, not credentials. Python
+          # hash constants carry per-line allowlist pragmas and remain scanned.
+          detect-secrets scan --exclude-lines '^(?:\s*"(?:sha256|commit_sha|tree_sha|freeze_sha256|provider_freeze_sha256|approved_algorithm_commit)"\s*:\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})",?\s*|\s*"(?:approved_algorithm_commit|commit_sha|tree_sha|freeze_sha256)"\s*:\s*\{"const":\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})"\},?\s*)$' \
             .github requirements schemas README.md premode.product.json \
             docs/GETTING_STARTED.md docs/CODEX_INTEGRATION.md \
             docs/OPENCLAW_INTEGRATION.md docs/TROUBLESHOOTING.md \
