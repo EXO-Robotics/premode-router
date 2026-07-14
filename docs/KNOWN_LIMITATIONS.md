@@ -18,6 +18,12 @@ The following are not current release claims:
 - a completed five-tester first-run study;
 - a frozen 10-repository, 100-task held-out release proof.
 
+The non-published release candidate has locally verifiable
+commit-and-SHA-256-bound in-toto/SLSA-shaped provenance. It is not
+cryptographically signed and is not a public transparency-log attestation.
+Signing, registry upload, marketplace publication, and public release require
+separate authority.
+
 Optional MCP remains disabled by default. The canonical Codex plugin does not require MCP for its supported lifecycle.
 The registered local MCP server is workspace-bound and protocol-qualified, but
 automatic Codex tool selection or subagent interception is not claimed.

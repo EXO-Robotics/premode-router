@@ -36,7 +36,7 @@ CANONICAL_DOCS = [
     "docs/ROLLBACK.md",
     "docs/UNINSTALL.md",
 ]
-EXTERNAL_COMMANDS = {"codex", "openclaw", "export", "python", "python3"}
+EXTERNAL_COMMANDS = {"codex", "openclaw", "pipx", "export", "python", "python3"}
 CHECKSUM_CODE = "import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); print(hashlib.sha256(p.read_bytes()).hexdigest())"
 
 # Make the advertised source-checkout invocation independent of an editable install.
@@ -201,6 +201,17 @@ def _validate_shell_command(tokens: list[str], root: Path) -> list[str]:
         ["mcp", "show", "pcodex", "--json"],
     ):
         failures.append("unsupported canonical OpenClaw command shape")
+    if command == "pipx":
+        supported = (
+            len(tokens) == 4
+            and tokens[1] == "install"
+            and tokens[2].endswith("premode_router-0.3.0b1-py3-none-any.whl")
+            and tokens[3] == "--pip-args=--no-index --no-deps"
+        )
+        if not supported:
+            failures.append(
+                "only the exact offline local-wheel pipx install is accepted"
+            )
     if command == "export" and tokens[1:] not in (
         ["PATH=$HOME/.pcodex-beta/bin:$PATH"],
         ["PATH=$HOME/.pcodex-alpha/bin:$PATH"],

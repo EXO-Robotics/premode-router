@@ -642,10 +642,17 @@ Build packages in clean environments, test the installed artifacts rather than t
 Preferred public form:
 
 ```bash
-pipx install pcodex
+pipx install premode-router
 ```
 
-An equivalent `uv tool install` path may also be supported. Private beta releases may use signed wheels or a signed bundle until registry publication is authorized.
+`premode-router` is the distribution name and `pcodex` is the console command.
+Before registry publication, the qualified equivalent is
+`pipx install /path/to/premode_router-0.3.0b1-py3-none-any.whl` with the
+controlled SHA-256-bound local artifact. An equivalent `uv tool install` path
+may also be supported. Private beta releases may use a signed artifact or a
+non-published candidate with locally verifiable commit-and-digest provenance.
+Unsigned provenance must be labeled unsigned; public signing remains a
+separate authority decision.
 
 The standard production strategy must be included automatically. Users must not install a second package to obtain the default behavior.
 
@@ -669,7 +676,8 @@ The standard production strategy must be included automatically. Users must not 
 
 - Wheel and source distribution.
 - SHA-256 checksums.
-- Signed provenance.
+- Signed provenance for publication, or explicitly unsigned locally verifiable
+  commit-and-SHA-256-bound provenance for a non-published release candidate.
 - SBOM.
 - Changelog.
 - Migration notes.
@@ -719,7 +727,11 @@ The standard production strategy must be included automatically. Users must not 
 
 ### Completion gate G5
 
-G5 passes when the same signed release artifacts install, upgrade, validate, roll back, and uninstall successfully across the supported matrix without relying on the source checkout.
+G5 passes when the same release artifacts install, upgrade, validate, roll back,
+and uninstall successfully across the supported matrix without relying on the
+source checkout. Published artifacts require signed or keyless provenance;
+an explicitly non-published candidate may instead use the locally verifiable,
+unsigned commit-and-SHA-256-bound provenance defined above.
 
 ## 12. Must-have segment H: held-out outcome proof and market readiness
 

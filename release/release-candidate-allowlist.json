@@ -1,0 +1,104 @@
+{
+  "schema_version": "pcodex.release_candidate_allowlist.v1",
+  "source_documents": [
+    "README.md",
+    "CHANGELOG.md",
+    "premode.product.json",
+    "docs/PRODUCT_CONTRACT.md",
+    "docs/GETTING_STARTED.md",
+    "docs/CODEX_INTEGRATION.md",
+    "docs/OPENCLAW_INTEGRATION.md",
+    "docs/MIGRATION.md",
+    "docs/ROLLBACK.md",
+    "docs/UNINSTALL.md",
+    "docs/KNOWN_LIMITATIONS.md",
+    "docs/PRIVACY_AND_SAFETY.md",
+    "docs/TROUBLESHOOTING.md",
+    "docs/ROADMAP_TO_90.md",
+    "docs/NO_WRITE_CONTRACT.md",
+    "docs/PUBLIC_SURFACES.md",
+    "docs/CONTRACT_COMPATIBILITY.md",
+    "docs/ALGORITHM_INTEGRATION_INTERFACE.md",
+    "docs/FIRST_RUN_STUDY_PROTOCOL.md"
+  ],
+  "source_authorities": [
+    "contracts/goldens/agent-adapter-v1.json",
+    "contracts/goldens/context-packet-v1.json",
+    "contracts/goldens/context-receipt-v1.json",
+    "contracts/goldens/openclaw-preflight-receipt-v1.json",
+    "contracts/goldens/openclaw-preflight-request-v1.json",
+    "contracts/goldens/openclaw-preflight-result-v1.json",
+    "contracts/goldens/packet-strategy-plugin-v1.json",
+    "contracts/goldens/production-ranking-request-v1.json",
+    "contracts/goldens/production-ranking-result-v1.json",
+    "release/artifact-allowlist.json",
+    "release/previous-supported.json",
+    "requirements/release-build.lock",
+    "requirements/release-security.lock",
+    "requirements/release-test.lock",
+    "requirements/release-tool-install.lock",
+    "schemas/agent-adapter-v1.schema.json",
+    "schemas/context-packet-v1.schema.json",
+    "schemas/context-receipt-v1.schema.json",
+    "schemas/packet-strategy-plugin-v1.schema.json",
+    "schemas/pcodex.algorithm-handoff.v1.schema.json",
+    "schemas/pcodex.install-state.schema.json",
+    "schemas/pcodex.no-write-evidence.private.schema.json",
+    "schemas/pcodex.no-write-evidence.schema.json",
+    "schemas/pcodex.openclaw-preflight-receipt.v1.schema.json",
+    "schemas/pcodex.openclaw-preflight-request.v1.schema.json",
+    "schemas/pcodex.openclaw-preflight-result.v1.schema.json",
+    "schemas/pcodex.previous-supported.v1.schema.json",
+    "schemas/pcodex.upgrade-operation.v1.schema.json",
+    "schemas/pcodex.upgrade-plan.v1.schema.json",
+    "schemas/premode.product.schema.json",
+    "schemas/production-ranking-provider-v1.schema.json",
+    "schemas/production-ranking-request-v1.schema.json"
+  ],
+  "source_checkout_only_references": [
+    "scripts/build_first_run_study_kit.py",
+    "scripts/check_public_hygiene.py",
+    "scripts/install_pcodex_from_source.sh",
+    "scripts/run_with_timeout.py",
+    "scripts/validate_algorithm_handoff.py",
+    "scripts/validate_documentation.py",
+    "scripts/validate_first_run_study.py"
+  ],
+  "external_evidence_references": [
+    "docs/PRODUCT_READINESS_GATE_LEDGER.md"
+  ],
+  "provenance_authorities": [
+    "release/artifact-allowlist.json",
+    "release/previous-supported.json",
+    "release/algorithm-handoff.v1.json",
+    "schemas/pcodex.algorithm-handoff.v1.schema.json",
+    "requirements/release-build.lock",
+    "requirements/release-security.lock",
+    "requirements/release-test.lock",
+    "requirements/release-tool-install.lock"
+  ],
+  "content_scan_exempt_exact_authorities": [
+    "release/artifact-allowlist.json",
+    "release/release-candidate-allowlist.json"
+  ],
+  "required_release_files": [
+    "release/SBOM.cyclonedx.json",
+    "release/provenance.intoto.json",
+    "release/algorithm-handoff.v1.json",
+    "release/pcodex.algorithm-handoff.v1.schema.json"
+  ],
+  "prohibited_parts": [
+    "private-receipts", "probe-execution", ".git", ".premode", ".pcodex",
+    "__pycache__", "observer", "transcript"
+  ],
+  "prohibited_text": [
+    "/Users/", "/home/", "/private/tmp/", "file://", "github_pat_", "ghp_",
+    "AKIA", "ASIA", "Authorization:", "Bearer "
+  ],
+  "prohibited_text_regex": [
+    "BEGIN[ ]PRIVATE KEY",
+    "(?i)(?:password|token|secret|api_key)\\s*=",
+    "(?<![A-Za-z])sk-[A-Za-z0-9]"
+  ],
+  "prohibited_suffixes": [".pyc", ".sqlite", ".sqlite3", ".env"]
+}

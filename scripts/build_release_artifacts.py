@@ -23,7 +23,9 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 ALLOWLIST = ROOT / "release" / "artifact-allowlist.json"
-LEGACY_FIXTURE_COMMIT = "99ebc95c9db7f40333c661743920485e0d45c134"  # pragma: allowlist secret
+LEGACY_FIXTURE_COMMIT = (
+    "99ebc95c9db7f40333c661743920485e0d45c134"  # pragma: allowlist secret
+)
 LEGACY_FIXTURE_PATHS = (
     ".agents/plugins/plugins/premode-router",
     ".agents/skills/pcodex",
@@ -566,9 +568,9 @@ def validate_previous_supported_archive_bytes(
             matches = [
                 archive.read(name)
                 for name in archive.namelist()
-                if PurePosixPath(name).as_posix().endswith(
-                    "/share/premode-router/release/" + required
-                )
+                if PurePosixPath(name)
+                .as_posix()
+                .endswith("/share/premode-router/release/" + required)
             ]
     elif archive_kind == "sdist":
         with tarfile.open(path, "r:*") as archive:
@@ -577,8 +579,7 @@ def validate_previous_supported_archive_bytes(
                 if (
                     member.isfile()
                     and len(parts) > 1
-                    and PurePosixPath(*parts[1:]).as_posix()
-                    == "release/" + required
+                    and PurePosixPath(*parts[1:]).as_posix() == "release/" + required
                 ):
                     extracted = archive.extractfile(member)
                     if extracted is not None:
@@ -1139,6 +1140,22 @@ def write_release_evidence(
             "unsupported_downgrade_fail_closed": dict(
                 install_smoke.get("upgrade_rollback") or {}
             ).get("unsupported_downgrade_fail_closed"),
+            "uninstall_after_failed_upgrade": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("uninstall_after_failed_upgrade"),
+            "reinstall_after_rollback_ready": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("reinstall_after_rollback_ready"),
+            "current_restore_ready": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("current_restore_readiness")
+            == "READY",
+            "advanced_state_preserved": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("advanced_state_preserved"),
+            "advanced_state_policy": dict(
+                install_smoke.get("upgrade_rollback") or {}
+            ).get("advanced_state_policy"),
         },
         "codex_plugin": {
             "wheel": dict(install_smoke.get("wheel_codex_plugin") or {}).get("passed"),
@@ -1444,23 +1461,32 @@ def run_upgrade_rollback_probe(
         cwd=repository,
         env=upgrade_env,
     )
-    previous_state = {
+    previous_product_state = {
         path.relative_to(repository).as_posix(): sha256(path)
         for path in repository.rglob("*")
         if path.is_file()
     }
     predecessor_owned_paths = sorted(
         path
-        for path in previous_state
+        for path in previous_product_state
         if path.startswith((".premode/", ".pcodex/"))
     )
-    if (
-        not previous_install_output.strip()
-        or predecessor_owned_paths != [".pcodex/config.toml"]
-    ):
+    if not previous_install_output.strip() or predecessor_owned_paths != [
+        ".pcodex/config.toml"
+    ]:
         raise RuntimeError(
             "previous supported beta emitted an unexpected repository-state surface"
         )
+    advanced_state = repository / ".premode/tuning/verified.json"
+    advanced_state.parent.mkdir(parents=True)
+    advanced_state.write_text(
+        '{"authority":"advanced-user-state","preserve":true}\n', encoding="utf-8"
+    )
+    previous_state = {
+        path.relative_to(repository).as_posix(): sha256(path)
+        for path in repository.rglob("*")
+        if path.is_file()
+    }
 
     broken_dir = temp / "broken-upgrade"
     broken_dir.mkdir()
@@ -1487,6 +1513,43 @@ def run_upgrade_rollback_probe(
         raise RuntimeError(
             "invalid current wheel preflight changed the previous package installation"
         )
+    run(
+        str(upgrade_python),
+        "-m",
+        "pip",
+        "uninstall",
+        "-y",
+        "premode-router",
+        cwd=temp,
+        env=upgrade_env,
+    )
+    absent_after_failed_upgrade = subprocess.run(
+        [
+            str(upgrade_python),
+            "-c",
+            "from importlib.metadata import version; version('premode-router')",
+        ],
+        cwd=temp,
+        env=upgrade_env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if absent_after_failed_upgrade.returncode == 0:
+        raise RuntimeError("package remained after uninstall following failed upgrade")
+    run(
+        str(upgrade_python),
+        "-m",
+        "pip",
+        "install",
+        "--no-index",
+        "--no-deps",
+        str(previous_wheel),
+        cwd=temp,
+        env=upgrade_env,
+    )
+    if installed_version() != previous_version:
+        raise RuntimeError("previous package did not reinstall after failed upgrade")
 
     run(
         str(upgrade_python),
@@ -1701,6 +1764,51 @@ def run_upgrade_rollback_probe(
             env=upgrade_env,
         )
     )
+    rollback_uninstall = json.loads(
+        run(
+            str(pcodex),
+            "uninstall",
+            "--yes",
+            "--json",
+            "--repo-root",
+            str(rollback_root),
+            cwd=rollback_root,
+            env=upgrade_env,
+        )
+    )
+    rollback_reinstall = json.loads(
+        run(
+            str(pcodex),
+            "install",
+            "--apply",
+            "--json",
+            "--repo-root",
+            str(rollback_root),
+            cwd=rollback_root,
+            env=upgrade_env,
+        )
+    )
+    rollback_reinstall_status = json.loads(
+        run(
+            str(pcodex),
+            "status",
+            "--advisory",
+            "--json",
+            "--repo-root",
+            str(rollback_root),
+            cwd=rollback_root,
+            env=upgrade_env,
+        )
+    )
+    if (
+        rollback_uninstall.get("status") != "uninstalled"
+        or rollback_reinstall.get("status") not in {"installed", "already_installed"}
+        or dict(rollback_reinstall_status.get("lifecycle") or {}).get("readiness")
+        != "READY"
+    ):
+        raise RuntimeError(
+            "reinstall after caught upgrade rollback did not reach READY"
+        )
 
     install = json.loads(
         run(
@@ -1739,8 +1847,7 @@ def run_upgrade_rollback_probe(
         )
     )
     preserved_predecessor_state = all(
-        (repository / relative).is_file()
-        and sha256(repository / relative) == digest
+        (repository / relative).is_file() and sha256(repository / relative) == digest
         for relative, digest in previous_state.items()
     )
     if (
@@ -1853,6 +1960,12 @@ def run_upgrade_rollback_probe(
             env=upgrade_env,
         )
     )
+    restored_readiness = dict(restored_status.get("lifecycle") or {}).get("readiness")
+    if (
+        restored_status.get("writes_performed") is not False
+        or restored_readiness != "READY"
+    ):
+        raise RuntimeError("current package restore did not return lifecycle READY")
     receipt = {
         "schema_version": "pcodex.installed-upgrade-qualification.v1",
         "passed": True,
@@ -1860,12 +1973,20 @@ def run_upgrade_rollback_probe(
         "previous_version": previous_version,
         "current_version": current_version,
         "failed_upgrade_preflight_rejected": True,
+        "uninstall_after_failed_upgrade": True,
+        "reinstall_previous_after_failed_upgrade": True,
         "product_upgrade_post_commit_rollback": rollback_payload,
+        "reinstall_after_rollback_ready": True,
         "package_replacement_supported": True,
         "actual_predecessor_state_preserved": True,
+        "advanced_state_policy": "preserved_not_migrated",
+        "advanced_state_preserved": sha256(advanced_state)
+        == previous_state[advanced_state.relative_to(repository).as_posix()],
         "actual_predecessor_upgrade_check_no_write": actual_check_no_write,
         "actual_predecessor_state_paths": predecessor_owned_paths,
-        "actual_predecessor_upgrade_apply_status": actual_predecessor_apply.get("status"),
+        "actual_predecessor_upgrade_apply_status": actual_predecessor_apply.get(
+            "status"
+        ),
         "receipt_compatibility_check_no_write": True,
         "receipt_compatibility_apply_status": product_apply.get("status"),
         "receipt_compatibility_current_idempotent": True,
@@ -1874,7 +1995,7 @@ def run_upgrade_rollback_probe(
         "unsupported_downgrade_advisory_no_write": True,
         "unsupported_downgrade_readiness": downgraded_readiness,
         "unsupported_downgrade_fail_closed": True,
-        "current_restore_status": restored_status.get("status"),
+        "current_restore_readiness": restored_readiness,
         "public_registry_published": False,
     }
     write_json(output / "receipts" / "installed-upgrade-qualification.json", receipt)
@@ -1931,9 +2052,9 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             previous_authority_path.read_text(encoding="utf-8")
         )
         previous_authority_schema = json.loads(
-            (
-                source / "schemas" / "pcodex.previous-supported.v1.schema.json"
-            ).read_text(encoding="utf-8")
+            (source / "schemas" / "pcodex.previous-supported.v1.schema.json").read_text(
+                encoding="utf-8"
+            )
         )
         from jsonschema import Draft202012Validator
 
@@ -1955,6 +2076,7 @@ def build(commit: str, output: Path, *, python: str, with_sdist: bool = True) ->
             source / "requirements" / "release-build.lock",
             source / "requirements" / "release-test.lock",
             source / "requirements" / "release-security.lock",
+            source / "requirements" / "release-tool-install.lock",
         ]
         if any(not path.is_file() for path in policy_authority_paths):
             raise RuntimeError("committed release authority file is missing")

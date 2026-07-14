@@ -14,6 +14,14 @@ Phase A is Codex-first `0.3.0b1` beta readiness. The supported runtime is the lo
 
 Phase B remains the post-beta program to the full 90/100 roadmap in `docs/ROADMAP_TO_90.md`. The production OpenClaw adapter is now implemented and qualified for OpenClaw `2026.4.14`; Phase B still requires the frozen 10-repository/100-task held-out corpus, reproducible public evidence, three reproducible case studies, and the remaining external first-run proof. Phase A does not weaken or replace those gates.
 
+The supported distribution name is `premode-router`; `pcodex` is its console
+command. A controlled beta may install the exact qualified local wheel through
+a virtual environment or `pipx install /path/to/wheel`. This does not imply a
+public registry entry. The non-published release candidate accepts locally
+verifiable, unsigned commit-and-SHA-256-bound provenance. It must be described
+as unsigned; public signing or keyless attestation remains a separate
+publication-authority decision.
+
 OpenClaw `2026.4.14` is a supported advanced integration in `0.3.0b1`. `pcodex integrate openclaw` owns one receipt-bound MCP registration and exposes the bounded `premode_preflight` tool. Existing observer profiles, templates, generated proof, and research harnesses remain non-authoritative and are not part of the production adapter.
 
 The application-contract authority for that adapter is exactly

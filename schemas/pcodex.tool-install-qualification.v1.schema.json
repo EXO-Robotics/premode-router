@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode/schemas/pcodex.tool-install-qualification.v1.schema.json",
+  "title": "pCodex controlled pipx installation qualification",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "passed", "tool", "tool_version", "product_version",
+    "wheel_sha256", "platform", "python", "network_independent_local_wheel_install", "help",
+    "advisory", "dry_run", "uninstall", "residue_free",
+    "public_registry_used", "source_checkout_required",
+    "installed_module_and_plugin_under_pipx_home"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.tool-install-qualification.v1"},
+    "passed": {"const": true},
+    "tool": {"const": "pipx"},
+    "tool_version": {"const": "1.8.0"},
+    "product_version": {"const": "0.3.0b1"},
+    "wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "platform": {"enum": ["Darwin", "Linux"]},
+    "python": {"type": "string", "pattern": "^3\\.11\\."},
+    "network_independent_local_wheel_install": {"const": true},
+    "help": {"const": true},
+    "advisory": {"const": true},
+    "dry_run": {"const": true},
+    "uninstall": {"const": true},
+    "residue_free": {"const": true},
+    "public_registry_used": {"const": false},
+    "source_checkout_required": {"const": false},
+    "installed_module_and_plugin_under_pipx_home": {"const": true}
+  }
+}

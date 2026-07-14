@@ -25,6 +25,17 @@ Compare the printed digest byte-for-byte with `artifacts/SHA256SUMS` from the
 controlled tester bundle before installing. Stop on any mismatch. Do not
 substitute a similarly named public package.
 
+The release matrix also qualifies this exact network-independent local-artifact form when pipx is
+preferred:
+
+```console
+pipx install /path/to/premode_router-0.3.0b1-py3-none-any.whl --pip-args="--no-index --no-deps"
+pcodex --help
+```
+
+The distribution is `premode-router`; the installed command is `pcodex`.
+This is not a `pipx install premode-router` registry-availability claim.
+
 ## Reach the first useful dry run
 
 From the repository you want to inspect:

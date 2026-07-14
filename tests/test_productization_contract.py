@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -15,9 +16,18 @@ import io
 
 import pytest
 
+import scripts.assemble_release_candidate as release_candidate_builder
 from scripts.check_public_hygiene import scan
 from scripts.compare_release_artifacts import compare
 from scripts.validate_release_metadata import validate as validate_release_metadata
+from scripts.validate_release_candidate import (
+    validate as validate_release_candidate,
+    validate_archive as validate_release_candidate_archive,
+)
+from scripts.validate_tool_install_matrix import (
+    validate as validate_tool_install_matrix,
+)
+from scripts.review_dependency_locks import _parse as parse_dependency_lock
 from scripts.installed_codex_plugin_probe import (
     _McpLineReader,
     _classify_mcp_process_observations,
@@ -47,6 +57,28 @@ from scripts.build_release_artifacts import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _provenance_authority_hashes() -> dict[str, str]:
+    policy = json.loads(
+        (ROOT / "release/release-candidate-allowlist.json").read_text(encoding="utf-8")
+    )
+    return {
+        relative: hashlib.sha256((ROOT / relative).read_bytes()).hexdigest()
+        for relative in policy["provenance_authorities"]
+    }
+
+
+def test_dependency_review_requires_exact_pins_and_hashes() -> None:
+    valid = "package-name==1.2.3 \\\n    --hash=sha256:" + "a" * 64 + "\n"
+    assert (
+        parse_dependency_lock(valid, label="fixture")["package-name"]["version"]
+        == "1.2.3"
+    )
+    with pytest.raises(ValueError, match="pinned and hashed"):
+        parse_dependency_lock("package-name==1.2.3\n", label="fixture")
+    with pytest.raises(ValueError, match="unsupported lock syntax"):
+        parse_dependency_lock("package-name>=1.2.3\n", label="fixture")
+
+
 def test_ci_secret_hash_exclusion_is_value_and_field_bounded() -> None:
     workflow = (ROOT / ".github/workflows/release-foundation.yml").read_text(
         encoding="utf-8"
@@ -55,7 +87,9 @@ def test_ci_secret_hash_exclusion_is_value_and_field_bounded() -> None:
     pattern = workflow.split(marker, 1)[1].split("'", 1)[0]
     excluded = re.compile(pattern)
 
-    valid_commit = "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"
+    valid_commit = (
+        "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"  # pragma: allowlist secret
+    )
     valid_digest = "f" * 64
     assert excluded.fullmatch(f'  "approved_algorithm_commit": "{valid_commit}",')
     assert excluded.fullmatch(f'  "freeze_sha256": "{valid_digest}"')
@@ -69,7 +103,7 @@ def test_ci_secret_hash_exclusion_is_value_and_field_bounded() -> None:
     )
     assert not excluded.fullmatch(f'  "sha256": "{fake_github_token}"')
     assert not excluded.fullmatch(
-        f'  "approved_algorithm_commit": "{valid_commit}", "password": "hidden"'
+        f'  "approved_algorithm_commit": "{valid_commit}", "password": "hidden"'  # pragma: allowlist secret
     )
 
 
@@ -663,8 +697,14 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(
     installed = {
         "wheel_lifecycle": {"passed": True},
         "sdist_lifecycle": {"passed": True},
-        "wheel_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
-        "sdist_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
+        "wheel_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
+        "sdist_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
@@ -679,6 +719,11 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(
             "receipt_compatibility_current_idempotent": True,
             "product_upgrade_post_commit_rollback": {"passed": True},
             "unsupported_downgrade_fail_closed": True,
+            "uninstall_after_failed_upgrade": True,
+            "reinstall_after_rollback_ready": True,
+            "current_restore_readiness": "READY",
+            "advanced_state_preserved": True,
+            "advanced_state_policy": "preserved_not_migrated",
         },
     }
 
@@ -691,7 +736,7 @@ def test_release_evidence_emits_sbom_provenance_and_qualification(
         python=str(Path(sys.executable)),
         inventory=inventory,
         install_smoke=installed,
-        policy_hashes={"release/artifact-allowlist.json": "d" * 64},
+        policy_hashes=_provenance_authority_hashes(),
         wheel_sdist_parity={
             "passed": True,
             "comparison": "normalized_member_sha256_excluding_record",
@@ -719,16 +764,27 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
 ) -> None:
     release = tmp_path / "release"
     release.mkdir()
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    wheel = artifacts / "fixture.whl"
+    sdist = artifacts / "fixture.tar.gz"
+    wheel.write_bytes(b"qualified wheel bytes")
+    sdist.write_bytes(b"qualified sdist bytes")
     handoff = release / "algorithm-handoff.v1.json"
     schema = release / "pcodex.algorithm-handoff.v1.schema.json"
     shutil.copy2(ROOT / "release/algorithm-handoff.v1.json", handoff)
     shutil.copy2(ROOT / "schemas/pcodex.algorithm-handoff.v1.schema.json", schema)
     inventory = [
-        {"file": "artifacts/fixture.whl", "sha256": "a" * 64, "size": 1, "members": []},
+        {
+            "file": "artifacts/fixture.whl",
+            "sha256": hashlib.sha256(wheel.read_bytes()).hexdigest(),
+            "size": wheel.stat().st_size,
+            "members": [],
+        },
         {
             "file": "artifacts/fixture.tar.gz",
-            "sha256": "b" * 64,
-            "size": 1,
+            "sha256": hashlib.sha256(sdist.read_bytes()).hexdigest(),
+            "size": sdist.stat().st_size,
             "members": [],
         },
         {
@@ -747,8 +803,14 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
     installed = {
         "wheel_lifecycle": {"passed": True},
         "sdist_lifecycle": {"passed": True},
-        "wheel_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
-        "sdist_no_write": {"passed": True, "commands": {"upgrade_receipt_compatibility_check": {"passed": True}}},
+        "wheel_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
+        "sdist_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
         "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
         "wheel_openclaw_adapter": {"passed": True, "openclaw_version": "2026.4.14"},
@@ -763,6 +825,11 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
             "receipt_compatibility_current_idempotent": True,
             "product_upgrade_post_commit_rollback": {"passed": True},
             "unsupported_downgrade_fail_closed": True,
+            "uninstall_after_failed_upgrade": True,
+            "reinstall_after_rollback_ready": True,
+            "current_restore_readiness": "READY",
+            "advanced_state_preserved": True,
+            "advanced_state_policy": "preserved_not_migrated",
         },
     }
     write_release_evidence(
@@ -774,7 +841,7 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
         python=str(Path(sys.executable)),
         inventory=inventory,
         install_smoke=installed,
-        policy_hashes={"release/algorithm-handoff.v1.json": inventory[2]["sha256"]},
+        policy_hashes=_provenance_authority_hashes(),
         wheel_sdist_parity={
             "passed": True,
             "comparison": "normalized_member_sha256_excluding_record",
@@ -784,8 +851,13 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
         },
     )
     manifest = [
-        {"file": item["file"], "sha256": item["sha256"], "size": item["size"]}
-        for item in inventory
+        {
+            "file": path.relative_to(tmp_path).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file() and path.name != "SHA256-MANIFEST.json"
     ]
     (tmp_path / "SHA256-MANIFEST.json").write_text(
         json.dumps(manifest), encoding="utf-8"
@@ -795,6 +867,543 @@ def test_release_metadata_binds_standalone_algorithm_authorities(
     handoff.write_text("{}", encoding="utf-8")
     with pytest.raises(Exception):
         validate_release_metadata(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "relative", ["artifacts/fixture.whl", "artifacts/fixture.tar.gz"]
+)
+def test_release_metadata_rejects_substituted_distribution_bytes(
+    tmp_path: Path, relative: str
+) -> None:
+    release = tmp_path / "release"
+    artifacts = tmp_path / "artifacts"
+    receipts = tmp_path / "receipts"
+    release.mkdir()
+    artifacts.mkdir()
+    receipts.mkdir()
+    handoff = release / "algorithm-handoff.v1.json"
+    handoff_schema = release / "pcodex.algorithm-handoff.v1.schema.json"
+    shutil.copy2(ROOT / "release/algorithm-handoff.v1.json", handoff)
+    shutil.copy2(
+        ROOT / "schemas/pcodex.algorithm-handoff.v1.schema.json", handoff_schema
+    )
+    wheel = artifacts / "fixture.whl"
+    sdist = artifacts / "fixture.tar.gz"
+    wheel.write_bytes(b"wheel")
+    sdist.write_bytes(b"sdist")
+    subjects = [
+        {
+            "name": path.relative_to(tmp_path).as_posix(),
+            "digest": {"sha256": hashlib.sha256(path.read_bytes()).hexdigest()},
+        }
+        for path in (wheel, sdist, handoff, handoff_schema)
+    ]
+    qualification = {
+        "schema_version": "pcodex.release-qualification.v1",
+        "status": "passed",
+        "commit": "b" * 40,
+        "product_version": "0.3.0b1",
+        "platform": {
+            "system": "Linux",
+            "release": "fixture",
+            "machine": "x86_64",
+            "python": "3.11.0",
+        },
+        "artifacts": subjects,
+        "package_content_allowlist": "passed",
+        "wheel_sdist_parity": "passed",
+        "wheel_sdist_parity_evidence": {
+            "passed": True,
+            "comparison": "normalized_member_sha256_excluding_record",
+            "direct_wheel_sha256": "a" * 64,
+            "sdist_rebuilt_wheel_sha256": "b" * 64,
+            "normalized_member_count": 1,
+        },
+        "installed_lifecycle": {"wheel": True, "sdist": True},
+        "no_write": {"wheel": True, "sdist": True},
+        "upgrade_rollback": {
+            "passed": True,
+            "actual_predecessor_state_preserved": True,
+            "actual_predecessor_check_no_write": True,
+            "actual_predecessor_apply_status": "already_current",
+            "receipt_compatibility_check_no_write": True,
+            "receipt_compatibility_apply": "upgraded",
+            "receipt_compatibility_current_idempotent": True,
+            "post_mutation_rollback": True,
+            "unsupported_downgrade_fail_closed": True,
+            "uninstall_after_failed_upgrade": True,
+            "reinstall_after_rollback_ready": True,
+            "current_restore_ready": True,
+            "advanced_state_preserved": True,
+            "advanced_state_policy": "preserved_not_migrated",
+        },
+        "codex_plugin": {
+            "wheel": True,
+            "sdist": True,
+            "live_codex_version": "0.143.0",
+        },
+        "openclaw_adapter": {
+            "wheel": True,
+            "sdist": True,
+            "live_openclaw_version": "2026.4.14",
+        },
+        "sbom": "release/SBOM.cyclonedx.json",
+        "provenance": "release/provenance.intoto.json",
+        "public_registry_published": False,
+    }
+    (receipts / "qualification-summary.json").write_text(
+        json.dumps(qualification), encoding="utf-8"
+    )
+    (release / "provenance.intoto.json").write_text(
+        json.dumps(
+            {
+                "_type": "https://in-toto.io/Statement/v1",
+                "subject": subjects,
+                "predicateType": "https://slsa.dev/provenance/v1",
+                "predicate": {
+                    "buildDefinition": {
+                        "buildType": "https://github.com/EXO-Robotics/premode-router/build-release-artifacts/v1",
+                        "externalParameters": {
+                            "commit": "b" * 40,
+                            "wheel_and_sdist_required": True,
+                        },
+                        "internalParameters": {
+                            "source_date_epoch_timestamp": "2026-07-14T00:00:00Z",
+                            "authority_file_sha256": _provenance_authority_hashes(),
+                        },
+                        "resolvedDependencies": [
+                            {
+                                "uri": "git+https://github.com/EXO-Robotics/premode-router.git",
+                                "digest": {"gitCommit": "b" * 40},
+                            }
+                        ],
+                    },
+                    "runDetails": {
+                        "builder": {"id": "scripts/build_release_artifacts.py"},
+                        "byproducts": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (release / "SBOM.cyclonedx.json").write_text(
+        json.dumps(
+            {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "version": 1,
+                "metadata": {
+                    "component": {
+                        "type": "application",
+                        "name": "premode-router",
+                        "version": "0.3.0b1",
+                    },
+                    "properties": [{"name": "pcodex:commit", "value": "b" * 40}],
+                },
+                "components": [
+                    {
+                        "type": "file",
+                        "name": Path(item["name"]).name,
+                        "hashes": [
+                            {
+                                "alg": "SHA-256",
+                                "content": item["digest"]["sha256"],
+                            }
+                        ],
+                        "properties": [
+                            {"name": "pcodex:release-path", "value": item["name"]},
+                            {
+                                "name": "pcodex:size",
+                                "value": str((tmp_path / item["name"]).stat().st_size),
+                            },
+                        ],
+                    }
+                    for item in subjects
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest = [
+        {
+            "file": path.relative_to(tmp_path).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file() and path.name != "SHA256-MANIFEST.json"
+    ]
+    (tmp_path / "SHA256-MANIFEST.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    assert validate_release_metadata(tmp_path)["passed"] is True
+
+    nested_manifest = tmp_path / "nested/SHA256-MANIFEST.json"
+    nested_manifest.parent.mkdir()
+    nested_manifest.write_text("[]\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="does not exactly enumerate"):
+        validate_release_metadata(tmp_path)
+    nested_manifest.unlink()
+    nested_manifest.parent.rmdir()
+
+    dangling = tmp_path / "dangling-link"
+    dangling.symlink_to(tmp_path / "missing-target")
+    with pytest.raises(ValueError, match="contains a symlink"):
+        validate_release_metadata(tmp_path)
+    dangling.unlink()
+
+    provenance_path = release / "provenance.intoto.json"
+    provenance_bytes = provenance_path.read_bytes()
+    provenance = json.loads(provenance_bytes)
+    provenance["predicate"]["buildDefinition"]["externalParameters"]["commit"] = (
+        "c" * 40
+    )
+    provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+    manifest = [
+        {
+            "file": path.relative_to(tmp_path).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file()
+        and path.relative_to(tmp_path).as_posix() != "SHA256-MANIFEST.json"
+    ]
+    (tmp_path / "SHA256-MANIFEST.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="provenance commit identity"):
+        validate_release_metadata(tmp_path)
+    provenance_path.write_bytes(provenance_bytes)
+    manifest = [
+        {
+            "file": path.relative_to(tmp_path).as_posix(),
+            "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(tmp_path.rglob("*"))
+        if path.is_file()
+        and path.relative_to(tmp_path).as_posix() != "SHA256-MANIFEST.json"
+    ]
+    (tmp_path / "SHA256-MANIFEST.json").write_text(
+        json.dumps(manifest), encoding="utf-8"
+    )
+    (tmp_path / relative).write_bytes(b"substituted")
+    with pytest.raises(ValueError, match="SHA256 manifest does not match"):
+        validate_release_metadata(tmp_path)
+
+
+def test_canonical_release_candidate_assembles_six_cells_without_private_receipts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    matrix_root = tmp_path / "matrix"
+    systems = (("Linux", "linux"), ("Darwin", "macos"))
+    artifact_payloads = {
+        "artifacts/premode_router-0.3.0b1-py3-none-any.whl": b"wheel",
+        "artifacts/premode_router-0.3.0b1.tar.gz": b"sdist",
+        "release/algorithm-handoff.v1.json": (
+            ROOT / "release/algorithm-handoff.v1.json"
+        ).read_bytes(),
+        "release/pcodex.algorithm-handoff.v1.schema.json": (
+            ROOT / "schemas/pcodex.algorithm-handoff.v1.schema.json"
+        ).read_bytes(),
+    }
+    installed = {
+        "wheel_lifecycle": {"passed": True},
+        "sdist_lifecycle": {"passed": True},
+        "wheel_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
+        "sdist_no_write": {
+            "passed": True,
+            "commands": {"upgrade_receipt_compatibility_check": {"passed": True}},
+        },
+        "wheel_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "sdist_codex_plugin": {"passed": True, "codex_version": "0.143.0"},
+        "wheel_openclaw_adapter": {
+            "passed": True,
+            "openclaw_version": "2026.4.14",
+        },
+        "sdist_openclaw_adapter": {
+            "passed": True,
+            "openclaw_version": "2026.4.14",
+        },
+        "upgrade_rollback": {
+            "passed": True,
+            "actual_predecessor_state_preserved": True,
+            "actual_predecessor_upgrade_check_no_write": True,
+            "actual_predecessor_upgrade_apply_status": "already_current",
+            "receipt_compatibility_check_no_write": True,
+            "receipt_compatibility_apply_status": "upgraded",
+            "receipt_compatibility_current_idempotent": True,
+            "product_upgrade_post_commit_rollback": {"passed": True},
+            "unsupported_downgrade_fail_closed": True,
+            "uninstall_after_failed_upgrade": True,
+            "reinstall_after_rollback_ready": True,
+            "current_restore_readiness": "READY",
+            "advanced_state_preserved": True,
+            "advanced_state_policy": "preserved_not_migrated",
+        },
+    }
+    for system, label in systems:
+        for python in ("3.11.9", "3.12.8", "3.13.2"):
+            cell = matrix_root / f"pcodex-{label}-py{python[:4]}"
+            for relative, payload in artifact_payloads.items():
+                path = cell / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+            inventory = [
+                {
+                    "file": relative,
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "size": len(payload),
+                    "members": [],
+                }
+                for relative, payload in artifact_payloads.items()
+            ]
+            receipts = cell / "receipts"
+            receipts.mkdir(parents=True, exist_ok=True)
+            (receipts / "artifact-inventory.json").write_text(
+                json.dumps(inventory), encoding="utf-8"
+            )
+            write_release_evidence(
+                cell,
+                schema_root=ROOT / "schemas",
+                commit_sha="b" * 40,
+                evidence_timestamp="2026-07-14T00:00:00Z",
+                product_version="0.3.0b1",
+                python=sys.executable,
+                inventory=inventory,
+                install_smoke=installed,
+                policy_hashes=_provenance_authority_hashes(),
+                wheel_sdist_parity={
+                    "passed": True,
+                    "comparison": "normalized_member_sha256_excluding_record",
+                    "direct_wheel_sha256": "e" * 64,
+                    "sdist_rebuilt_wheel_sha256": "f" * 64,
+                    "normalized_member_count": 12,
+                },
+            )
+            qualification_path = receipts / "qualification-summary.json"
+            qualification = json.loads(qualification_path.read_text(encoding="utf-8"))
+            qualification["platform"] = {
+                "system": system,
+                "release": "fixture",
+                "machine": "fixture",
+                "python": python,
+            }
+            qualification_path.write_text(json.dumps(qualification), encoding="utf-8")
+            private = cell / "private-receipts/secret.json"
+            private.parent.mkdir(parents=True)
+            private.write_text(
+                '{"secret":"must-not-copy"}',  # pragma: allowlist secret
+                encoding="utf-8",
+            )
+
+    reproducibility = compare(matrix_root)
+    reproducibility_path = tmp_path / "reproducibility.json"
+    reproducibility_path.write_text(json.dumps(reproducibility), encoding="utf-8")
+    monkeypatch.setattr(
+        release_candidate_builder, "validate_release_metadata", lambda _root: {}
+    )
+    output = tmp_path / "pcodex-0.3.0b1-rc"
+
+    result = release_candidate_builder.assemble(
+        matrix_root,
+        reproducibility_path,
+        ROOT,
+        output,
+        enforce_clean_source=False,
+    )
+
+    archive = output.parent / f"{output.name}.zip"
+    assert result["passed"] is True
+    assert result["matrix_cells"] == 6
+    assert validate_release_candidate(output)["passed"] is True
+    assert validate_release_candidate_archive(archive, output)["passed"] is True
+    assert not any("private-receipts" in path.parts for path in output.rglob("*"))
+    with zipfile.ZipFile(archive) as handle:
+        assert not any("private-receipts" in name for name in handle.namelist())
+
+    def refresh_manifests() -> None:
+        manifest = [
+            {
+                "file": path.relative_to(output).as_posix(),
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                "size": path.stat().st_size,
+            }
+            for path in sorted(output.rglob("*"))
+            if path.is_file()
+            and path.relative_to(output).as_posix()
+            not in {"SHA256-MANIFEST.json", "SHA256SUMS"}
+        ]
+        (output / "SHA256-MANIFEST.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+        (output / "SHA256SUMS").write_text(
+            "".join(f"{item['sha256']}  {item['file']}\n" for item in manifest),
+            encoding="utf-8",
+        )
+
+    unexpected_directory = output / "receipts/unexpected-empty-directory"
+    unexpected_directory.mkdir()
+    with pytest.raises(ValueError, match="unexpected directories"):
+        validate_release_candidate(output)
+    unexpected_directory.rmdir()
+
+    dangling_link = output / "receipts/dangling-link"
+    dangling_link.symlink_to(output / "missing-target")
+    with pytest.raises(ValueError, match="contains a symlink"):
+        validate_release_candidate(output)
+    dangling_link.unlink()
+
+    provenance_path = output / "release/provenance.intoto.json"
+    provenance_bytes = provenance_path.read_bytes()
+    provenance = json.loads(provenance_bytes)
+    provenance["predicate"]["buildDefinition"]["externalParameters"]["commit"] = (
+        "c" * 40
+    )
+    provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+    refresh_manifests()
+    with pytest.raises(ValueError, match="identity disagrees"):
+        validate_release_candidate(output)
+    provenance_path.write_bytes(provenance_bytes)
+    refresh_manifests()
+
+    provenance = json.loads(provenance_bytes)
+    authority_hashes = provenance["predicate"]["buildDefinition"]["internalParameters"][
+        "authority_file_sha256"
+    ]
+    authority_hashes[next(iter(authority_hashes))] = "0" * 64
+    provenance_path.write_text(json.dumps(provenance), encoding="utf-8")
+    refresh_manifests()
+    with pytest.raises(ValueError, match="authority hashes disagree"):
+        validate_release_candidate(output)
+    provenance_path.write_bytes(provenance_bytes)
+    refresh_manifests()
+
+    sbom_path = output / "release/SBOM.cyclonedx.json"
+    sbom_bytes = sbom_path.read_bytes()
+    sbom = json.loads(sbom_bytes)
+    size_property = next(
+        item
+        for item in sbom["components"][0]["properties"]
+        if item["name"] == "pcodex:size"
+    )
+    size_property["value"] = str(int(size_property["value"]) + 1)
+    sbom_path.write_text(json.dumps(sbom), encoding="utf-8")
+    refresh_manifests()
+    with pytest.raises(ValueError, match="size or digest disagrees"):
+        validate_release_candidate(output)
+    sbom_path.write_bytes(sbom_bytes)
+    refresh_manifests()
+
+    supported_path = output / "release/SUPPORTED-VERSIONS.json"
+    supported_bytes = supported_path.read_bytes()
+    supported = json.loads(supported_bytes)
+    supported["windows_supported"] = True
+    supported_path.write_text(json.dumps(supported), encoding="utf-8")
+    refresh_manifests()
+    with pytest.raises(ValueError, match="supported-version authority"):
+        validate_release_candidate(output)
+    supported_path.write_bytes(supported_bytes)
+    refresh_manifests()
+
+    unexpected = output / "receipts/unexpected-neutral.json"
+    unexpected.write_text("{}\n", encoding="utf-8")
+    refresh_manifests()
+    with pytest.raises(ValueError, match="missing or unexpected files"):
+        validate_release_candidate(output)
+    unexpected.unlink()
+    refresh_manifests()
+    assert validate_release_candidate(output)["passed"] is True
+
+    reproducibility_file = output / "receipts/reproducibility.json"
+    reproducibility_bytes = reproducibility_file.read_bytes()
+    reproducibility_file.write_text(
+        json.dumps({**json.loads(reproducibility_bytes), "tampered": True}),
+        encoding="utf-8",
+    )
+    refresh_manifests()
+    with pytest.raises(ValueError, match="reproducibility receipt hash mismatch"):
+        validate_release_candidate(output)
+    reproducibility_file.write_bytes(reproducibility_bytes)
+    refresh_manifests()
+
+    oversized_archive = tmp_path / "unsafe-ratio.zip"
+    with zipfile.ZipFile(
+        oversized_archive, "w", compression=zipfile.ZIP_DEFLATED
+    ) as handle:
+        for path in sorted(output.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(output).as_posix()
+            payload = (
+                b"0" * (1024 * 1024) if relative == "README.md" else path.read_bytes()
+            )
+            handle.writestr(relative, payload)
+    with pytest.raises(ValueError, match="compression ratio is unsafe"):
+        validate_release_candidate_archive(oversized_archive, output)
+
+    fifo_archive = tmp_path / "unsafe-fifo-mode.zip"
+    with zipfile.ZipFile(fifo_archive, "w") as handle:
+        for path in sorted(output.rglob("*")):
+            if not path.is_file():
+                continue
+            relative = path.relative_to(output).as_posix()
+            info = zipfile.ZipInfo(relative)
+            info.external_attr = (
+                (stat.S_IFIFO | 0o644) << 16 if relative == "README.md" else 0o644 << 16
+            )
+            handle.writestr(info, path.read_bytes())
+    with pytest.raises(ValueError, match="unsupported release-candidate archive"):
+        validate_release_candidate_archive(fifo_archive, output)
+
+    tool_receipts = tmp_path / "tool-install"
+    wheel = next((output / "artifacts").glob("*.whl"))
+    wheel_sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
+    for platform in ("Darwin", "Linux"):
+        receipt_path = (
+            tool_receipts / platform.lower() / "tool-install-qualification.json"
+        )
+        receipt_path.parent.mkdir(parents=True)
+        receipt_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": "pcodex.tool-install-qualification.v1",
+                    "passed": True,
+                    "tool": "pipx",
+                    "tool_version": "1.8.0",
+                    "product_version": "0.3.0b1",
+                    "wheel_sha256": wheel_sha256,
+                    "platform": platform,
+                    "python": "3.11.9",
+                    "network_independent_local_wheel_install": True,
+                    "help": True,
+                    "advisory": True,
+                    "dry_run": True,
+                    "uninstall": True,
+                    "residue_free": True,
+                    "public_registry_used": False,
+                    "source_checkout_required": False,
+                    "installed_module_and_plugin_under_pipx_home": True,
+                }
+            ),
+            encoding="utf-8",
+        )
+    assert validate_tool_install_matrix(output, tool_receipts)["passed"] is True
+    linux_receipt = tool_receipts / "linux/tool-install-qualification.json"
+    linux_payload = json.loads(linux_receipt.read_text(encoding="utf-8"))
+    linux_payload["wheel_sha256"] = "0" * 64
+    linux_receipt.write_text(json.dumps(linux_payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="wheel differs"):
+        validate_tool_install_matrix(output, tool_receipts)
+
+    wheel.write_bytes(b"substituted")
+    with pytest.raises(ValueError, match="bytes do not match manifest"):
+        validate_release_candidate(output)
 
 
 def test_public_lifecycle_summary_omits_per_run_identifiers(tmp_path: Path) -> None:
@@ -1201,4 +1810,6 @@ def test_upgrade_smoke_fixture_contains_source_and_validation(tmp_path: Path) ->
     assert (tmp_path / "tests/test_app.py").is_file()
     authority = json.loads((ROOT / "release/previous-supported.json").read_text())
     assert authority["previous_version"] == "0.2.6.24"
-    assert authority["previous_commit"] == "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"
+    assert (
+        authority["previous_commit"] == "b9aede455c8d49217ef0a67e8dec0c8cf2c565a6"
+    )  # pragma: allowlist secret

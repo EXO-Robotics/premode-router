@@ -156,11 +156,21 @@ jobs:
               "receipt_compatibility_current_idempotent": True,
               "post_mutation_rollback": True,
               "unsupported_downgrade_fail_closed": True,
+              "uninstall_after_failed_upgrade": True,
+              "reinstall_after_rollback_ready": True,
+              "current_restore_ready": True,
+              "advanced_state_preserved": True,
+              "advanced_state_policy": "preserved_not_migrated",
           }
           assert qualification["openclaw_adapter"] == {
               "wheel": True,
               "sdist": True,
               "live_openclaw_version": "2026.4.14",
+          }
+          assert qualification["codex_plugin"] == {
+              "wheel": True,
+              "sdist": True,
+              "live_codex_version": "0.143.0",
           }
           assert (root / "release/SBOM.cyclonedx.json").is_file()
           assert (root / "release/provenance.intoto.json").is_file()
@@ -189,7 +199,7 @@ jobs:
       - name: Lint and format qualification-critical Python
         run: |
           ruff check --select E9,F63,F7,F82 src/premode scripts tests
-          ruff format --check src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py src/premode/product_upgrade.py scripts/installed_openclaw_adapter_probe.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
+          ruff format --check src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py src/premode/product_upgrade.py scripts/installed_openclaw_adapter_probe.py scripts/installed_tool_install_probe.py scripts/validate_tool_install_matrix.py scripts/validate_algorithm_handoff.py scripts/validate_release_metadata.py scripts/assemble_release_candidate.py scripts/validate_release_candidate.py scripts/compare_release_artifacts.py scripts/validate_documentation.py
       - name: Type-check versioned product contracts
         run: mypy --ignore-missing-imports --follow-imports=skip src/premode/product_contract.py src/premode/product_upgrade.py src/premode/production_ranking.py src/premode/algorithm_handoff.py src/premode/bounded_mcp_runtime.py src/premode/openclaw_adapter.py src/premode/openclaw_contracts.py src/premode/openclaw_integration.py src/premode/openclaw_json5.py src/premode/openclaw_lifecycle.py src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py
       - name: Validate frozen production algorithm handoff
@@ -200,6 +210,9 @@ jobs:
           pip-audit --strict --no-deps --disable-pip --cache-dir "$RUNNER_TEMP/pip-audit" \
             --format json --output "$RUNNER_TEMP/pip-audit.json" \
             -r requirements/release-build.lock
+          pip-audit --strict --no-deps --disable-pip --cache-dir "$RUNNER_TEMP/pip-audit-tool-install" \
+            --format json --output "$RUNNER_TEMP/pip-audit-tool-install.json" \
+            -r requirements/release-tool-install.lock
           # Exact hash-authority field names are evidence, not credentials. Python
           # hash constants carry per-line allowlist pragmas and remain scanned.
           detect-secrets scan --exclude-lines '^(?:\s*"(?:sha256|commit_sha|tree_sha|freeze_sha256|provider_freeze_sha256|approved_algorithm_commit|previous_commit)"\s*:\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})",?\s*|\s*"(?:approved_algorithm_commit|commit_sha|tree_sha|freeze_sha256|previous_commit)"\s*:\s*\{"const":\s*"(?:[0-9a-f]{40}|[0-9a-f]{64})"\},?\s*)$' \
@@ -216,9 +229,15 @@ jobs:
             src/premode/openclaw_mcp_server.py src/premode/openclaw_preflight.py \
             src/premode/algorithm_handoff.py src/premode/product_upgrade.py \
             scripts/validate_algorithm_handoff.py \
+            scripts/assemble_release_candidate.py \
+            scripts/validate_release_candidate.py \
+            scripts/installed_tool_install_probe.py \
+            scripts/validate_tool_install_matrix.py \
+            scripts/review_dependency_locks.py \
             scripts/build_release_artifacts.py scripts/installed_no_write_probe.py \
             scripts/installed_openclaw_adapter_probe.py \
             release/algorithm-handoff.v1.json release/previous-supported.json \
+            release/release-candidate-allowlist.json \
             > "$RUNNER_TEMP/detect-secrets.json"
           python -c "import json,os; d=json.load(open(os.environ['RUNNER_TEMP']+'/detect-secrets.json')); assert not d.get('results'), d.get('results')"
           semgrep scan --error --metrics=off --config security/semgrep-release.yml src/premode scripts
@@ -229,6 +248,7 @@ jobs:
           path: |
             ${{ runner.temp }}/detect-secrets.json
             ${{ runner.temp }}/pip-audit.json
+            ${{ runner.temp }}/pip-audit-tool-install.json
           if-no-files-found: error
 
   history-secret-scan:
@@ -263,14 +283,31 @@ jobs:
           --fail --no-update --results=verified,unknown,unverified
 
   dependency-review:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
       pull-requests: read
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
-      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fetch-depth: 0
+      - if: github.event_name == 'pull_request'
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+      - name: Review pinned dependency delta against the accepted campaign baseline
+        if: github.event_name != 'pull_request'
+        run: >-
+          python scripts/review_dependency_locks.py
+          --base 88b459ca79ebd04149bb0719405656df2c904292
+          --output "$RUNNER_TEMP/dependency-lock-review.json"
+          requirements/release-build.lock
+          requirements/release-tool-install.lock
+      - name: Upload non-PR dependency review receipt
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: dependency-lock-review
+          path: ${{ runner.temp }}/dependency-lock-review.json
+          if-no-files-found: error
 
   reproducibility:
     needs: artifact-qualification
@@ -294,9 +331,146 @@ jobs:
           path: ${{ runner.temp }}/reproducibility.json
           if-no-files-found: error
 
+  release-candidate:
+    needs: [artifact-qualification, reproducibility]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Install pinned release validation dependencies
+        run: python -m pip install --require-hashes -r requirements/release-build.lock
+      - name: Download all matrix qualification evidence
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: pcodex-*
+          path: ${{ runner.temp }}/pcodex-matrix
+      - name: Download reproducibility authority
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: reproducibility-receipt
+          path: ${{ runner.temp }}/pcodex-reproducibility
+      - name: Assemble and independently rebuild the canonical RC
+        shell: bash
+        run: |
+          python scripts/assemble_release_candidate.py \
+            --matrix-root "$RUNNER_TEMP/pcodex-matrix" \
+            --reproducibility "$RUNNER_TEMP/pcodex-reproducibility/reproducibility.json" \
+            --source . \
+            --output "$RUNNER_TEMP/pcodex-0.3.0b1-rc"
+          python scripts/assemble_release_candidate.py \
+            --matrix-root "$RUNNER_TEMP/pcodex-matrix" \
+            --reproducibility "$RUNNER_TEMP/pcodex-reproducibility/reproducibility.json" \
+            --source . \
+            --output "$RUNNER_TEMP/pcodex-0.3.0b1-rc-rebuild"
+          cmp "$RUNNER_TEMP/pcodex-0.3.0b1-rc.zip" \
+            "$RUNNER_TEMP/pcodex-0.3.0b1-rc-rebuild.zip"
+          python scripts/validate_release_candidate.py \
+            "$RUNNER_TEMP/pcodex-0.3.0b1-rc" \
+            --archive "$RUNNER_TEMP/pcodex-0.3.0b1-rc.zip" \
+            > "$RUNNER_TEMP/release-candidate-validation.json"
+      - name: Upload canonical RC without publishing
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pcodex-0.3.0b1-release-candidate
+          path: |
+            ${{ runner.temp }}/pcodex-0.3.0b1-rc
+            ${{ runner.temp }}/pcodex-0.3.0b1-rc.zip
+            ${{ runner.temp }}/release-candidate-validation.json
+          if-no-files-found: error
+          retention-days: 14
+
+  tool-install:
+    needs: release-candidate
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Install hash-locked pipx qualification tool
+        run: python -m pip install --require-hashes -r requirements/release-tool-install.lock
+      - name: Download canonical RC
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: pcodex-0.3.0b1-release-candidate
+          path: ${{ runner.temp }}/pcodex-rc
+      - name: Qualify network-independent local-wheel-to-pipx lifecycle
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          WHEELS=( "$RUNNER_TEMP/pcodex-rc/pcodex-0.3.0b1-rc/artifacts/"*.whl )
+          test "${#WHEELS[@]}" -eq 1
+          PYTHON_BIN="$(python -c 'import sys; print(sys.executable)')"
+          python scripts/installed_tool_install_probe.py \
+            --wheel "${WHEELS[0]}" \
+            --root "$RUNNER_TEMP/pcodex-pipx-probe" \
+            --python "$PYTHON_BIN" \
+            --output "$RUNNER_TEMP/tool-install-qualification.json"
+      - name: Upload tool-install qualification
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: tool-install-${{ matrix.os }}
+          path: ${{ runner.temp }}/tool-install-qualification.json
+          if-no-files-found: error
+          retention-days: 14
+
+  release-qualification-evidence:
+    needs: [release-candidate, tool-install]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - name: Install pinned release validation dependencies
+        run: python -m pip install --require-hashes -r requirements/release-build.lock
+      - name: Download canonical RC
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: pcodex-0.3.0b1-release-candidate
+          path: ${{ runner.temp }}/pcodex-rc
+      - name: Download macOS and Linux tool-install receipts
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          pattern: tool-install-*
+          path: ${{ runner.temp }}/tool-install-matrix
+      - name: Bind tool-install evidence to the canonical RC wheel
+        shell: bash
+        run: |
+          EVIDENCE="$RUNNER_TEMP/release-qualification-evidence"
+          mkdir -p "$EVIDENCE/tool-install-receipts"
+          python scripts/validate_tool_install_matrix.py \
+            --release-candidate "$RUNNER_TEMP/pcodex-rc/pcodex-0.3.0b1-rc" \
+            --receipt-root "$RUNNER_TEMP/tool-install-matrix" \
+            --output "$EVIDENCE/tool-install-matrix.json"
+          cp "$RUNNER_TEMP/pcodex-rc/release-candidate-validation.json" \
+            "$EVIDENCE/release-candidate-validation.json"
+          cp -R "$RUNNER_TEMP"/tool-install-matrix/* \
+            "$EVIDENCE/tool-install-receipts/"
+      - name: Upload final non-published qualification evidence
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: pcodex-0.3.0b1-release-qualification
+          path: ${{ runner.temp }}/release-qualification-evidence
+          if-no-files-found: error
+          retention-days: 14
+
   release-evidence:
     if: always()
-    needs: [test-matrix, artifact-qualification, static-quality, history-secret-scan, dependency-review, reproducibility]
+    needs: [test-matrix, artifact-qualification, static-quality, history-secret-scan, dependency-review, reproducibility, release-candidate, tool-install, release-qualification-evidence]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every release qualification job
@@ -306,6 +480,9 @@ jobs:
           STATIC: ${{ needs.static-quality.result }}
           SECRETS: ${{ needs.history-secret-scan.result }}
           REPRODUCIBILITY: ${{ needs.reproducibility.result }}
+          RELEASE_CANDIDATE: ${{ needs.release-candidate.result }}
+          TOOL_INSTALL: ${{ needs.tool-install.result }}
+          FINAL_QUALIFICATION: ${{ needs.release-qualification-evidence.result }}
           DEPENDENCY_REVIEW: ${{ needs.dependency-review.result }}
           EVENT_NAME: ${{ github.event_name }}
         run: |
@@ -314,8 +491,7 @@ jobs:
           test "$STATIC" = success
           test "$SECRETS" = success
           test "$REPRODUCIBILITY" = success
-          if test "$EVENT_NAME" = pull_request; then
-            test "$DEPENDENCY_REVIEW" = success
-          else
-            test "$DEPENDENCY_REVIEW" = skipped
-          fi
+          test "$RELEASE_CANDIDATE" = success
+          test "$TOOL_INSTALL" = success
+          test "$FINAL_QUALIFICATION" = success
+          test "$DEPENDENCY_REVIEW" = success

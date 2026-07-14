@@ -12,6 +12,13 @@
   qualification surfaces, and adapter policy/conformance fixtures. Observer
   profiles and research harnesses remain experimental, and the held-out product
   outcome and other post-beta 90/100 roadmap gates remain open.
+- Added receipt-bound upgrade check/apply with exact predecessor preservation,
+  caught-failure rollback, deterministic recovery, and unsupported-downgrade
+  refusal.
+- Added end-to-end release-byte verification, deterministic canonical RC
+  assembly from the six qualified matrix cells, and a controlled network-independent
+  local-wheel pipx install/uninstall qualification. The candidate remains
+  unsigned and non-published.
 
 ## v0.2.6.24
 

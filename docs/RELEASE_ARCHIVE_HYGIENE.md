@@ -1,6 +1,9 @@
 # Release Archive Hygiene
 
-This repository can produce two different local artifact types: research archives and private alpha package archives. Both must avoid secrets, runtime ledgers, private lab outputs, and local machine state.
+This repository can produce research archives, blind invited-beta tester
+bundles, and one canonical non-published release-candidate bundle. Every form
+must avoid secrets, runtime ledgers, private lab outputs, and local machine
+state.
 
 ## Research Archive
 
@@ -15,9 +18,14 @@ Before sharing a research archive, remove or redact:
 - runtime ledgers
 - raw Codex task transcripts unless approved
 
-## Private Alpha Package Or Archive
+## Canonical release-candidate bundle
 
-A private alpha package/archive is for local install smoke only. It should contain source, tests, docs, examples, scripts, and package metadata needed for local validation.
+The release-foundation workflow selects one byte-identical wheel/sdist pair
+only after all six macOS/Linux and Python 3.11-3.13 cells pass. The canonical
+bundle contains public qualification receipts, checksums, SBOM, provenance,
+the supported-version matrix, migration/rollback/uninstall guidance, product
+contract, gate ledger, and known limitations. It excludes private probe
+receipts and is uploaded only as a retained workflow artifact.
 
 It must exclude:
 
@@ -41,19 +49,17 @@ It must exclude:
 
 Do not delete existing lab artifacts during docs or package-hygiene work unless the generated artifact lives inside the active lab directory and the lab explicitly calls for cleanup.
 
-## Local Archive Smoke
+## Local release-candidate smoke
 
-For the next private alpha artifact lab, create the archive in a clean temporary directory, install it into a fresh virtual environment, and verify:
+Build from a clean exact commit, validate every output byte against the release
+metadata, install outside the checkout, and verify the product, Codex, and
+OpenClaw lifecycles. The workflow also installs the exact local wheel through a
+controlled offline pipx environment and removes it without residue.
 
 ```bash
-premode compile --plugin literal_symbol
-pcodex doctor
-pcodex status
-pcodex tune --static-only
-pcodex tune --validate
-pcodex tune --verify
-pcodex run --dry-run
-pcodex mcp-server --help
+python scripts/validate_release_candidate.py /path/to/pcodex-0.3.0b1-rc --archive /path/to/pcodex-0.3.0b1-rc.zip
+python scripts/installed_tool_install_probe.py --wheel /path/to/premode_router-0.3.0b1-py3-none-any.whl --root /new/controlled/root --output /private/receipt.json
 ```
 
-Do not publish the archive to PyPI or any external registry.
+Do not publish the candidate to PyPI, a package registry, a marketplace, or a
+public release without separate authority.

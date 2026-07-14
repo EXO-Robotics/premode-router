@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/premode/schemas/pcodex.tool-install-matrix.v1.schema.json",
+  "title": "pCodex controlled tool-install matrix evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "passed", "candidate_commit", "product_version",
+    "wheel_sha256", "tool", "platform_receipts", "public_registry_used",
+    "published"
+  ],
+  "properties": {
+    "schema_version": {"const": "pcodex.tool-install-matrix.v1"},
+    "passed": {"const": true},
+    "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "product_version": {"const": "0.3.0b1"},
+    "wheel_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "tool": {"const": "pipx-1.8.0"},
+    "platform_receipts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["platform", "receipt_sha256"],
+        "properties": {
+          "platform": {"enum": ["Darwin", "Linux"]},
+          "receipt_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        }
+      }
+    },
+    "public_registry_used": {"const": false},
+    "published": {"const": false}
+  }
+}
