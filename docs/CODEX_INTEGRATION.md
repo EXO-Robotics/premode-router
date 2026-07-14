@@ -15,7 +15,7 @@ pcodex integrate codex --status
 pcodex integrate codex --repair --dry-run
 pcodex integrate codex --repair
 pcodex integrate codex --disable
-pcodex integrate codex --write
+pcodex integrate codex --repair
 pcodex integrate codex --uninstall --dry-run
 pcodex integrate codex --uninstall
 pcodex integrate codex --write

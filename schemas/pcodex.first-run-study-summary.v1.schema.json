@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.first-run-study-summary.v1.schema.json",
+  "title": "pCodex public-safe first-run study summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "status", "receipt_count", "invalid_receipt_count",
+    "invalid_receipt_reasons", "attempt_count", "failed_attempt_count",
+    "attempt_ledger_valid", "invalid_attempt_ledger_count", "invalid_attempt_ledger_reasons",
+    "invalid_session_count", "invalid_session_reasons", "session_bindings_valid",
+    "unique_tester_count",
+    "attestation_evidence_successes", "attestation_evidence_valid",
+    "command_evidence_unique_count", "command_evidence_files_valid",
+    "fixture_coverage", "activation_rate", "median_first_use_seconds",
+    "first_use_seconds_range", "product_target_under_five_minutes",
+    "g1_minimum_under_ten_minutes", "undocumented_help_count",
+    "unresolved_failure_count", "codex_lifecycle_applicable_count",
+    "codex_lifecycle_successes", "unrelated_state_preservation_successes",
+    "documentation_sufficient_count", "transcript_evidence_successes",
+    "runtime_condition_successes", "study_kit_sha256",
+    "study_kit_integrity_valid", "study_kit_bindings_valid",
+    "private_receipt_content_included"
+  ],
+  "$defs": {
+    "count": {"type": "integer", "minimum": 0},
+    "sha256OrNull": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      ]
+    },
+    "secondsOrNull": {
+      "oneOf": [{"type": "null"}, {"type": "number", "minimum": 0}]
+    }
+  },
+  "properties": {
+    "schema_version": {"const": "pcodex.first-run-study-summary.v1"},
+    "status": {"enum": ["passed", "failed"]},
+    "receipt_count": {"$ref": "#/$defs/count"},
+    "invalid_receipt_count": {"$ref": "#/$defs/count"},
+    "invalid_receipt_reasons": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z0-9_]+$"},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "attempt_count": {"$ref": "#/$defs/count"},
+    "failed_attempt_count": {"$ref": "#/$defs/count"},
+    "attempt_ledger_valid": {"type": "boolean"},
+    "invalid_attempt_ledger_count": {"$ref": "#/$defs/count"},
+    "invalid_attempt_ledger_reasons": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z0-9_]+$"},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "invalid_session_count": {"$ref": "#/$defs/count"},
+    "invalid_session_reasons": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z0-9_]+$"},
+      "additionalProperties": {"$ref": "#/$defs/count"}
+    },
+    "session_bindings_valid": {"type": "boolean"},
+    "unique_tester_count": {"$ref": "#/$defs/count"},
+    "attestation_evidence_successes": {"$ref": "#/$defs/count"},
+    "attestation_evidence_valid": {"type": "boolean"},
+    "command_evidence_unique_count": {"$ref": "#/$defs/count"},
+    "command_evidence_files_valid": {"type": "boolean"},
+    "fixture_coverage": {
+      "type": "array", "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^fixture-0[1-5]$"}
+    },
+    "activation_rate": {"type": "number", "minimum": 0, "maximum": 1},
+    "median_first_use_seconds": {"$ref": "#/$defs/secondsOrNull"},
+    "first_use_seconds_range": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number", "minimum": 0}}
+      ]
+    },
+    "product_target_under_five_minutes": {"type": "boolean"},
+    "g1_minimum_under_ten_minutes": {"type": "boolean"},
+    "undocumented_help_count": {"$ref": "#/$defs/count"},
+    "unresolved_failure_count": {"$ref": "#/$defs/count"},
+    "codex_lifecycle_applicable_count": {"$ref": "#/$defs/count"},
+    "codex_lifecycle_successes": {"$ref": "#/$defs/count"},
+    "unrelated_state_preservation_successes": {"$ref": "#/$defs/count"},
+    "documentation_sufficient_count": {"$ref": "#/$defs/count"},
+    "transcript_evidence_successes": {"$ref": "#/$defs/count"},
+    "runtime_condition_successes": {"$ref": "#/$defs/count"},
+    "study_kit_sha256": {"$ref": "#/$defs/sha256OrNull"},
+    "study_kit_integrity_valid": {"type": "boolean"},
+    "study_kit_bindings_valid": {"type": "boolean"},
+    "private_receipt_content_included": {"const": false}
+  }
+}

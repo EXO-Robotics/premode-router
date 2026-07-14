@@ -5,74 +5,186 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "anonymous_tester_id", "no_prior_knowledge_attested", "attestation_evidence_sha256",
-    "artifact", "runtime", "fixture", "timing", "commands",
-    "undocumented_help", "failures", "lifecycle", "documentation",
-    "completed"
+    "schema_version", "anonymous_tester_id", "no_prior_knowledge_attested",
+    "attestation_evidence_sha256", "study", "artifact", "runtime", "fixture",
+    "timing", "commands", "condition_evidence", "preservation_evidence", "undocumented_help",
+    "failures", "documentation", "completed"
   ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "operation": {
+      "enum": [
+        "artifact_verify", "venv_create", "package_install", "help",
+        "doctor_advisory", "status_advisory", "run_dry_run",
+        "managed_install_preview", "managed_install_apply",
+        "missing_codex_status", "codex_preview", "codex_install",
+        "codex_status", "codex_install_idempotent", "codex_repair_preview",
+        "codex_disable", "codex_reenable", "codex_uninstall_preview",
+        "codex_uninstall_apply", "codex_reinstall", "codex_status_final", "codex_final_uninstall",
+        "migration_preview", "migration_apply", "mcp_preview", "mcp_apply",
+        "mcp_status", "mcp_install_idempotent", "mcp_disable", "mcp_repair_preview", "mcp_repair",
+        "mcp_uninstall_preview", "mcp_uninstall_apply", "mcp_reinstall", "mcp_final_uninstall",
+        "managed_uninstall_preview", "managed_uninstall_apply"
+      ]
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sequence", "operation", "argv", "resolved_executable", "started_seconds", "completed_seconds",
+        "exit_code", "stdout_sha256", "stderr_sha256", "evidence_sha256",
+        "sensitivity_reviewed", "result"
+      ],
+      "properties": {
+        "sequence": {"type": "integer", "minimum": 1},
+        "operation": {"$ref": "#/$defs/operation"},
+        "argv": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+        },
+        "resolved_executable": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "started_seconds": {"type": ["number", "null"], "minimum": 0},
+        "completed_seconds": {"type": ["number", "null"], "minimum": 0},
+        "exit_code": {"type": "integer", "minimum": 0, "maximum": 255},
+        "stdout_sha256": {"$ref": "#/$defs/sha256"},
+        "stderr_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_sha256": {"$ref": "#/$defs/sha256"},
+        "sensitivity_reviewed": {"const": true},
+        "result": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "structured", "result_sha256", "status", "operation_status",
+            "writes_performed"
+          ],
+          "properties": {
+            "structured": {"type": "boolean"},
+            "result_sha256": {
+              "oneOf": [{"$ref": "#/$defs/sha256"}, {"type": "null"}]
+            },
+            "status": {
+              "enum": ["READY", "NEEDS_ACTION", "BLOCKED", "not_applicable"]
+            },
+            "operation_status": {
+              "enum": [
+                "passed", "installed", "completed", "preview", "applied",
+                "already_current", "ready", "expected_absent", "disabled",
+                "repaired", "uninstalled", "reinstalled", "unchanged",
+                "dry_run", "healthy"
+              ]
+            },
+            "writes_performed": {"type": "boolean"}
+          }
+        }
+      }
+    }
+  },
   "properties": {
     "schema_version": {"const": "pcodex.first-run-study-receipt.v1"},
     "anonymous_tester_id": {"type": "string", "pattern": "^tester-[a-z0-9]{8,32}$"},
     "no_prior_knowledge_attested": {"const": true},
-    "attestation_evidence_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "attestation_evidence_sha256": {"$ref": "#/$defs/sha256"},
+    "study": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "study_kit_sha256", "qualification_receipt_sha256",
+        "receipt_schema_sha256", "kit_schema_sha256", "evidence_schema_sha256", "study_protocol_sha256",
+        "validator_sha256", "restorer_sha256", "recorder_sha256", "study_authority_sha256", "canonical_document_manifest_sha256"
+      ],
+      "properties": {
+        "study_kit_sha256": {"$ref": "#/$defs/sha256"},
+        "qualification_receipt_sha256": {"$ref": "#/$defs/sha256"},
+        "receipt_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "kit_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "evidence_schema_sha256": {"$ref": "#/$defs/sha256"},
+        "study_protocol_sha256": {"$ref": "#/$defs/sha256"},
+        "validator_sha256": {"$ref": "#/$defs/sha256"},
+        "restorer_sha256": {"$ref": "#/$defs/sha256"},
+        "recorder_sha256": {"$ref": "#/$defs/sha256"},
+        "study_authority_sha256": {"$ref": "#/$defs/sha256"},
+        "canonical_document_manifest_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
     "artifact": {
       "type": "object", "additionalProperties": false,
       "required": ["filename", "sha256", "product_version", "candidate_commit"],
       "properties": {
         "filename": {"type": "string", "pattern": "^[^/]+\\.whl$"},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sha256": {"$ref": "#/$defs/sha256"},
         "product_version": {"const": "0.3.0b1"},
         "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
       }
     },
     "runtime": {
       "type": "object", "additionalProperties": false,
-      "required": ["platform", "architecture", "python_version", "codex_version"],
+      "required": ["platform", "architecture", "python_version", "codex_version", "repository_root"],
       "properties": {
         "platform": {"enum": ["macos", "linux"]},
         "architecture": {"type": "string", "minLength": 1},
-        "python_version": {"pattern": "^3\\.(11|12|13)(\\.|$)", "type": "string"},
-        "codex_version": {"type": "string", "pattern": "^(absent|0\\.143\\.[0-9]+)$"}
+        "python_version": {"type": "string", "pattern": "^3\\.(11|12|13)(\\.|$)"},
+        "codex_version": {"type": "string", "pattern": "^(absent|0\\.143\\.[0-9]+)$"},
+        "repository_root": {"type": "string", "minLength": 1, "maxLength": 4096}
       }
     },
     "fixture": {
       "type": "object", "additionalProperties": false,
-      "required": ["id", "sha256"],
+      "required": ["id", "sha256", "conditions"],
       "properties": {
         "id": {"enum": ["fixture-01", "fixture-02", "fixture-03", "fixture-04", "fixture-05"]},
-        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "conditions": {
+          "type": "array", "minItems": 1, "uniqueItems": true,
+          "items": {"type": "string", "pattern": "^[a-z0-9_.-]+$"}
+        }
       }
     },
     "timing": {
       "type": "object", "additionalProperties": false,
-      "required": ["first_use_seconds", "completion_seconds"],
+      "required": ["timer_start_operation", "first_use_seconds", "completion_seconds"],
       "properties": {
-        "first_use_seconds": {"type": "number", "minimum": 0},
-        "completion_seconds": {"type": "number", "minimum": 0}
+        "timer_start_operation": {"const": "package_install"},
+        "first_use_seconds": {"type": "number", "exclusiveMinimum": 0},
+        "completion_seconds": {"type": "number", "exclusiveMinimum": 0}
       }
     },
-    "commands": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "commands": {"type": "array", "minItems": 8, "items": {"$ref": "#/$defs/command"}},
+    "condition_evidence": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["condition", "evidence_sha256"],
+        "properties": {
+          "condition": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+          "evidence_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "preservation_evidence": {
+      "type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["surface", "checkpoint", "sha256", "evidence_sha256", "sensitivity_reviewed"],
+        "properties": {
+          "surface": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+          "checkpoint": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "evidence_sha256": {"$ref": "#/$defs/sha256"},
+          "sensitivity_reviewed": {"const": true}
+        }
+      }
+    },
     "undocumented_help": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "failures": {
       "type": "array",
       "items": {
         "type": "object", "additionalProperties": false,
-        "required": ["category", "repair"],
+        "required": ["command_sequence", "category", "repair", "final_disposition"],
         "properties": {
-          "category": {"type": "string", "minLength": 1},
-          "repair": {"type": ["string", "null"]}
+          "command_sequence": {"type": "integer", "minimum": 1},
+          "category": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+          "repair": {"type": ["string", "null"]},
+          "final_disposition": {"enum": ["recovered", "unresolved", "not_applicable"]}
         }
-      }
-    },
-    "lifecycle": {
-      "type": "object", "additionalProperties": false,
-      "required": ["first_dry_run", "install_twice", "uninstall", "reinstall", "unrelated_state_preserved"],
-      "properties": {
-        "first_dry_run": {"type": "boolean"},
-        "install_twice": {"type": "boolean"},
-        "uninstall": {"type": "boolean"},
-        "reinstall": {"type": "boolean"},
-        "unrelated_state_preserved": {"type": "boolean"}
       }
     },
     "documentation": {
@@ -81,7 +193,11 @@
       "properties": {
         "sufficient": {"type": "boolean"},
         "missing_instruction": {"type": ["string", "null"]}
-      }
+      },
+      "allOf": [
+        {"if": {"properties": {"sufficient": {"const": true}}}, "then": {"properties": {"missing_instruction": {"type": "null"}}}},
+        {"if": {"properties": {"sufficient": {"const": false}}}, "then": {"properties": {"missing_instruction": {"type": "string", "minLength": 1}}}}
+      ]
     },
     "completed": {"type": "boolean"}
   }

@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.first-run-study-kit.v1.schema.json",
+  "title": "pCodex first-run study coordinator kit",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "candidate_commit", "runtime_tools", "wheel", "qualification_receipt_sha256",
+    "receipt_schema_sha256", "kit_schema_sha256", "evidence_schema_sha256", "study_protocol_sha256",
+    "validator_sha256", "restorer_sha256", "recorder_sha256", "study_authority_sha256", "runbook_sha256", "canonical_document_sha256",
+    "canonical_document_manifest_sha256", "blind_payload_contents", "fixtures",
+    "receipt_validator"
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "runtimeTool": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": {"type": "string", "pattern": "^/", "minLength": 2},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "operation": {"type": "string", "pattern": "^[a-z0-9_]+$"}
+  },
+  "properties": {
+    "schema_version": {"const": "pcodex.first-run-study-kit.v1"},
+    "candidate_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "runtime_tools": {
+      "type": "object", "additionalProperties": false,
+      "required": ["python", "git"],
+      "properties": {
+        "python": {"$ref": "#/$defs/runtimeTool"},
+        "git": {"$ref": "#/$defs/runtimeTool"}
+      }
+    },
+    "wheel": {
+      "type": "object", "additionalProperties": false,
+      "required": ["filename", "sha256"],
+      "properties": {
+        "filename": {"type": "string", "pattern": "^[^/]+\\.whl$"},
+        "sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "qualification_receipt_sha256": {"$ref": "#/$defs/sha256"},
+    "receipt_schema_sha256": {"$ref": "#/$defs/sha256"},
+    "kit_schema_sha256": {"$ref": "#/$defs/sha256"},
+    "evidence_schema_sha256": {"$ref": "#/$defs/sha256"},
+    "study_protocol_sha256": {"$ref": "#/$defs/sha256"},
+    "validator_sha256": {"$ref": "#/$defs/sha256"},
+    "restorer_sha256": {"$ref": "#/$defs/sha256"},
+    "recorder_sha256": {"$ref": "#/$defs/sha256"},
+    "study_authority_sha256": {"$ref": "#/$defs/sha256"},
+    "runbook_sha256": {"$ref": "#/$defs/sha256"},
+    "canonical_document_sha256": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"pattern": "^(README\\.md|docs/[A-Z0-9_]+\\.md)$"},
+      "additionalProperties": {"$ref": "#/$defs/sha256"}
+    },
+    "canonical_document_manifest_sha256": {"$ref": "#/$defs/sha256"},
+    "blind_payload_contents": {
+      "type": "array", "minItems": 3, "maxItems": 3, "uniqueItems": true,
+      "items": {"enum": ["one wheel", "SHA256SUMS", "canonical documentation"]}
+    },
+    "fixtures": {
+      "type": "array", "minItems": 5, "maxItems": 5,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": [
+          "id", "conditions", "snapshot", "sha256", "member_sha256", "restore_argv",
+          "preservation_surfaces", "required_operations",
+          "required_preservation_checkpoints", "task_card", "task_card_sha256"
+        ],
+        "properties": {
+          "id": {"enum": ["fixture-01", "fixture-02", "fixture-03", "fixture-04", "fixture-05"]},
+          "conditions": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9_.-]+$"}},
+          "snapshot": {"type": "string", "pattern": "^coordinator/fixtures/fixture-[0-9]{2}\\.zip$"},
+          "sha256": {"$ref": "#/$defs/sha256"},
+          "member_sha256": {
+            "type": "object", "minProperties": 1,
+            "propertyNames": {"type": "string", "minLength": 1},
+            "additionalProperties": {"$ref": "#/$defs/sha256"}
+          },
+          "restore_argv": {"type": "array", "minItems": 12, "maxItems": 12, "items": {"type": "string", "minLength": 1}},
+          "preservation_surfaces": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["name", "relative_path", "measurement_kind", "initial_sha256"],
+              "properties": {
+                "name": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+                "relative_path": {"type": "string", "pattern": "^[^/].*$"},
+                "measurement_kind": {"enum": ["file_bytes", "directory_manifest", "post_restore_file_bytes"]},
+                "initial_sha256": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          },
+          "required_operations": {"type": "array", "minItems": 8, "uniqueItems": true, "items": {"$ref": "#/$defs/operation"}},
+          "required_preservation_checkpoints": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"type": "string", "pattern": "^[a-z0-9_.-]+$"}},
+          "task_card": {"type": "string", "pattern": "^coordinator/task-cards/fixture-0[1-5]\\.md$"},
+          "task_card_sha256": {"$ref": "#/$defs/sha256"}
+        }
+      }
+    },
+    "receipt_validator": {"const": "scripts/validate_first_run_study.py"}
+  }
+}

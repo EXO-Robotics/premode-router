@@ -1294,6 +1294,8 @@ def apply_integration(
             "receipt": STATE_RELATIVE.as_posix(),
             "registration_receipts": sorted(prior["registrations"]),
             "legacy_preserved": prior.get("migration", {}).get("legacy_preserved", []),
+            "migration_applied": False,
+            "optional_mcp_enabled": bool(prior.get("with_mcp")),
             "next_recommended_action": "pcodex integrate codex --status",
         }
         if installed_but_codex_missing:
@@ -1383,6 +1385,8 @@ def apply_integration(
             "receipt": STATE_RELATIVE.as_posix(),
             "registration_receipts": sorted(state["registrations"]),
             "legacy_preserved": state["migration"]["legacy_preserved"],
+            "migration_applied": migration,
+            "optional_mcp_enabled": with_mcp,
             "next_recommended_action": "pcodex integrate codex --status",
         }
         if native:
@@ -1475,7 +1479,12 @@ def disable_integration(
     state["enabled"] = False
     _atomic_json(root / STATE_RELATIVE, state)
     (root / JOURNAL_RELATIVE).unlink(missing_ok=True)
-    result = {"status": "disabled", "writes_performed": True, "next_recommended_action": "pcodex integrate codex --repair"}
+    result = {
+        "status": "disabled",
+        "writes_performed": True,
+        "optional_mcp_enabled": bool(state["with_mcp"]),
+        "next_recommended_action": "pcodex integrate codex --repair",
+    }
     if native_result is not None:
         result["native_registration"] = native_result
     return result
@@ -1616,7 +1625,9 @@ def repair_integration(root: Path, *, native: bool = False) -> dict[str, Any]:
     (root / JOURNAL_RELATIVE).unlink(missing_ok=True)
     result: dict[str, Any] = {
         "status": "repaired" if changed else "healthy", "writes_performed": changed,
-        "repaired_files": repaired, "next_recommended_action": "pcodex integrate codex --status",
+        "repaired_files": repaired,
+        "optional_mcp_enabled": bool(state["with_mcp"]),
+        "next_recommended_action": "pcodex integrate codex --status",
     }
     if native:
         from .codex_native import repair as native_repair
@@ -1972,6 +1983,7 @@ def uninstall_integration(
     result = {
         "status": "uninstalled",
         "writes_performed": True,
+        "optional_mcp_enabled": bool(state["with_mcp"]),
         "removed_files": removed,
         "legacy_preserved": [item["path"] for item in _legacy_inventory(root)],
         "next_recommended_action": "pcodex integrate codex --dry-run",

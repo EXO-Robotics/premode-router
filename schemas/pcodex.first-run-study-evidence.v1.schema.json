@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "pcodex.first-run-study-evidence.v1.schema.json",
+  "title": "pCodex private first-run study evidence",
+  "oneOf": [
+    {"$ref": "#/$defs/attestation"},
+    {"$ref": "#/$defs/command"},
+    {"$ref": "#/$defs/condition"},
+    {"$ref": "#/$defs/preservation"}
+  ],
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "base": {
+      "type": "object",
+      "required": ["schema_version", "kind", "tester_id", "fixture_id", "study_kit_sha256"],
+      "properties": {
+        "schema_version": {"const": "pcodex.first-run-study-evidence.v1"},
+        "kind": {"enum": ["attestation", "command", "condition", "preservation"]},
+        "tester_id": {"type": "string", "pattern": "^tester-[a-z0-9]{8,32}$"},
+        "fixture_id": {"type": "string", "pattern": "^fixture-0[1-5]$"},
+        "study_kit_sha256": {"$ref": "#/$defs/sha256"}
+      }
+    },
+    "attestation": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "schema_version", "kind", "tester_id", "fixture_id", "study_kit_sha256",
+            "statement", "signed_at_utc", "signer_id", "signer_role",
+            "command_evidence_manifest_sha256", "condition_evidence_manifest_sha256",
+            "preservation_evidence_manifest_sha256", "receipt_claims_sha256", "signature"
+          ],
+          "properties": {
+            "schema_version": {}, "kind": {"const": "attestation"}, "tester_id": {}, "fixture_id": {}, "study_kit_sha256": {},
+            "statement": {"const": "I had no prior internal knowledge of pCodex and followed only the supplied canonical documentation and frozen task card."},
+            "signed_at_utc": {"type": "string", "format": "date-time"},
+            "signer_id": {"type": "string", "pattern": "^coordinator-[a-z0-9]{8,32}$"},
+            "signer_role": {"const": "study_coordinator_witness"},
+            "command_evidence_manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "condition_evidence_manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "preservation_evidence_manifest_sha256": {"$ref": "#/$defs/sha256"},
+            "receipt_claims_sha256": {"$ref": "#/$defs/sha256"},
+            "signature": {
+              "type": "object", "additionalProperties": false,
+              "required": ["algorithm", "value"],
+              "properties": {
+                "algorithm": {"const": "hmac-sha256"},
+                "value": {"$ref": "#/$defs/sha256"}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "command": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": [
+            "schema_version", "kind", "tester_id", "fixture_id", "study_kit_sha256",
+            "sequence", "operation", "argv", "resolved_executable", "started_seconds",
+            "completed_seconds", "exit_code", "stdout_base64", "stderr_base64",
+            "cwd", "controlled_environment", "venv_root", "runtime_authority_sha256", "no_write_observation_sha256", "normalized_result", "sensitivity_reviewed"
+          ],
+          "properties": {
+            "schema_version": {}, "kind": {"const": "command"}, "tester_id": {}, "fixture_id": {}, "study_kit_sha256": {},
+            "sequence": {"type": "integer", "minimum": 1},
+            "operation": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+            "argv": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "maxLength": 4096}},
+            "resolved_executable": {"type": "string", "minLength": 1, "maxLength": 4096},
+            "cwd": {"type": "string", "minLength": 1, "maxLength": 4096},
+            "controlled_environment": {
+              "type": "object", "additionalProperties": false,
+              "required": ["sandbox_root", "HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME", "TMPDIR", "CODEX_HOME", "PATH"],
+              "properties": {
+                "sandbox_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "HOME": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "XDG_CONFIG_HOME": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "XDG_CACHE_HOME": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "XDG_DATA_HOME": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "TMPDIR": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "CODEX_HOME": {"type": "string", "minLength": 1, "maxLength": 4096},
+                "PATH": {"type": "string", "minLength": 1, "maxLength": 8192}
+              }
+            },
+            "venv_root": {"type": "string", "minLength": 1, "maxLength": 4096},
+            "runtime_authority_sha256": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+            },
+            "no_write_observation_sha256": {
+              "oneOf": [{"type": "null"}, {"$ref": "#/$defs/sha256"}]
+            },
+            "started_seconds": {"type": ["number", "null"], "minimum": 0},
+            "completed_seconds": {"type": ["number", "null"], "minimum": 0},
+            "exit_code": {"type": "integer", "minimum": 0, "maximum": 255},
+            "stdout_base64": {"type": "string", "maxLength": 1400000},
+            "stderr_base64": {"type": "string", "maxLength": 1400000},
+            "normalized_result": {"type": "object"},
+            "sensitivity_reviewed": {"const": true}
+          }
+        }
+      ]
+    },
+    "condition": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["schema_version", "kind", "tester_id", "fixture_id", "study_kit_sha256", "condition", "observation_base64", "observation_sha256", "observed", "sensitivity_reviewed"],
+          "properties": {
+            "schema_version": {}, "kind": {"const": "condition"}, "tester_id": {}, "fixture_id": {}, "study_kit_sha256": {},
+            "condition": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+            "observation_base64": {"type": "string", "maxLength": 1400000},
+            "observation_sha256": {"$ref": "#/$defs/sha256"},
+            "observed": {"const": true},
+            "sensitivity_reviewed": {"const": true}
+          }
+        }
+      ]
+    },
+    "preservation": {
+      "allOf": [
+        {"$ref": "#/$defs/base"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["schema_version", "kind", "tester_id", "fixture_id", "study_kit_sha256", "surface", "checkpoint", "measurement_base64", "measurement_sha256", "sensitivity_reviewed"],
+          "properties": {
+            "schema_version": {}, "kind": {"const": "preservation"}, "tester_id": {}, "fixture_id": {}, "study_kit_sha256": {},
+            "surface": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+            "checkpoint": {"type": "string", "pattern": "^[a-z0-9_.-]+$"},
+            "measurement_base64": {"type": "string", "maxLength": 1400000},
+            "measurement_sha256": {"$ref": "#/$defs/sha256"},
+            "sensitivity_reviewed": {"const": true}
+          }
+        }
+      ]
+    }
+  }
+}
